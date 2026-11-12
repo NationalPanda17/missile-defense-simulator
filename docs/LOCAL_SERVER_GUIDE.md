@@ -115,6 +115,28 @@ Your server saves are stored in a hidden folder called `.pgdata` inside the simu
 | Forgot your password | Stop the game. In the simulator folder, open a terminal (Mac: right-click the folder → **New Terminal at Folder**; Windows: Shift + right-click inside the folder → **Open PowerShell window here**) and type `npm run user:reset-password -- yourusername`, then press Enter. It shows a temporary password. |
 | Anything else | Close the text window, restart your computer, and start the game again. If it still fails, open an issue on the GitHub page and paste the last lines from the text window. |
 
+## If double-clicking doesn't work
+
+You can start the game by typing one line instead.
+
+1. Open a terminal in the simulator folder:
+   - **Mac:** right-click the `missile-defense-simulator-main` folder and choose **New Terminal at Folder**.
+     (If you don't see it, open **Terminal** from Applications → Utilities, type `cd ` with a space after it,
+     drag the folder into the window, and press Enter.)
+   - **Windows:** open the folder, click in the address bar at the top, type `cmd` and press Enter.
+2. Type this and press Enter:
+   - **Mac:** `bash "Start Simulator (Mac).command"`
+   - **Windows:** `"Start Simulator (Windows).bat"`
+
+If that also fails, type these two lines one at a time (it's what the start file does):
+
+```
+npm install
+npm run dev:full
+```
+
+Then open **http://localhost:5173** in your browser.
+
 ## For the curious: what the start file does
 
 It checks that Node.js is installed, runs `npm install` the first time, then runs `npm run dev:full`, which
