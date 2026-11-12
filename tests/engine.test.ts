@@ -408,17 +408,25 @@ describe('tactical layer: engine', () => {
   });
 
   it('scores protection, and a sensible defense beats ignoring the tactical layer', () => {
-    for (const seed of [2, 3, 7, 9, 13]) {
+    // Campaigns are random: a defended run can be unlucky. Over 20 campaigns, defending must win on average and in
+    // at least 70% of them.
+    let wins = 0;
+    let gap = 0;
+    const seeds = Array.from({ length: 20 }, (_, i) => i * 7 + 2);
+    for (const seed of seeds) {
       const ignored = runTactical(seed, false);
       const defended = runTactical(seed, true);
       const a = computeScore(ignored);
       const b = computeScore(defended);
       expect(a.components.protection, `seed ${seed}`).toBe(0);
       expect(b.components.protection!, `seed ${seed}`).toBeGreaterThan(40);
-      expect(b.total, `seed ${seed}`).toBeGreaterThan(a.total);
+      if (b.total > a.total) wins++;
+      gap += b.total - a.total;
       const w = Object.values(b.weights).reduce((x, y) => x + y!, 0);
       expect(w).toBeCloseTo(1, 9);
     }
+    expect(wins / seeds.length).toBeGreaterThanOrEqual(0.7);
+    expect(gap / seeds.length).toBeGreaterThan(2);
   });
 
   it('scores other modes on management alone', () => {

@@ -6,6 +6,7 @@ import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, 
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
 import { sound } from './audio/sound';
 import { installA11y } from './a11y/settings';
+import { ChallengeInvite } from './Challenge';
 import { applyUpdate, onUpdateReady, updateReady } from './pwa';
 
 import { UIProvider, useUI } from './uiState';
@@ -55,6 +56,7 @@ export default function App() {
     <UIProvider>
       <Root />
       <UpdateBanner />
+      <ChallengeInvite />
       <Toasts />
     </UIProvider>
   );

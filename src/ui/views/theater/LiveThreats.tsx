@@ -1,6 +1,6 @@
 // Live threats on the theater map: launch point, icons moving along their paths, interceptions and impacts.
 // Re-renders every animation frame on its own, so the rest of the map doesn't.
-import { TACTICAL_CONFIG, type RegionId, type SimState, type ThreatClass, type ThreatWave } from '../../../engine';
+import { TACTICAL_CONFIG, pointAlong, trackPath, type RegionId, type SimState, type ThreatClass, type ThreatWave } from '../../../engine';
 import { useSimTime } from '../../../store/simStore';
 import { LINGER, trackPhase, waveVisible } from '../../threatTimeline';
 
@@ -20,6 +20,14 @@ export function ThreatGlyph({ cls, color, decoy }: { cls: ThreatClass; color: st
     case 'rocket': return <g opacity={op}><path d="M6,0 L-5,-1.6 L-5,1.6 Z" fill={color} stroke="#06111f" strokeWidth={0.6} /><path d="M-5,0 L-9,0" stroke="#fde68a" strokeWidth={1.5} /></g>;
     case 'ballistic': return <g opacity={op}><circle r={3.2} fill={color} stroke="#fff" strokeWidth={0.8} /><circle r={6} fill="none" stroke={color} strokeOpacity={0.6} /></g>;
   }
+}
+
+/** How far along a bent path (0-1) its turn point is. */
+function pointFraction(path: [number, number][]): number {
+  if (path.length < 3) return 1;
+  const a = Math.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]);
+  const b = Math.hypot(path[2][0] - path[1][0], path[2][1] - path[1][1]);
+  return a / (a + b || 1);
 }
 
 const EDGE_LAUNCH: Record<ThreatWave['axis'], [number, number]> = { north: [W / 2, 6], south: [W / 2, H - 6], west: [6, H / 2], east: [W - 6, H / 2] };
@@ -49,20 +57,20 @@ export function LiveThreats({ s, region, only, at }: { s: SimState; region: Regi
               const site = sites.get(tr.siteId);
               if (!site) return null;
               const ph = trackPhase(w, tr, t);
-              const [ax, ay] = tr.from;
-              const dx = site.x - ax;
-              const dy = site.y - ay;
-              const at = (f: number): [number, number] => [ax + dx * f, ay + dy * f];
-              const heading = (Math.atan2(dy, dx) * 180) / Math.PI;
+              const path = trackPath(tr, [site.x, site.y]);
+              const at = (f: number): [number, number] => pointAlong(path, f).p;
               const col = tr.decoy ? '#7d93b1' : THREAT_COLOR[tr.cls];
               if (ph.kind === 'flight') {
-                const [x, y] = at(Math.min(1, ph.f));
-                const [tx, ty] = at(Math.max(0, ph.f - 0.18));
+                const here = pointAlong(path, Math.min(1, ph.f));
+                const [x, y] = here.p;
+                // Trail: a few points back along the path, so it bends round the turn.
+                const trail = [0.18, 0.12, 0.06, 0].map((b) => at(Math.max(0, ph.f - b)).join(',')).join(' ');
+                const ahead = [here.p, ...(tr.via && ph.f < pointFraction(path) ? [tr.via] : []), [site.x, site.y] as [number, number]].map((p) => p.join(',')).join(' ');
                 return (
                   <g key={tr.id}>
-                    <line x1={tx} y1={ty} x2={x} y2={y} stroke={col} strokeOpacity={0.45} strokeWidth={1.4} strokeLinecap="round" />
-                    <line x1={x} y1={y} x2={site.x} y2={site.y} stroke={col} strokeOpacity={0.12} strokeDasharray="2 4" />
-                    <g transform={`translate(${x},${y}) rotate(${heading})`}><ThreatGlyph cls={tr.cls} color={col} decoy={tr.decoy} /></g>
+                    <polyline points={trail} fill="none" stroke={col} strokeOpacity={0.45} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points={ahead} fill="none" stroke={col} strokeOpacity={0.12} strokeDasharray="2 4" />
+                    <g transform={`translate(${x},${y}) rotate(${here.heading})`}><ThreatGlyph cls={tr.cls} color={col} decoy={tr.decoy} /></g>
                   </g>
                 );
               }

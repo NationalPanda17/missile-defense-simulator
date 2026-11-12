@@ -5,6 +5,7 @@ import {
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 import { MissionReplay } from './MissionReplay';
+import { ChallengePanel } from '../Challenge';
 
 const LABELS: Record<ScoreKey, string> = {
   readiness: 'Global readiness', network: 'Network reliability', stability: 'Regional stability', response: 'Event response',
@@ -73,6 +74,7 @@ export function AARView({ s }: { s: SimState }) {
             <Stat label="Escalated" value={s.counters.escalations} t={s.counters.escalations > 3 ? 'red' : 'amber'} />
           </div>
         </div>
+        <div className="mt-3"><ChallengePanel s={s} /></div>
         {!final && <p className="mt-2 text-[10px] text-ops-dim">Interim report — the scenario is still running. A final report is produced when the last phase ends.</p>}
       </Panel>
 

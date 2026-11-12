@@ -268,6 +268,11 @@ export const TACTICAL_CONFIG = {
     { count: 4, tracks: [12, 18], mix: { slowDrone: 5, fastDrone: 3, cruise: 3, rocket: 2, ballistic: 2 } },
     { count: 2, tracks: [6, 9], mix: { slowDrone: 5, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 1 } },
   ] as { count: number; tracks: [number, number]; mix: Record<ThreatClass, number> }[],
+  /**
+   * Threats that change direction mid-flight: a share of drones and cruise missiles in later phases fly a dog-leg
+   * around the defenses' expected axis, so a defense built for one approach can be outflanked.
+   */
+  turning: { classes: ['slowDrone', 'fastDrone', 'cruise'] as ThreatClass[], chanceByPhase: [0, 0.15, 0.2, 0.1], offsetKm: [50, 110] as [number, number] },
   /** Standard scenario: regions named in each briefing's forecast. */
   forecastRegions: 2,
   /** Warning before a wave arrives: base hours plus extra hours at full regional awareness. */

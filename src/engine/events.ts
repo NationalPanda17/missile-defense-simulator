@@ -271,6 +271,77 @@ export const TEMPLATES: EventTemplate[] = [
     ],
     weight: (s) => 0.2 + (s.personnelMax - s.personnel) / 60,
   },
+  // ── Added for campaign variety ──
+  {
+    id: 'feed_corruption', category: 'information', title: 'Corrupted Data Feed', domains: ['air', 'ground'],
+    severity: [1, 3], duration: [14, 24],
+    narrative: ({ region }) =>
+      `A data feed into the ${region.name} air picture is carrying malformed tracks. Operators are spending time chasing ghosts and real contacts may be lost in the noise.`,
+    effects: [{ kind: 'awarenessPenalty', value: 12 }, { kind: 'domainPenalty', value: 6, domain: 'air' }],
+    escalation: { effects: { stability: -5 }, spawns: [{ templateId: 'false_contact', chance: 0.7 }, { templateId: 'network_alert', chance: 0.3 }], text: 'The bad feed polluted the picture and triggered more false reports.' },
+    responses: [
+      { id: 'isolate', label: 'Isolate the Feed', description: 'Cut the feed and fall back to local sensors. Quick; depends on regional comms.', credits: 50, personnel: 2, crews: 0, hours: 5, baseSuccess: 0.84, networkDependent: true, onSuccess: {} },
+      { id: 'authenticate', label: 'Authenticate & Restore', description: 'Trace the fault, restore the feed with authenticated data. Slower but hardens the network.', credits: 110, personnel: 5, crews: 0, hours: 10, baseSuccess: 0.95, onSuccess: { resilience: 2 } },
+      monitor(),
+    ],
+    weight: (_s, r) => 0.1 + (100 - r.awareness) / 120,
+  },
+  {
+    id: 'cable_fault', category: 'comms', title: 'Undersea Cable Fault', domains: ['sea', 'ground'],
+    severity: [2, 3], duration: [20, 32],
+    narrative: ({ region }) =>
+      `An undersea communications cable serving ${region.name} has failed. Traffic is squeezing onto backup routes and the wider network is feeling it.`,
+    effects: [{ kind: 'commsPenalty', value: 12 }, { kind: 'globalCommsPenalty', value: 1.5 }],
+    escalation: { effects: { infrastructure: -6, stability: -4 }, spawns: [{ templateId: 'comms_blackout', chance: 0.35 }], text: 'Backup routes saturated and regional links collapsed.' },
+    responses: [
+      { id: 'reroute', label: 'Reroute via Satellite', description: 'Move priority traffic onto orbital relays. Fast; depends on Space readiness.', credits: 80, personnel: 3, crews: 0, hours: 4, baseSuccess: 0.8, domainDependency: 'space', onSuccess: {} },
+      { id: 'repair', label: 'Dispatch Repair Ship', description: 'Locate and splice the cable. Slow but restores capacity for good.', credits: 180, personnel: 8, crews: 1, hours: 20, baseSuccess: 0.95, onSuccess: { infrastructure: 4 } },
+      monitor(),
+    ],
+    weight: (_s, r) => 0.12 + (100 - r.infrastructure) / 160,
+  },
+  {
+    id: 'debris', category: 'satellite', title: 'Orbital Debris Conjunction', domains: ['space'],
+    target: { domains: ['space'] }, severity: [1, 3], duration: [8, 14],
+    narrative: ({ asset }) =>
+      `Tracking predicts a close approach between ${asset?.name ?? 'an orbital platform'} and a debris fragment. A collision would damage or disable it.`,
+    effects: [{ kind: 'assetDecay', value: 0.4 }],
+    escalation: { effects: { assetCondition: -35 }, spawns: [{ templateId: 'sat_power', chance: 0.4 }], text: 'No avoidance manoeuvre: the platform was struck by debris.' },
+    responses: [
+      { id: 'maneuver', label: 'Avoidance Manoeuvre', description: 'Burn propellant to move clear. Depends on Ground control readiness.', credits: 60, personnel: 2, crews: 0, hours: 3, baseSuccess: 0.9, domainDependency: 'ground', onSuccess: {} },
+      { id: 'safe', label: 'Safe Mode & Shield', description: 'Orient the platform to minimise exposure. Cheaper; less certain.', credits: 30, personnel: 1, crews: 0, hours: 2, baseSuccess: 0.7, onSuccess: {} },
+      monitor(4),
+    ],
+    weight: () => 0.15,
+  },
+  {
+    id: 'heat', category: 'weather', title: 'Extreme Heat', domains: ['ground', 'air'],
+    severity: [1, 2], duration: [24, 40],
+    narrative: ({ region }) =>
+      `An extended heatwave across ${region.name} is straining power, cooling and flight operations. Equipment is wearing faster and maintenance costs are rising.`,
+    effects: [{ kind: 'domainPenalty', value: 6, domain: 'ground' }, { kind: 'maintenanceCostMult', value: 1.1 }],
+    escalation: { effects: { infrastructure: -5 }, spawns: [{ templateId: 'power_fault', chance: 0.5 }], text: 'Grid and cooling failures followed the heat.' },
+    responses: [
+      { id: 'cooling', label: 'Emergency Cooling & Power', description: 'Bring in mobile cooling and generation for key sites.', credits: 100, personnel: 5, crews: 1, hours: 8, baseSuccess: 0.92, onSuccess: { infrastructure: 2 } },
+      { id: 'tempo', label: 'Reduce Operating Tempo', description: 'Shift work to cooler hours. Costs nothing but takes time.', credits: 0, personnel: 0, crews: 0, hours: 14, baseSuccess: 0.85, onSuccess: {} },
+      monitor(),
+    ],
+    weight: () => 0.12,
+  },
+  {
+    id: 'fuel', category: 'logistics', title: 'Fuel Contamination', domains: ['air'],
+    target: { domains: ['air'] }, severity: [1, 3], duration: [16, 26],
+    narrative: ({ region }) =>
+      `Contaminated fuel has been found at an airbase in ${region.name}. Aircraft are grounded until supplies are flushed or replaced.`,
+    effects: [{ kind: 'domainPenalty', value: 12, domain: 'air' }, { kind: 'assetDecay', value: 0.3 }],
+    escalation: { effects: { assetCondition: -15 }, spawns: [{ templateId: 'airframe', chance: 0.5 }], text: 'Contaminated fuel damaged aircraft engines.' },
+    responses: [
+      { id: 'flush', label: 'Flush & Inspect', description: 'Drain tanks and inspect engines. Reliable.', credits: 110, personnel: 5, crews: 1, hours: 10, baseSuccess: 0.93, onSuccess: { assetCondition: 10 } },
+      { id: 'resupply', label: 'Truck in Clean Fuel', description: 'Bring clean fuel from another depot. Depends on Ground readiness.', credits: 60, personnel: 3, crews: 0, hours: 6, baseSuccess: 0.78, domainDependency: 'ground', onSuccess: {} },
+      monitor(),
+    ],
+    weight: (s, r) => 0.1 + (100 - avgCond(s, r.id)) / 240,
+  },
 ];
 
 export const TEMPLATE_MAP = new Map(TEMPLATES.map((t) => [t.id, t]));
