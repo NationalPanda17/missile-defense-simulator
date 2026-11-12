@@ -134,6 +134,10 @@ can issue a temporary password:
 npm run user:reset-password -- <username>
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, codebase rules, content guidelines and the pull request workflow.
+
 ## Project structure
 
 ```
