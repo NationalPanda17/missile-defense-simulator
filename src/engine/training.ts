@@ -143,7 +143,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Prefer to play step by step? Turn on Turn mode in the top bar. The clock stops and moves only when you advance it.',
         check: (c) => c.s.turnBased },
       { id: 'advance', target: ['advance'], title: 'Advance one turn',
-        text: 'Press +6h (or the T key) to move the clock forward six hours.',
+        text: 'Press Next turn +6h in the top bar (or the T key) to move the clock forward six hours.',
         check: (c) => c.s.hour >= c.since.hour + 6 },
       { id: 'region', target: ['map'], title: 'Open a region', view: 'global',
         text: 'Click any region on the world map to open its dashboard: readiness, communications, awareness and stability for that area.',

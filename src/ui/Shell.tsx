@@ -81,8 +81,13 @@ export function TopBar({ s }: { s: SimState }) {
         {([1, 2, 4, 8] as const).map((sp, i) => (
           <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}
-        <button data-coach="turn" className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })} title="Toggle turn-based mode">Turn</button>
-        <button data-coach="advance" className="btn" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn — 6 hours (T)">+{SIM_CONFIG.turnHours}h ⏭</button>
+        <button data-coach="turn" role="switch" aria-checked={s.turnBased} className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })}
+          title={s.turnBased ? 'Turn mode is on: the clock only moves when you advance a turn. Click to switch back to real time.' : 'Turn mode: stop the clock and advance it 6 hours at a time when you are ready.'}>
+          Turn mode{s.turnBased ? ': on' : ''}
+        </button>
+        {s.turnBased && (
+          <button data-coach="advance" className="btn btn-primary" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn: 6 hours (T)">Next turn +{SIM_CONFIG.turnHours}h ⏭</button>
+        )}
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-4">

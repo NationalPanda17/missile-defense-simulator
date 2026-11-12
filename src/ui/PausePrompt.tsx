@@ -55,7 +55,14 @@ export function PausePrompt({ s }: { s: SimState }) {
   const stopFor = (kind: PauseReason['kind'], on: boolean) => { if (pacing) store.setPacing({ ...pacing, [kind]: on }); };
   return (
     <div className="fixed inset-x-2 top-16 z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:top-20" role="alertdialog" aria-label="Paused: your decision">
-      <div className="label text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>
+      {/* Continue sits in the same place on every prompt; Enter or Space presses it. */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="label pt-1 text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>
+        <span className="flex shrink-0 gap-1.5">
+          <button className="btn" onClick={() => store.dismissPausePrompt()} title="Close this and stay paused">Stay paused</button>
+          <button className="btn btn-primary" autoFocus onClick={resume} title="Enter or Space">Continue ▶</button>
+        </span>
+      </div>
       <ul className="mt-1 space-y-0.5 text-[12px] text-white">
         {reasons.slice(0, 4).map((r, i) => <li key={i}>{r.text}</li>)}
         {reasons.length > 4 && <li className="text-ops-dim">+{reasons.length - 4} more</li>}
@@ -71,17 +78,16 @@ export function PausePrompt({ s }: { s: SimState }) {
           <button className="btn btn-primary" onClick={() => { ui.openEvent(first.eventId!); store.dismissPausePrompt(); }}>Open the report</button>
         </div>
       )}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-ops-dim">
         {pacing && (
-          <label className="flex items-center gap-1.5 text-[10px] text-ops-dim">
+          <label className="flex items-center gap-1.5">
             <input type="checkbox" checked={pacing[first.kind]} onChange={(e) => stopFor(first.kind, e.target.checked)} />
             Pause for {KIND_LABEL[first.kind]}
           </label>
         )}
-        <span className="flex gap-1.5">
-          <button className="btn" onClick={() => store.dismissPausePrompt()}>Stay paused</button>
-          <button className="btn btn-primary" autoFocus onClick={resume}>Continue ▶</button>
-        </span>
+        {pacing && (pacing.deadline || pacing.report) && (
+          <button className="underline hover:text-white" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Pause only for waves</button>
+        )}
       </div>
     </div>
   );
@@ -102,9 +108,15 @@ export function PacingSettings() {
       {row('launch', 'Pause for launch warnings')}
       {row('deadline', 'Pause before a report escalates')}
       {row('report', 'Pause for every new report')}
+      <div className="flex flex-wrap gap-1">
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Waves only</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: true })}>Everything</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: false, deadline: false, report: false })}>Never</button>
+      </div>
+      <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together.</p>
       <p className="text-[10px] text-ops-dim">
         {store.pacing ? <>Your choice, for every difficulty. <button className="underline" onClick={() => store.setPacing(null)}>Use the defaults</button></>
-          : 'Defaults for the difficulty: Recruit stops for everything, Officer for launches and escalations, Commander for nothing.'}
+          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate.'}
       </p>
     </div>
   );
