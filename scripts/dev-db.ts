@@ -23,9 +23,11 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
     onLog: (m) => { keep(m); if (!opts.quiet) process.stdout.write(`[postgres] ${m}`); },
     onError: (m) => { keep(m); console.error('[postgres]', m); },
   });
+  let handle: { stop: () => Promise<void> } = db;
   try {
     if (!existsSync(path.join(opts.dir, 'PG_VERSION'))) await db.initialise();
-    await db.start();
+    if (process.platform === 'win32') handle = startWithPgCtl(opts.dir, opts.port, keep);
+    else await db.start();
   } catch (e) {
     const busy = existsSync(path.join(opts.dir, 'postmaster.pid'));
     throw new Error(
@@ -40,7 +42,30 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
   const exists = await client.query("SELECT 1 FROM pg_database WHERE datname = 'mds'");
   if (!exists.rowCount) await client.query('CREATE DATABASE mds');
   await client.end();
-  return db;
+  return handle;
+}
+
+/**
+ * Windows: start through pg_ctl, which drops administrator rights before running the server. PostgreSQL refuses to
+ * run as an administrator, and some players (and CI machines) run elevated; starting postgres directly then fails.
+ */
+function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): { stop: () => Promise<void> } {
+  const require = createRequire(import.meta.url);
+  const bin = path.join(path.dirname(require.resolve('@embedded-postgres/windows-x64/package.json')), 'native', 'bin', 'pg_ctl.exe');
+  const run = (args: string[]) => {
+    try {
+      return execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string; message: string };
+      keep(err.stdout ?? '');
+      keep(err.stderr ?? err.message);
+      throw new Error('pg_ctl failed');
+    }
+  };
+  run(['start', '-D', dir, '-o', `-p ${port}`, '-l', path.join(dir, 'server.log'), '-w', '-t', '60']);
+  return {
+    stop: async () => { try { run(['stop', '-D', dir, '-m', 'fast', '-w']); } catch { /* already stopped */ } },
+  };
 }
 
 /** The binary package ships its dylib symlinks as a JSON manifest; recreate them if npm skipped its postinstall. */
