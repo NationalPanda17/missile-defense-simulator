@@ -1,5 +1,5 @@
 // Browser client for the persistence API. Authentication is a server session in an HttpOnly cookie.
-import { SAVE_VERSION, type SimState, type Slot } from '../engine';
+import { SAVE_VERSION, ensureTactical, type SimState, type Slot } from '../engine';
 import type { AuthResult, CampaignDetail, CampaignSummary, SaveSummary } from '../shared/api';
 
 const ID_KEY = 'mds.playerId';
@@ -80,6 +80,7 @@ export const api = {
   async getSave(slot: Slot): Promise<SimState> {
     const r = await request<{ v: number; state: SimState }>(`/saves/${slot}`);
     if (r.v !== SAVE_VERSION) throw new ApiError(0, 'Incompatible save version');
+    ensureTactical(r.state); // saves made before the tactical layer
     return r.state;
   },
   putSave: (slot: Slot, state: SimState) =>

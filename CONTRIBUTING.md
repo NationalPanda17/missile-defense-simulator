@@ -5,16 +5,23 @@ project, the rules of the codebase, and how changes reach `main`.
 
 ## Ground rules for content
 
-This is a **strategy and management game built on fictional data and abstract mechanics**.
-All contributions must keep it that way:
+This is a **strategy and management game set in a fictional world**. The one exception is
+the tactical layer's equipment catalog (`src/engine/equipment.ts`), which uses real air
+defense systems.
 
-- Use only fictional countries, units, equipment, names and figures. Do not add or imitate
-  real weapon systems, organizations, or locations of real facilities.
-- Keep mechanics abstract: readiness, maintenance, communications, information quality and
-  resources. Do not add real-world performance specifications, targeting or interception
-  logic, engagement procedures, or operational deployment guidance.
-- Events should describe operational *management* problems (outages, weather, logistics,
-  uncertain reports), not combat.
+- **World:** countries, organizations, units, sites, scenarios and the network's own assets
+  stay fictional. Do not add locations of real facilities.
+- **Real equipment:** real air defense systems may appear by name in the equipment catalog,
+  with figures such as range, altitude, cost, kill rates, reaction times and radar specs.
+- **Where figures come from:** only official public statements by manufacturers or
+  governments. Where no such statement exists, make up a plausible value for the game.
+  Never use classified or leaked information of any kind. List the official references
+  you used in the entry's `sources`.
+- **No real attacks:** no scenario, wave or event may recreate, be named after, or be dated
+  to a real attack or conflict. Threats use generic classes (slow drone, fast drone, cruise
+  missile, rocket, ballistic missile), not real missile or drone types.
+- **Events** outside the tactical layer describe operational *management* problems
+  (outages, weather, logistics, uncertain reports).
 
 Pull requests that cross these lines will be closed, however good the code is.
 

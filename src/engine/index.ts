@@ -8,4 +8,6 @@ export * from './events';
 export * from './metrics';
 export * from './scoring';
 export * from './persistence';
+export * from './equipment';
+export * from './tactical';
 export { clamp } from './rng';

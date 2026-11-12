@@ -1,4 +1,5 @@
 // Save / load. Browser localStorage for the prototype; the same JSON payload is what a PostgreSQL backend would store.
+import { ensureTactical, tacticalShapeError } from './tactical';
 import type { SimState } from './types';
 
 export const SLOTS = ['auto', 'slot1', 'slot2', 'slot3'] as const;
@@ -82,6 +83,7 @@ function validate(f: unknown): SimState | null {
   if (!file || typeof file !== 'object' || file.v !== SAVE_VERSION) return null;
   const err = stateShapeError(file.state);
   if (err) return null;
+  ensureTactical(file.state);
   file.state.paused = true;
   return file.state;
 }
@@ -102,5 +104,5 @@ export function stateShapeError(x: unknown): string | null {
   if (!Array.isArray(s.assets) || !s.assets.length) return 'state.assets is invalid';
   if (!Array.isArray(s.events) || !Array.isArray(s.history) || !Array.isArray(s.commands)) return 'state collections are invalid';
   if (!s.metrics || !s.counters) return 'state.metrics/counters missing';
-  return null;
+  return tacticalShapeError(s.tactical);
 }
