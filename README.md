@@ -93,6 +93,10 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    while it moves).
    Threat protection is 15% of the campaign score.
 
+   New to it? Phase 1's Deploy step has a short **first deployment guide** that points at the
+   city to defend first and ticks steps off as you go. Everything on the theater map can also be
+   done from the keyboard: Tab to the map, move with the arrow keys, Enter to place.
+
    Pick a **tactical scenario** on the campaign card: *Standard*, *Coastal Saturation* (drone
    swarms), *Long Night* (many cruise-missile waves), *High Arc* (ballistic-heavy) or *Thin
    Budget*. **Customize…** opens a builder for wave count and size, threat mix, forecast regions,

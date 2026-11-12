@@ -190,7 +190,8 @@ export function TheaterView({ s }: { s: SimState }) {
         })}
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
+      <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Panel title={`Theater · ${s.regions[region].name}`} right={<Chip t={PROTECTION_TONE[prot.level]}>{prot.level} · {Math.round(prot.coverage * 100)}% covered</Chip>}>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
             {alertActive(s, region) ? (
@@ -245,7 +246,7 @@ export function TheaterView({ s }: { s: SimState }) {
           )}
         </Panel>
 
-        <div className="space-y-2">
+        <div className="grid content-start gap-2 md:grid-cols-2 2xl:grid-cols-1">
           <Panel title="Campaign totals">
             <div className="grid grid-cols-3 gap-2">
               <Stat label="Threats" value={st.tracks} />

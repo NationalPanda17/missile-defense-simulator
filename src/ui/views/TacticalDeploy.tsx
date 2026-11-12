@@ -94,11 +94,12 @@ const KEY_STEP = 10;
  * The theater map. With `onPoint` it is a placement surface (mouse, or keyboard: focus the map, move the cursor with
  * the arrow keys — Shift for bigger steps — and press Enter); without it, a read-only display.
  */
-export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, children }: {
+export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, highlight, children }: {
   s: SimState;
   region: RegionId;
   ghost?: EquipmentSpec | null;
   selectedId: string | null;
+  highlight?: { x: number; y: number; label: string } | null; // e.g. the guide pointing at a site
   onPoint?: (x: number, y: number) => void;
   onPick: (d: Deployment) => void;
   children?: ReactNode; // overlay drawn on top, in km coordinates
@@ -207,6 +208,13 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
         );
       })}
 
+      {highlight && (
+        <g pointerEvents="none" transform={`translate(${highlight.x},${highlight.y})`}>
+          <circle r={18} fill="none" stroke="#f5b13d" strokeWidth={2} className="pulse-ring" />
+          <circle r={16} fill="none" stroke="#f5b13d" strokeWidth={1.5} strokeDasharray="3 3" />
+          <text y={-24} textAnchor="middle" fontSize={11} fill="#f5b13d" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{highlight.label}</text>
+        </g>
+      )}
       {sites.map((site) => (
         <g key={site.id} transform={`translate(${site.x},${site.y})`} pointerEvents="none">
           <SiteIcon type={site.type} color={integrityColor(site.integrity)} />
@@ -264,6 +272,13 @@ export function MapLegend({ region }: { region: RegionId }) {
   );
 }
 
+const DOMAIN_WORD = { ground: 'ground-based', air: 'airborne', sea: 'ship (place at sea)', space: 'space' } as const;
+
+function StatChip({ label, value, tone = 'dim' }: { label: string; value: string; tone?: 'dim' | 'green' | 'amber' }) {
+  const c = tone === 'green' ? 'border-ops-green/40 text-ops-green' : tone === 'amber' ? 'border-ops-amber/40 text-ops-amber' : 'border-ops-line text-ops-text';
+  return <span className={`rounded-sm border px-1 py-px ${c}`}><span className="text-ops-dim">{label} </span>{value}</span>;
+}
+
 function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | null; onSelect: (id: string | null) => void }) {
   const [layer, setLayer] = useState<DefenseLayer | 'all'>('all');
   const layers = Object.keys(LAYER_LABELS) as DefenseLayer[];
@@ -296,10 +311,16 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
                   </span>
                   <span className={`shrink-0 tabular-nums ${short ? 'text-ops-red' : 'text-ops-green'}`}>{cost} cr</span>
                 </div>
-                <div className="truncate text-[10px] text-ops-dim">
-                  {e.origin} · {isEffector(e) ? `range ${e.rangeKm} km · alt ${e.altitudeKm} km` : `detects to ${e.rangeKm} km`}
-                  {e.radar ? ` · ${e.radar.band}-band` : ''}
-                  {isEffector(e) ? ` · ${isUnlimited(e) ? 'unlimited' : `${e.magazine} rds`}` : ''}
+                <div className="truncate text-[10px] text-ops-dim">{e.origin} · {DOMAIN_WORD[e.domain]}</div>
+                <div className="mt-1 flex flex-wrap gap-1 text-[9.5px]">
+                  <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />
+                  {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
+                  {isEffector(e) && <StatChip label="Rounds" value={isUnlimited(e) ? '∞' : String(e.magazine)} />}
+                  {e.radar && <StatChip label="Radar" value={`${e.radar.band}-band`} />}
+                  {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
+                  {e.domain !== 'air' && isEffector(e) && e.rangeKm > TACTICAL_CONFIG.lowAltitude.horizonKm && (
+                    <StatChip label="Low-level" value={`≤${TACTICAL_CONFIG.lowAltitude.horizonKm} km`} tone="amber" />
+                  )}
                 </div>
                 {sel && <p className="mt-1 text-[11px] leading-snug text-ops-text">{e.description}</p>}
                 {isEffector(e) && <div className="mt-1"><KillBars k={e.killRate} /></div>}
@@ -329,6 +350,55 @@ function SiteCoverage({ s, region }: { s: SimState; region: RegionId }) {
   return <ul className="space-y-1.5">{sites.map(row)}</ul>;
 }
 
+const GUIDE_KEY = 'mds.deployGuide.hidden';
+const guideHidden = () => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return false; } };
+const setGuideHidden = (v: boolean) => { try { if (v) localStorage.setItem(GUIDE_KEY, '1'); else localStorage.removeItem(GUIDE_KEY); } catch { /* ignore */ } };
+
+interface GuideStep { id: string; text: string; done: boolean; pick?: string; pickLabel?: string }
+
+/** Steps of the first-deployment guide, ticked off from the actual state. */
+export function guideSteps(s: SimState, region: RegionId): GuideStep[] {
+  const t = s.tactical!;
+  const here = t.deployments.filter((d) => d.region === region);
+  const specOf = (id: string) => EQUIPMENT_MAP.get(id)!;
+  const top = t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0];
+  const coversTop = here.some((d) => {
+    const sp = specOf(d.equipmentId);
+    return (sp.layer === 'shortMedium' || sp.layer === 'long') && top && Math.hypot(d.x - top.x, d.y - top.y) <= Math.min(sp.rangeKm, 60);
+  });
+  const axis = t.waves.find((w) => w.phaseIndex === s.phaseIndex && w.region === region && w.forecast)?.axis;
+  return [
+    { id: 'region', done: t.forecast.includes(region), text: `Open a forecast region (red dot).${axis ? ` Threats here are expected from the ${axis}.` : ''}` },
+    { id: 'cover', done: coversTop, pick: 'iris-t-slm', pickLabel: 'Pick IRIS-T SLM', text: `Put a medium-range system on or near ${top?.name ?? 'the most important city'} (highlighted). Low-flying threats are only engaged within about ${TACTICAL_CONFIG.lowAltitude.horizonKm} km, so keep it close.` },
+    { id: 'close', done: here.some((d) => ['pointDefense', 'directedEnergy'].includes(specOf(d.equipmentId).layer)), pick: 'skynex', pickLabel: 'Pick Skynex', text: 'Add close-in defense against drone swarms at a key site.' },
+    { id: 'sense', done: here.some((d) => specOf(d.equipmentId).layer === 'detection'), pick: 'acoustic-net', pickLabel: 'Pick acoustic sensors', text: 'Add a sensor toward the threat. Cheap acoustic and RF sensors catch low drones that radars miss; airborne radar (E-7) sees past the horizon.' },
+    { id: 'all', done: t.forecast.every((r) => t.deployments.some((d) => d.region === r && isEffector(specOf(d.equipmentId)))), text: 'Do the same in the other forecast region, then begin the phase. During the phase, use the Tactical Theater (X) to resupply, raise alerts and redeploy.' },
+  ];
+}
+
+function DeployGuide({ s, region, onPick, onHide }: { s: SimState; region: RegionId; onPick: (id: string) => void; onHide: () => void }) {
+  const steps = guideSteps(s, region);
+  const next = steps.find((x) => !x.done);
+  return (
+    <div className="rounded border border-ops-amber/40 bg-ops-amber/5 p-2.5 text-[11px]" role="region" aria-label="First deployment guide">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="label text-ops-amber">First deployment guide · {s.regions[region].name}</span>
+        <button className="text-[10px] text-ops-dim underline hover:text-white" onClick={onHide}>Hide guide</button>
+      </div>
+      <ol className="space-y-1">
+        {steps.map((st, i) => (
+          <li key={st.id} className={`flex items-start gap-2 ${st === next ? 'text-white' : st.done ? 'text-ops-dim line-through decoration-ops-dim/50' : 'text-ops-dim'}`}>
+            <span className={`mt-px inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] ${st.done ? 'border-ops-green bg-ops-green/20 text-ops-green' : st === next ? 'border-ops-amber text-ops-amber' : 'border-ops-line'}`}>{st.done ? '✓' : i + 1}</span>
+            <span className="flex-1">{st.text}</span>
+            {st === next && st.pick && <button className="btn shrink-0 px-2 py-0.5" onClick={() => onPick(st.pick!)}>{st.pickLabel}</button>}
+          </li>
+        ))}
+      </ol>
+      {!next && <div className="mt-1.5 text-ops-green">All set. Begin the phase when you're ready.</div>}
+    </div>
+  );
+}
+
 export function DeployPanel({ s }: { s: SimState }) {
   const t = s.tactical!;
   const [region, setRegion] = useState<RegionId>(t.forecast[0] ?? 'NAM');
@@ -340,6 +410,11 @@ export function DeployPanel({ s }: { s: SimState }) {
   const depSpec = dep ? EQUIPMENT_MAP.get(dep.equipmentId)! : null;
   const depAsset = dep ? s.assets.find((a) => a.id === dep.assetId) : undefined;
   const count = (r: RegionId) => t.deployments.filter((d) => d.region === r).length;
+  const [hideGuide, setHideGuide] = useState(guideHidden);
+  const spentNow = s.commands.filter((c) => c.t === s.hour && (c.kind === 'deploy' || c.kind === 'relocate')).reduce((a, c) => a + c.credits, 0);
+  const showGuide = s.phaseIndex === 0 && !hideGuide;
+  const guideTarget = showGuide && !guideSteps(s, region).find((x) => x.id === 'cover')!.done
+    ? t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0] : undefined;
 
   const onPoint = (x: number, y: number) => {
     if (moving && dep) {
@@ -362,6 +437,11 @@ export function DeployPanel({ s }: { s: SimState }) {
         {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
       </div>
 
+      {showGuide && <DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} />}
+      {!showGuide && s.phaseIndex === 0 && (
+        <button className="text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
+      )}
+
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => (
           <button key={r} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelectedDep(null); setMoving(false); }}>
@@ -376,11 +456,15 @@ export function DeployPanel({ s }: { s: SimState }) {
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1">
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
+            highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
             onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
-            <span className="tabular-nums text-white">Credits <span className="text-ops-green">{Math.round(s.credits)}</span></span>
+            <span className="tabular-nums text-white">
+              Credits <span className="text-ops-green">{Math.round(s.credits)}</span>
+              {spentNow > 0 && <span className="ml-2 text-ops-dim">spent this briefing {spentNow}</span>}
+            </span>
           </div>
           {dep && depSpec && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-cyan/40 p-2">
