@@ -363,6 +363,7 @@ export interface ThreatWave {
   applied?: boolean; // false while damage is pending impact; absent in older saves (applied with resolution)
   axis: ThreatAxis;
   forecast: boolean; // whether the briefing forecast this region
+  conditions?: { night: boolean; storm: boolean }; // weather and daylight when it launched
   tracks: Track[];
   resolved: boolean;
 }

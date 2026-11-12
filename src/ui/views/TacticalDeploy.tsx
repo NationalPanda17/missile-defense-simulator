@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, previewDefense, stockpileRules, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  equipmentCost, isEffector, isUnlimited, previewDefense, stockpileRules, stormWindows, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -167,6 +167,17 @@ const CLASS_ADVICE: Record<ThreatClass, string> = {
   ballistic: 'ballistic missiles: only upper-tier or long-range systems reach them (Patriot PAC-3, THAAD, Arrow, SM-3/SM-6)',
 };
 
+/** The phase's storms and nights in a region, in one line. */
+function weatherOutlook(s: SimState, region: RegionId): string {
+  const phase = s.phases[s.phaseIndex];
+  const from = s.status === 'running' ? s.phaseStartHour : s.hour;
+  const storms = stormWindows(s, region, from, from + phase.hours);
+  const st = storms.length
+    ? `storms T+${storms.slice(0, 3).map(([a, b]) => `${a}–${b}h`).join(', ')}${storms.length > 3 ? '…' : ''} (sensors at 60% range)`
+    : 'no storms expected';
+  return `Weather: ${st}. Nights run 20:00–05:00 local; some raids are timed for the dark, when Stinger, Avenger and ZU-23-2 are less accurate.`;
+}
+
 /** Forecast check: the expected threats in this region and how the current layout would do against them. */
 function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   const t = s.tactical!;
@@ -190,6 +201,7 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
       </summary>
       <ul className="mt-1 space-y-0.5 text-ops-dim">
         {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
+        <li>▸ {weatherOutlook(s, region)}</li>
       </ul>
       <div className="mt-1 text-[10px] text-ops-dim">
         An estimate from replaying the forecast waves against your layout many times. Luck matters: the real result can land anywhere in the likely range, and sometimes outside it. Surprise attacks are not included.

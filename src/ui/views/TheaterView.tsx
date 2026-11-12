@@ -5,8 +5,7 @@ import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
-  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track,
-} from '../../engine';
+  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
 import { CLASS_SHORT, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
@@ -137,6 +136,27 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
   );
 }
 
+/** " · at night · in a storm", for a wave's launch conditions. */
+function wxNote(s: SimState, w: ThreatWave): string {
+  const c = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
+  return `${c.night ? ' · at night' : ''}${c.storm ? ' · in a storm' : ''}`;
+}
+
+/** Day or night and any storm in a theater now, with what they change. */
+function ConditionChips({ s, region }: { s: SimState; region: RegionId }) {
+  const c = conditionsAt(s, region, s.hour);
+  const h = Math.floor(localHour(s, region, s.hour));
+  return (
+    <span className="flex flex-wrap items-center gap-1 text-[10px]">
+      <span className={`chip ${c.night ? 'border-ops-violet/50 text-ops-violet' : 'border-ops-line text-ops-dim'}`}
+        title={c.night ? 'Night: Stinger, Avenger and ZU-23-2 (aimed by eye or infrared) are 25% less accurate' : 'Daylight'}>
+        {c.night ? '☾ night' : '☀ day'} {String(h).padStart(2, '0')}:00 local
+      </span>
+      {c.storm && <span className="chip border-ops-amber/60 text-ops-amber" title="Storm: sensors see only 60% of their normal range">⛈ storm · sensors −40%</span>}
+    </span>
+  );
+}
+
 export function TheaterView({ s }: { s: SimState }) {
   const ui = useUI();
   const t = s.tactical;
@@ -196,7 +216,7 @@ export function TheaterView({ s }: { s: SimState }) {
             <button key={wave.id} className="chip blink border-ops-red/60 bg-ops-red/15 px-3 py-1 text-[11px] text-ops-red" onClick={() => setRegion(wave.region)}>
               {launched
                 ? `⚠ In flight: ${s.regions[wave.region].name} from the ${wave.axis}, impact ${eta <= 0 ? 'now' : `~${eta}h`}`
-                : `⚠ Launch expected: ${s.regions[wave.region].name} from the ${wave.axis}, ${launchIn <= 0 ? 'now' : `~${launchIn}h`}`}
+                : `⚠ Launch expected: ${s.regions[wave.region].name} from the ${wave.axis}, ${launchIn <= 0 ? 'now' : `~${launchIn}h`}${wxNote(s, wave)}`}
             </button>
           ))}
         </>)}
@@ -215,7 +235,7 @@ export function TheaterView({ s }: { s: SimState }) {
 
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Panel title={`Theater · ${s.regions[region].name}`} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
+        <Panel title={<span className="flex flex-wrap items-center gap-2">Theater · {s.regions[region].name} <ConditionChips s={s} region={region} /></span>} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
           {inbound.some((x) => x.wave.region === region) && (
             <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
               <div className="label text-ops-red">Wave inbound · what you can do now</div>

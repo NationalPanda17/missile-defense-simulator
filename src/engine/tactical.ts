@@ -8,6 +8,7 @@ import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
 import { LESSON_MAP, type ScriptedWave } from './training';
+import { WEATHER, conditionsAt, hash01, nextNightHour } from './weather';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -211,8 +212,12 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     const j = Math.floor(rand(t) * (i + 1));
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
-  for (const [k, atHour] of hours.entries()) {
+  for (const [k, scheduled] of hours.entries()) {
     const { region, surprise } = targets[k];
+    // Some raids are timed to arrive in the dark (decided from the seed, not the game's random stream).
+    let atHour = scheduled;
+    // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the night.
+    if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = Math.min(last, nextNightHour(s, region, scheduled) + 3);
     const axis = AXES[Math.floor(rand(t) * AXES.length)];
     const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
     const tracks: Track[] = [];
@@ -430,13 +435,16 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const working = deps.filter((d) => { const a = assetOf(d); return !!a && availability(s, a) > 0; });
 
   // Airborne early warning sees low threats beyond the horizon and over terrain, and cues surface systems.
+  // Weather and daylight when the wave launches (when its outcome is decided).
+  const wx = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
+  const sense = wx.storm ? WEATHER.stormDetection : 1;
   const cued = isLowFlying(tr.cls) && working.some((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return spec.domain === 'air' && reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls), true) > 0;
+    return spec.domain === 'air' && reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * sense, true) > 0;
   });
   const seen = cued || working.some((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls), false) > 0;
+    return reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * sense, false) > 0;
   });
   const alert = alertActive(s, w.region);
   const A = TACTICAL_CONFIG.alert;
@@ -489,7 +497,8 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       firedHere++;
       tr.shots += 1;
       t.stats.shots += 1;
-      if (rand(t) < spec.killRate[tr.cls] * avail * detection * commsF) {
+      const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
+      if (rand(t) < spec.killRate[tr.cls] * avail * detection * commsF * dark) {
         stopped = true;
         tr.stoppedBy = d.id;
         // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
@@ -582,6 +591,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
     if (tr) w.tracks.push(tr);
   }
   const deps = t.deployments.filter((d) => d.region === w.region);
+  w.conditions = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
   for (const tr of w.tracks) {
     tr.launchAt = w.atHour - TACTICAL_CONFIG.flightHours[tr.cls];
     resolveTrack(s, t, w, tr, deps);
