@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, type AppOptions } from '../server/app';
 import { hashPassword, verifyPassword } from '../server/auth';
 import { createPool, migrate } from '../server/db';
-import { createInitialState, defaultSettings, execute, type SimState } from '../src/engine';
+import { TACTICAL_PRESETS, createInitialState, defaultSettings, execute, type SimState } from '../src/engine';
 import { startEmbedded } from '../scripts/dev-db';
 
 let pool: pg.Pool;
@@ -268,6 +268,53 @@ describe('persistence API (signed in)', () => {
     execute(s, { type: 'advance', hours: 10 });
     execute(loaded, { type: 'advance', hours: 10 });
     expect(loaded.metrics.globalReadiness).toBeCloseTo(s.metrics.globalReadiness, 9);
+  });
+
+  it('round-trips a campaign with tactical deployments, waves and a scenario', async () => {
+    const a = await signedUp(base);
+    const tactical = TACTICAL_PRESETS.find((p) => p.id === 'long-night')!.settings;
+    const s = createInitialState(defaultSettings('campaign', { seed: 77, tactical }));
+    s.campaignId = randomUUID();
+    for (const r of s.tactical!.forecast) {
+      expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: r, x: 300, y: 200 }).ok).toBe(true);
+    }
+    execute(s, { type: 'beginPhase' });
+    execute(s, { type: 'advance', hours: 40 });
+    expect(s.tactical!.waves.some((w) => w.resolved)).toBe(true);
+    const dep = s.tactical!.deployments[0];
+    expect(execute(s, { type: 'resupply', deploymentId: dep.id }).ok || dep.stock === 18).toBe(true);
+
+    expect((await a.call('PUT', '/saves/slot3', { v: 1, state: s })).status).toBe(200);
+    const got = await a.call('GET', '/saves/slot3');
+    expect(got.body.state).toEqual(JSON.parse(JSON.stringify(s)));
+    const loaded = got.body.state as SimState;
+    expect(loaded.settings.tactical).toEqual(tactical);
+    execute(s, { type: 'advance', hours: 60 });
+    execute(loaded, { type: 'advance', hours: 60 });
+    expect(loaded.tactical!.stats).toEqual(s.tactical!.stats);
+    expect(loaded.tactical!.sites.map((x) => x.integrity)).toEqual(s.tactical!.sites.map((x) => x.integrity));
+
+    const [c] = (await a.call('GET', '/campaigns')).body;
+    const detail = (await a.call('GET', `/campaigns/${c.id}`)).body;
+    expect(detail.scoreComponents.protection).toEqual(expect.any(Number));
+  });
+
+  it('rejects malformed tactical state', async () => {
+    const a = await signedUp(base);
+    const s = playedState(2);
+    s.tactical!.deployments.push({ id: 'x', equipmentId: 'not-real', assetId: 'TAC-1', region: 'EUR', x: 10, y: 10, stock: 1, deployedAt: 0 });
+    expect((await a.call('PUT', '/saves/slot1', { v: 1, state: s })).status).toBe(422);
+    const t = playedState(2);
+    (t.settings as unknown as { tactical: string }).tactical = 'nope';
+    expect((await a.call('PUT', '/saves/slot1', { v: 1, state: t })).status).toBe(422);
+  });
+
+  it('accepts saves from before the tactical layer', async () => {
+    const a = await signedUp(base);
+    const s = playedState(5);
+    delete s.tactical;
+    expect((await a.call('PUT', '/saves/slot2', { v: 1, state: s })).status).toBe(200);
+    expect((await a.call('GET', '/saves/slot2')).body.state.tactical).toBeUndefined(); // the client fills it in on load
   });
 
   it('keeps users isolated, including campaign ids', async () => {
