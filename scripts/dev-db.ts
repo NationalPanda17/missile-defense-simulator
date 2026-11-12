@@ -1,7 +1,7 @@
 // Runs a real PostgreSQL server from node_modules (embedded-postgres) for local development.
 // Data persists in ./.pgdata. Ctrl+C stops it. Not needed if you already have PostgreSQL — set DATABASE_URL instead.
 import { existsSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
@@ -51,27 +51,16 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
  */
 function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): { stop: () => Promise<void> } {
   const bin = path.join(nativePackageDir(createRequire(import.meta.url)), 'native', 'bin', 'pg_ctl.exe');
-  const run = (args: string[]) => {
-    try {
-      return execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    } catch (e) {
-      const err = e as { stdout?: string; stderr?: string; message: string };
-      keep(`pg_ctl: ${err.message}`);
-      keep(err.stdout ?? '');
-      keep(err.stderr ?? '');
-      throw new Error('pg_ctl failed');
-    }
-  };
   const logFile = path.join(dir, 'server.log');
-  try {
-    run(['start', '-D', dir, '-o', `-p ${port}`, '-l', logFile, '-w', '-t', '60']);
-  } catch (e) {
+  // stdio must not be piped: the server pg_ctl starts inherits the pipes and would hold them open forever.
+  const run = (args: string[]) => spawnSync(bin, args, { stdio: 'ignore', windowsHide: true, timeout: 90_000 });
+  const r = run(['start', '-D', dir, '-o', `-p ${port}`, '-l', logFile, '-w', '-t', '60']);
+  if (r.status !== 0) {
+    keep(`pg_ctl start exited with ${r.status ?? r.error?.message ?? 'a timeout'}`);
     try { keep(readFileSync(logFile, 'utf8').split(/\r?\n/).slice(-15).join('\n')); } catch { /* no log yet */ }
-    throw e;
+    throw new Error('pg_ctl failed');
   }
-  return {
-    stop: async () => { try { run(['stop', '-D', dir, '-m', 'fast', '-w']); } catch { /* already stopped */ } },
-  };
+  return { stop: async () => { run(['stop', '-D', dir, '-m', 'fast', '-w', '-t', '30']); } };
 }
 
 /** The binary package ships its dylib symlinks as a JSON manifest; recreate them if npm skipped its postinstall. */
