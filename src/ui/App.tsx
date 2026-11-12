@@ -10,6 +10,7 @@ import { CampaignView, ScenarioEditor } from './views/CampaignViews';
 import { DomainView } from './views/DomainView';
 import { GlobalOps } from './views/GlobalOps';
 import { CommsView, InfraView, IntelView, LogisticsView } from './views/StaffViews';
+import { TheaterView } from './views/TheaterView';
 
 export default function App() {
   return (
@@ -89,6 +90,7 @@ function Root() {
   const view = (() => {
     switch (ui.view) {
       case 'global': return <GlobalOps s={s} />;
+      case 'theater': return <TheaterView s={s} />;
       case 'space': case 'air': case 'sea': case 'ground': return <DomainView s={s} domain={ui.view} />;
       case 'intel': return <IntelView s={s} />;
       case 'comms': return <CommsView s={s} />;

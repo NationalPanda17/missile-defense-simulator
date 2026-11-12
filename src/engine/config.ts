@@ -224,7 +224,7 @@ export const TACTICAL_CONFIG = {
   unseenDetection: 0.45,
   /** Magazine size treated as unlimited (jammers, lasers, microwave). */
   unlimitedMagazine: 999,
-  /** Share of forecast waves that strike a region outside the forecast. */
+  /** Chance each wave beyond one per forecast region strikes a region outside the forecast. */
   surpriseRate: 0.2,
   /** Waves per campaign phase (by phase index): count, tracks per wave and threat mix weights. */
   waves: [
@@ -235,4 +235,8 @@ export const TACTICAL_CONFIG = {
   ] as { count: number; tracks: [number, number]; mix: Record<ThreatClass, number> }[],
   /** Regions named in each briefing's forecast. */
   forecastRegions: 2,
+  /** Warning before a wave arrives: base hours plus extra hours at full regional awareness. */
+  warningHours: { base: 2, atFullAwareness: 6 },
+  /** Share of a region's site value that must be covered to count as protected, or thin. */
+  protection: { protected: 0.7, thin: 0.3 },
 };

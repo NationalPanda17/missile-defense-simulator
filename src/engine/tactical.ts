@@ -3,7 +3,7 @@
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
 import { SIM_CONFIG, TACTICAL_CONFIG } from './config';
-import { EQUIPMENT_MAP, isEffector, type EquipmentSpec } from './equipment';
+import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import type {
@@ -156,14 +156,21 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const last = start + phase.hours - 2;
   if (last <= first) return;
   const hours = Array.from({ length: profile.count }, () => first + Math.floor(rand(t) * (last - first + 1))).sort((a, b) => a - b);
+  // Every forecast region gets one wave first; only the extra waves can strike elsewhere. A forecast that never
+  // comes true would teach players to ignore it. The assignments are shuffled so the timing gives nothing away.
   const others = REGION_IDS.filter((r) => !t.forecast.includes(r));
-  // Forecast regions take turns (in random order), so every forecast region sees at least one wave when there are
-  // enough waves. A forecast that never comes true would teach players to ignore it.
-  const order = [...t.forecast].sort(() => rand(t) - 0.5);
-  let next = 0;
-  for (const atHour of hours) {
-    const surprise = others.length > 0 && rand(t) < TACTICAL_CONFIG.surpriseRate;
-    const region = surprise ? others[Math.floor(rand(t) * others.length)] : order[next++ % order.length];
+  const targets: { region: RegionId; surprise: boolean }[] = [];
+  for (let i = 0; i < hours.length; i++) {
+    if (i < t.forecast.length) targets.push({ region: t.forecast[i], surprise: false });
+    else if (others.length && rand(t) < TACTICAL_CONFIG.surpriseRate) targets.push({ region: others[Math.floor(rand(t) * others.length)], surprise: true });
+    else targets.push({ region: t.forecast[Math.floor(rand(t) * t.forecast.length)], surprise: false });
+  }
+  for (let i = targets.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(t) * (i + 1));
+    [targets[i], targets[j]] = [targets[j], targets[i]];
+  }
+  for (const [k, atHour] of hours.entries()) {
+    const { region, surprise } = targets[k];
     const axis = AXES[Math.floor(rand(t) * AXES.length)];
     const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
     const tracks: Track[] = [];
@@ -322,6 +329,56 @@ export function tickTactical(s: SimState) {
   for (const w of t.waves) {
     if (!w.resolved && w.atHour === s.hour) resolveWave(s, t, w);
   }
+}
+
+// ── Read-only helpers for the UI ─────────────────────────────────────────
+
+/** Credits to refill a deployment's magazine: a share of its cost, in proportion to the rounds missing. */
+export function resupplyCost(d: Deployment): number {
+  const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+  if (isUnlimited(spec) || spec.magazine <= 0) return 0;
+  return Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (1 - d.stock / spec.magazine));
+}
+
+export type ProtectionLevel = 'protected' | 'thin' | 'exposed';
+
+/** Can this deployment engage right now (available, with rounds left)? */
+export function canEngage(s: SimState, d: Deployment): boolean {
+  const spec = EQUIPMENT_MAP.get(d.equipmentId);
+  const asset = s.assets.find((a) => a.id === d.assetId);
+  if (!spec || !asset || !isEffector(spec)) return false;
+  return availability(s, asset) > 0 && (isUnlimited(spec) || d.stock > 0);
+}
+
+/** Share of a region's remaining site value within range of at least one system able to engage. */
+export function regionProtection(s: SimState, region: RegionId): { coverage: number; level: ProtectionLevel } {
+  const t = s.tactical;
+  const sites = t?.sites.filter((x) => x.region === region && x.integrity > 0) ?? [];
+  const total = sites.reduce((a, x) => a + x.importance, 0);
+  if (!t || !total) return { coverage: 0, level: 'exposed' };
+  const ready = t.deployments.filter((d) => d.region === region && canEngage(s, d));
+  const covered = sites
+    .filter((x) => ready.some((d) => Math.hypot(d.x - x.x, d.y - x.y) <= EQUIPMENT_MAP.get(d.equipmentId)!.rangeKm))
+    .reduce((a, x) => a + x.importance, 0);
+  const coverage = covered / total;
+  const { protected: p, thin } = TACTICAL_CONFIG.protection;
+  return { coverage, level: coverage >= p ? 'protected' : coverage >= thin ? 'thin' : 'exposed' };
+}
+
+/** Hours of warning before a wave reaches a region; better awareness gives earlier warning. */
+export function warningHours(s: SimState, region: RegionId): number {
+  const { base, atFullAwareness } = TACTICAL_CONFIG.warningHours;
+  return Math.round(base + atFullAwareness * (s.regions[region].awareness / 100));
+}
+
+/** Unresolved waves of the current phase that are inside their region's warning window. */
+export function incomingWaves(s: SimState): { wave: ThreatWave; eta: number }[] {
+  const t = s.tactical;
+  if (!t?.enabled || s.status !== 'running') return [];
+  return t.waves
+    .filter((w) => !w.resolved && w.phaseIndex === s.phaseIndex && w.atHour - s.hour <= warningHours(s, w.region))
+    .map((wave) => ({ wave, eta: wave.atHour - s.hour }))
+    .sort((a, b) => a.eta - b.eta);
 }
 
 // ── Deployment helpers (called from actions.ts) ─────────────────────────

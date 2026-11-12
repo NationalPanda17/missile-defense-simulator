@@ -1,6 +1,6 @@
 // Top bar, left navigation, right sidebar and bottom panel.
 import { useState } from 'react';
-import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -83,6 +83,7 @@ function TopMetric({ label, v }: { label: string; v: number }) {
 
 export const NAV: { id: ViewId; label: string; icon: string; key: string; group?: string }[] = [
   { id: 'global', label: 'Global Operations', icon: '◎', key: 'G', group: 'Command' },
+  { id: 'theater', label: 'Tactical Theater', icon: '◇', key: 'X' },
   { id: 'space', label: 'Space Command', icon: '⊟', key: 'S', group: 'Domains' },
   { id: 'air', label: 'Air Command', icon: '▲', key: 'A' },
   { id: 'sea', label: 'Maritime Command', icon: '⏢', key: 'M' },
@@ -100,9 +101,10 @@ export function LeftNav({ s }: { s: SimState }) {
   const ui = useUI();
   const domainStat = (id: ViewId) => (DOMAINS as string[]).includes(id) ? s.metrics.domainEffective[id as keyof typeof s.metrics.domainEffective] : null;
   const activeCount = s.events.filter((e) => isActive(e) && isKnown(s, e)).length;
+  const inbound = incomingWaves(s).length;
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-ops-line bg-ops-panel/70 p-1.5 lg:w-56 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:border-b-0 lg:border-r lg:p-2" aria-label="Main navigation">
-      {NAV.map((n) => {
+      {NAV.filter((n) => n.id !== 'theater' || s.tactical?.enabled).map((n) => {
         const v = domainStat(n.id);
         const act = ui.view === n.id;
         return (
@@ -114,6 +116,7 @@ export function LeftNav({ s }: { s: SimState }) {
               <span className="flex-1 whitespace-nowrap">{n.label}</span>
               {v !== null && <span className={`hidden tabular-nums lg:inline ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</span>}
               {n.id === 'intel' && activeCount > 0 && <span className="hidden rounded bg-ops-red/20 px-1 text-ops-red lg:inline">{activeCount}</span>}
+              {n.id === 'theater' && inbound > 0 && <span className="blink rounded bg-ops-red/20 px-1 text-ops-red">{inbound}</span>}
               <kbd className="hidden text-[9px] text-ops-dim opacity-0 group-hover:opacity-100 lg:inline">{n.key}</kbd>
             </button>
           </div>

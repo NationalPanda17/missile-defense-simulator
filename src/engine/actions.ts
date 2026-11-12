@@ -2,7 +2,7 @@
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine';
 import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
-import { addDeployment, ensureTactical, insideTheater, isUnlimited, removeDeployment, theaterToLonLat } from './tactical';
+import { addDeployment, ensureTactical, insideTheater, isUnlimited, removeDeployment, resupplyCost, theaterToLonLat } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import type { Domain, RegionId, SimState, SpendCategory } from './types';
@@ -273,7 +273,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (d.reloadRemaining !== undefined) return fail('A resupply is already underway.');
       if (d.stock >= spec.magazine) return fail('Magazine is already full.');
       if (s.logistics < TACTICAL_CONFIG.minLogisticsForResupply) return fail('Logistics capacity is too low to resupply.');
-      const cost = Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (1 - d.stock / spec.magazine));
+      const cost = resupplyCost(d);
       const err = canAfford(s, cost, 0, 0);
       if (err) return fail(err);
       spend(s, cost, 0, 'maintenance');
