@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
   TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
+  tacticalReport, lessonsLearned,
 } from '../src/engine';
 import type { SimState } from '../src/engine';
 
@@ -129,12 +130,18 @@ describe('tactical layer: state and saves', () => {
     for (const site of t.sites) expect(site.integrity).toBe(100);
   });
 
-  it('is switched off by default, so campaigns play exactly as before', () => {
-    expect(TACTICAL_CONFIG.enabledInCampaign).toBe(false);
-    const s = runCampaign(passive, 11);
-    expect(s.tactical!.enabled).toBe(false);
-    expect(s.tactical!.waves).toEqual([]);
-    expect(s.assets.some((a) => a.role === 'defense')).toBe(false);
+  it('is on in campaigns by default, and switching it off restores the old game', () => {
+    expect(TACTICAL_CONFIG.enabledInCampaign).toBe(true);
+    TACTICAL_CONFIG.enabledInCampaign = false;
+    try {
+      const s = runCampaign(passive, 11);
+      expect(s.tactical!.enabled).toBe(false);
+      expect(s.tactical!.waves).toEqual([]);
+      expect(s.assets.some((a) => a.role === 'defense')).toBe(false);
+      expect(computeScore(s).components.protection).toBeUndefined();
+    } finally {
+      TACTICAL_CONFIG.enabledInCampaign = true;
+    }
   });
 
   it('loads a save made before the tactical layer', () => {
@@ -168,7 +175,6 @@ describe('tactical layer: state and saves', () => {
 
 describe('tactical layer: engine', () => {
   beforeAll(() => { TACTICAL_CONFIG.enabledInCampaign = true; });
-  afterAll(() => { TACTICAL_CONFIG.enabledInCampaign = false; });
 
   const centroid = (s: SimState, r: string) => {
     const sites = s.tactical!.sites.filter((x) => x.region === r);
@@ -365,6 +371,38 @@ describe('tactical layer: engine', () => {
     const inbound = incomingWaves(s);
     expect(inbound[0].wave.id).toBe(w.id);
     expect(inbound[0].eta).toBe(1);
+  });
+
+  it('scores protection, and a sensible defense beats ignoring the tactical layer', () => {
+    for (const seed of [2, 3, 7, 9, 13]) {
+      const ignored = runTactical(seed, false);
+      const defended = runTactical(seed, true);
+      const a = computeScore(ignored);
+      const b = computeScore(defended);
+      expect(a.components.protection, `seed ${seed}`).toBe(0);
+      expect(b.components.protection!, `seed ${seed}`).toBeGreaterThan(50);
+      expect(b.total, `seed ${seed}`).toBeGreaterThan(a.total);
+      const w = Object.values(b.weights).reduce((x, y) => x + y!, 0);
+      expect(w).toBeCloseTo(1, 9);
+    }
+  });
+
+  it('scores other modes on management alone', () => {
+    const s = createInitialState(defaultSettings('crisis', { seed: 3 }));
+    const sc = computeScore(s);
+    expect(sc.components.protection).toBeUndefined();
+    expect(Object.values(sc.weights).reduce((x, y) => x + y!, 0)).toBeCloseTo(1, 9);
+  });
+
+  it('reports tactical results for the AAR', () => {
+    const s = runTactical(7, true);
+    const r = tacticalReport(s)!;
+    expect(r.stopRate).toBeCloseTo(s.tactical!.stats.stopped / s.tactical!.stats.tracks, 9);
+    expect(r.byPhase.reduce((a, p) => a + p.tracks, 0)).toBe(s.tactical!.stats.tracks);
+    expect(r.byRegion.reduce((a, p) => a + p.stopped, 0)).toBe(s.tactical!.stats.stopped);
+    expect(r.kills.reduce((a, k) => a + k.kills, 0)).toBe(s.tactical!.stats.stopped);
+    expect(r.undefendedForecastWaves).toBe(0); // the policy defends every forecast region
+    expect(lessonsLearned(s).some((l) => l.text.includes('Tactical defenses stopped') || l.text.includes('threats were stopped'))).toBe(true);
   });
 
   it('measures the part of a path inside a circle', () => {

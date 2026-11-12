@@ -365,7 +365,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
 export function HelpModal() {
   const ui = useUI();
   const keys: [string, string][] = [
-    ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', 'Advance one turn (6h)'], ['G S A M D', 'Global · Space · Air · Maritime · Ground'],
+    ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', 'Advance one turn (6h)'], ['G S A M D', 'Global · Space · Air · Maritime · Ground'], ['X', 'Tactical Theater (campaign)'],
     ['I C L F', 'Intelligence · Comms · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-action review'],
     ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Toggle bottom panel'], ['Esc', 'Close window / deselect region'], ['?', 'This help'],
   ];
@@ -391,6 +391,7 @@ const STEPS: { title: string; view: ViewId; text: string }[] = [
   { title: 'Information quality', view: 'intel', text: 'Reports arrive with a confidence level: UNVERIFIED, POSSIBLE, PROBABLE or CONFIRMED. In this scenario a report from South America is spurious. Open it and Task confirmation to expose it rather than wasting a response.' },
   { title: 'Event response', view: 'global', text: 'Open the Sensor Calibration Drift event in Europe from the Active Events list. Compare responses by cost, duration and success chance, then Execute one. Monitor Only buys time once, but effects keep accumulating.' },
   { title: 'Resource management', view: 'logistics', text: 'Credits come from regional stability; upkeep is continuous. Crews limit simultaneous maintenance and crew-based responses. Schedule maintenance for overdue assets and consider long-term investments — they compound over a campaign.' },
+  { title: 'Tactical defense', view: 'theater', text: 'In the campaign, each briefing forecasts the regions where threat waves will strike. Use the briefing’s Deploy defenses step to place real air defense systems on each region’s theater map, then watch waves play out here in the Tactical Theater (X). Keep systems maintained and resupplied: threat protection is 15% of the campaign score.' },
   { title: 'Communications resilience', view: 'comms', text: 'Network health feeds every domain. The Network Resilience Program permanently reduces the impact of communications disruptions. Watch the relay degradation event in Africa and respond before it spreads.' },
   { title: 'After-action review', view: 'aar', text: 'The AAR is available any time and is generated in full at scenario end: score breakdown, domain and regional performance, decisions, expenditures, unresolved issues and lessons learned. Complete the training objectives on the Campaign page to finish.' },
 ];

@@ -164,6 +164,7 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
   },
 ];
 
+/** Weights of the management score components (sum to 1). */
 export const SCORE_WEIGHTS = {
   readiness: 0.18,
   network: 0.13,
@@ -175,13 +176,18 @@ export const SCORE_WEIGHTS = {
   recovery: 0.1,
 };
 
+/**
+ * When the tactical layer is active, protection takes this share of the score and the management components share
+ * the rest in their usual proportions. Other modes are scored on management alone.
+ */
+export const PROTECTION_SCORE_WEIGHT = 0.15;
+/** Efficiency points lost per false track that drew fire (capped). */
+export const DECOY_EFFICIENCY_PENALTY = { perShot: 0.5, max: 10 };
+
 /** Tactical layer tuning. Real equipment figures live in equipment.ts; these are the game's own choices. */
 export const TACTICAL_CONFIG = {
-  /**
-   * Feature flag: turns the tactical layer on for new and loaded campaigns. Off until the deployment screen ships,
-   * so live players never face waves they have no way to defend against.
-   */
-  enabledInCampaign: false,
+  /** Turns the tactical layer on for new and loaded campaigns. A browser can opt out with ?tactical=0. */
+  enabledInCampaign: true,
   /** Credits = creditsScale × (unit cost in $M) ^ costExponent, at least minCost. Compresses a 0.1–2200 $M spread. */
   creditsScale: 4,
   costExponent: 0.5,

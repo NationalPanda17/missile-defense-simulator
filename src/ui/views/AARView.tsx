@@ -1,12 +1,18 @@
 import {
-  DOMAINS, REGION_IDS, SCORE_WEIGHTS, TEMPLATE_MAP, computeScore, isActive, lessonsLearned, type CommandEntry, type SimState,
+  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, isActive, lessonsLearned, tacticalReport,
+  type CommandEntry, type ScoreKey, type SimState,
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
-const LABELS: Record<keyof typeof SCORE_WEIGHTS, string> = {
+const LABELS: Record<ScoreKey, string> = {
   readiness: 'Global readiness', network: 'Network reliability', stability: 'Regional stability', response: 'Event response',
   infrastructure: 'Infrastructure preservation', efficiency: 'Resource efficiency', information: 'Information quality', recovery: 'Recovery performance',
+  protection: 'Threat protection',
+};
+const SHORT: Record<ScoreKey, string> = {
+  readiness: 'Readiness', network: 'Network', stability: 'Stability', response: 'Response', infrastructure: 'Infrastructure',
+  efficiency: 'Efficiency', information: 'Info quality', recovery: 'Recovery', protection: 'Protection',
 };
 
 function verdict(s: SimState, c: CommandEntry): { tone: 'green' | 'red' | 'dim' | 'amber'; text: string } {
@@ -22,6 +28,8 @@ function verdict(s: SimState, c: CommandEntry): { tone: 'green' | 'red' | 'dim' 
   if (c.kind === 'monitor' && e) return e.status === 'escalated' ? { tone: 'amber', text: 'Delayed action; escalated' } : { tone: 'dim', text: 'Bought time' };
   if (c.kind === 'invest') return { tone: 'green', text: 'Long-term investment' };
   if (c.kind === 'maintain') return { tone: 'green', text: 'Preventive upkeep' };
+  if (c.kind === 'deploy') return { tone: 'green', text: 'Tactical deployment' };
+  if (c.kind === 'resupply') return { tone: 'green', text: 'Kept magazines full' };
   return { tone: 'dim', text: '' };
 }
 
@@ -36,6 +44,8 @@ export function AARView({ s }: { s: SimState }) {
   const decisions = s.commands.filter((c) => c.category !== 'control');
   const spendTotal = Object.values(s.spendByCategory).reduce((a, b) => a + b, 0);
   const first = s.history[0];
+  const tactical = tacticalReport(s);
+  const tStats = s.tactical?.stats;
 
   return (
     <div className="grid gap-2 xl:grid-cols-3">
@@ -46,11 +56,11 @@ export function AARView({ s }: { s: SimState }) {
             <div className="font-sans text-6xl font-bold leading-none text-ops-cyan">{score.total.toFixed(1)}</div>
             <div className="font-sans text-2xl font-bold text-white">GRADE {score.grade}</div>
           </div>
-          <div className="grid flex-1 grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-4">
-            {(Object.keys(SCORE_WEIGHTS) as (keyof typeof SCORE_WEIGHTS)[]).map((k) => (
+          <div className="grid min-w-[16rem] flex-1 grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3">
+            {(Object.keys(score.weights) as ScoreKey[]).map((k) => (
               <div key={k}>
-                <div className="flex justify-between text-[10px]"><span className="label">{LABELS[k]} · {Math.round(SCORE_WEIGHTS[k] * 100)}%</span><span className={TONE_TEXT[tone(score.components[k])]}>{Math.round(score.components[k])}</span></div>
-                <Bar value={score.components[k]} height={5} />
+                <div className="flex justify-between gap-1 text-[10px]"><span className="label truncate tracking-[0.06em]" title={`${LABELS[k]}: ${Math.round(score.weights[k]! * 100)}% of the score`}>{SHORT[k]} · {Math.round(score.weights[k]! * 100)}%</span><span className={`shrink-0 tabular-nums ${TONE_TEXT[tone(score.components[k]!)]}`}>{Math.round(score.components[k]!)}</span></div>
+                <Bar value={score.components[k]!} height={5} />
               </div>
             ))}
           </div>
@@ -79,6 +89,68 @@ export function AARView({ s }: { s: SimState }) {
           ))}
         </ul>
       </Panel>
+
+      {tactical && (
+        <Panel className="xl:col-span-3" title="Tactical Defense">
+          <div className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
+            <div className="grid grid-cols-2 content-start gap-3">
+              <Stat label="Threats" value={tStats!.tracks} />
+              <Stat label="Stopped" value={tactical.stopRate === null ? '—' : `${Math.round(tactical.stopRate * 100)}%`} t={tactical.stopRate === null ? undefined : tone(tactical.stopRate * 100)} />
+              <Stat label="Got through" value={tStats!.leaked} t={tStats!.leaked ? 'red' : 'green'} />
+              <Stat label="Site damage" value={tStats!.siteDamage} t={tStats!.siteDamage ? 'amber' : 'green'} />
+              <Stat label="Shots" value={tStats!.shots} />
+              <Stat label="Decoys hit" value={tStats!.decoysEngaged} t={tStats!.decoysEngaged >= 5 ? 'amber' : undefined} sub="wasted shots" />
+              <Stat label="Surprise waves" value={tactical.surpriseWaves} />
+              <Stat label="Unopposed" value={tactical.undefendedForecastWaves} t={tactical.undefendedForecastWaves ? 'red' : 'green'} sub="forecast waves, no shots" />
+            </div>
+            <div className="min-w-0">
+              <div className="label mb-1">By region</div>
+              <div className="overflow-x-auto">
+              <table className="table-ops w-full">
+                <thead><tr><th>Region</th><th>Deployed</th><th>Waves</th><th>Stopped</th><th>Damage</th></tr></thead>
+                <tbody>
+                  {tactical.byRegion.filter((r) => r.waves || r.deployments).map((r) => (
+                    <tr key={r.region}>
+                      <td className="text-white">{s.regions[r.region].short}</td><td>{r.deployments}</td><td>{r.waves}</td>
+                      <td className={r.tracks ? TONE_TEXT[tone((r.stopped / r.tracks) * 100)] : ''}>{r.tracks ? `${r.stopped}/${r.tracks}` : '—'}</td>
+                      <td className={r.damage ? 'text-ops-red' : ''}>{r.damage || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+              <div className="label mb-1 mt-3">By phase</div>
+              <div className="flex flex-wrap gap-2">
+                {tactical.byPhase.filter((p) => p.waves).map((p) => (
+                  <Chip key={p.phase} t={tone(p.tracks ? (p.stopped / p.tracks) * 100 : 0)}>Phase {p.phase}: {p.stopped}/{p.tracks}</Chip>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="min-w-0">
+              <div className="label mb-1">Most effective systems</div>
+              {tactical.kills.length ? (
+                <ul className="space-y-1">
+                  {tactical.kills.slice(0, 6).map((k) => (
+                    <li key={k.equipmentId} className="flex justify-between gap-2"><span className="truncate text-white">{EQUIPMENT_MAP.get(k.equipmentId)?.name ?? k.equipmentId}</span><span className="text-ops-green">{k.kills} stopped</span></li>
+                  ))}
+                </ul>
+              ) : <div className="text-ops-dim">No threats stopped yet.</div>}
+            </div>
+            <div className="min-w-0">
+              <div className="label mb-1">Damaged sites</div>
+              {tactical.damagedSites.length ? (
+                <ul className="max-h-36 space-y-0.5 overflow-y-auto">
+                  {tactical.damagedSites.slice(0, 10).map((x) => (
+                    <li key={`${x.region}${x.name}`} className="flex justify-between gap-2 text-[11px]"><span className="truncate">{x.name} <span className="text-ops-dim">· {x.region}</span></span><span className={TONE_TEXT[tone(x.integrity)]}>{Math.round(x.integrity)}%</span></li>
+                  ))}
+                </ul>
+              ) : <div className="text-ops-dim">No sites damaged.</div>}
+            </div>
+          </div>
+        </Panel>
+      )}
 
       <Panel className="xl:col-span-2" title="Domain Performance">
         <LineChart series={DOMAINS.map((d) => ({ name: DOMAIN_LABEL[d], color: DOMAIN_COLOR[d], data: s.history.map((h) => h.domains[d]) }))} height={150} />
