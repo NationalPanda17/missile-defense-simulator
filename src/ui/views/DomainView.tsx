@@ -3,8 +3,7 @@ import {
   REGION_IDS, SIM_CONFIG, availability, crewsFree, isActive, maintenanceCost, type Asset, type Domain, type SimState,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import { statusColor } from '../map/GlobalMap';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, Sparkline, Stat, TONE_TEXT, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 const FOCUS: Record<Domain, { title: string; blurb: string }> = {

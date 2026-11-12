@@ -1,26 +1,58 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { SIM_CONFIG, lessonOf, saveGame } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
 import { sound } from './audio/sound';
-import { AcademyModal } from './training/Academy';
-import { Coach } from './training/Coach';
+import { applyUpdate, onUpdateReady, updateReady } from './pwa';
+
 import { UIProvider, useUI } from './uiState';
-import { AARView } from './views/AARView';
-import { CampaignView, ScenarioEditor } from './views/CampaignViews';
-import { DomainView } from './views/DomainView';
-import { GlobalOps } from './views/GlobalOps';
-import { CommsView, InfraView, IntelView, LogisticsView } from './views/StaffViews';
-import { TheaterView } from './views/TheaterView';
+
+// Screens load on first use, so the start screen appears quickly (especially on phones).
+const GlobalOps = lazy(() => import('./views/GlobalOps').then((m) => ({ default: m.GlobalOps })));
+const TheaterView = lazy(() => import('./views/TheaterView').then((m) => ({ default: m.TheaterView })));
+const DomainView = lazy(() => import('./views/DomainView').then((m) => ({ default: m.DomainView })));
+const IntelView = lazy(() => import('./views/StaffViews').then((m) => ({ default: m.IntelView })));
+const CommsView = lazy(() => import('./views/StaffViews').then((m) => ({ default: m.CommsView })));
+const LogisticsView = lazy(() => import('./views/StaffViews').then((m) => ({ default: m.LogisticsView })));
+const InfraView = lazy(() => import('./views/StaffViews').then((m) => ({ default: m.InfraView })));
+const CampaignView = lazy(() => import('./views/CampaignViews').then((m) => ({ default: m.CampaignView })));
+const ScenarioEditor = lazy(() => import('./views/CampaignViews').then((m) => ({ default: m.ScenarioEditor })));
+const AARView = lazy(() => import('./views/AARView').then((m) => ({ default: m.AARView })));
+const AcademyModal = lazy(() => import('./training/Academy').then((m) => ({ default: m.AcademyModal })));
+const Coach = lazy(() => import('./training/Coach').then((m) => ({ default: m.Coach })));
+
+// Once the start screen is up, fetch the main screens in the background so they open instantly.
+if (typeof window !== 'undefined') {
+  const warm = () => { void import('./views/GlobalOps'); void import('./views/TheaterView'); void import('./views/TacticalDeploy'); };
+  window.addEventListener('load', () => window.setTimeout(warm, 1500), { once: true });
+}
+
+function Loading() {
+  return <div className="p-6 text-center text-ops-dim" role="status">Loading…</div>;
+}
 
 sound.install();
+
+function UpdateBanner() {
+  const [ready, setReady] = useState(updateReady);
+  useEffect(() => onUpdateReady(() => setReady(true)), []);
+  if (!ready) return null;
+  return (
+    <div className="fixed bottom-3 right-3 z-[60] flex items-center gap-2 rounded border border-ops-cyan/50 bg-ops-panel px-3 py-2 text-[11px] shadow-lg" role="status">
+      A new version is ready.
+      <button className="btn btn-primary" onClick={applyUpdate}>Reload</button>
+      <button className="btn px-2" onClick={() => setReady(false)} aria-label="Later">✕</button>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <UIProvider>
       <Root />
+      <UpdateBanner />
       <Toasts />
     </UIProvider>
   );
@@ -81,7 +113,7 @@ function Root() {
       return (
         <div className="mx-auto max-w-6xl space-y-2 p-3">
           <button className="btn" onClick={() => setEditorFirst(false)}>◂ Back to main menu</button>
-          <ScenarioEditor s={null} onLaunched={() => { setEditorFirst(false); ui.setView('global'); }} />
+          <Suspense fallback={<Loading />}><ScenarioEditor s={null} onLaunched={() => { setEditorFirst(false); ui.setView('global'); }} /></Suspense>
         </div>
       );
     }
@@ -89,7 +121,7 @@ function Root() {
       <>
         <StartScreen onSandbox={() => setEditorFirst(true)} />
         {ui.accountOpen && <AccountModal />}
-        {ui.academyOpen && <AcademyModal />}
+        {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}
       </>
     );
   }
@@ -123,7 +155,7 @@ function Root() {
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <LeftNav s={s} />
         <div className="flex min-w-0 flex-1 flex-col lg:min-h-0 lg:flex-row">
-          <main className="min-w-0 flex-1 p-2 lg:min-h-0 lg:overflow-y-auto" id="main">{view}</main>
+          <main className="min-w-0 flex-1 p-2 lg:min-h-0 lg:overflow-y-auto" id="main"><Suspense fallback={<Loading />}>{view}</Suspense></main>
           <RightSidebar s={s} />
         </div>
       </div>
@@ -132,9 +164,9 @@ function Root() {
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <HelpModal />}
-      {lesson ? <Coach key={s.campaignId ?? s.settings.name} s={s} lesson={lesson} /> : ui.tutorial && <TutorialPanel />}
+      {lesson ? <Suspense fallback={null}><Coach key={s.campaignId ?? s.settings.name} s={s} lesson={lesson} /></Suspense> : ui.tutorial && <TutorialPanel />}
       {ui.accountOpen && <AccountModal />}
-      {ui.academyOpen && <AcademyModal />}
+      {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}
     </div>
   );
 }

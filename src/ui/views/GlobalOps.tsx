@@ -1,7 +1,7 @@
 import { DOMAINS, INVESTMENTS, isActive, isKnown, canAfford, type RegionId, type SimState } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import GlobalMap, { statusColor } from '../map/GlobalMap';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, SEV_TONE, Sparkline, Stat, TONE_TEXT, tone } from '../components/ui';
+import GlobalMap from '../map/GlobalMap';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, SEV_TONE, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 export function GlobalOps({ s }: { s: SimState }) {

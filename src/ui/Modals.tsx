@@ -1,15 +1,13 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
-import { useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import {
   COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, tone } from './components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, statusColor, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
-import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
-import { DeployPanel } from './views/TacticalDeploy';
 import { loadProgress } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
@@ -222,6 +220,8 @@ export function AssetModal({ s }: { s: SimState }) {
   );
 }
 
+const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
+
 export function BriefingModal({ s }: { s: SimState }) {
   const phase = s.phases[s.phaseIndex];
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
@@ -243,7 +243,7 @@ export function BriefingModal({ s }: { s: SimState }) {
           </button>
         </div>
       )}
-      {tactical && step === 'deploy' ? <DeployPanel s={s} /> : (
+      {tactical && step === 'deploy' ? <Suspense fallback={<div className="p-6 text-center text-ops-dim">Loading…</div>}><DeployPanel s={s} /></Suspense> : (
       <div className="space-y-4">
         <div>
           <div className="label">{s.settings.name}</div>

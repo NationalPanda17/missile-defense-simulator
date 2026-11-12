@@ -4,8 +4,7 @@ import {
   type Domain, type RegionId, type SimState,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import { statusColor } from '../map/GlobalMap';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, SEV_TONE, Stat, TONE_TEXT, Tabs, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, SEV_TONE, Stat, TONE_TEXT, Tabs, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 export function IntelView({ s }: { s: SimState }) {

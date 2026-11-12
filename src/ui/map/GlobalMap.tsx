@@ -1,7 +1,7 @@
 // Interactive SVG operational map: zoom/pan, region selection, layered domain assets, network links and event markers.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPE, type ReactNode } from 'react';
 import { REGION_IDS, assetPosAt, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
-import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone } from '../components/ui';
+import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone, statusColor } from '../components/ui';
 import { store } from '../../store/simStore';
 import { useUI, type Layers, type OverlayMetric } from '../uiState';
 import { PROTECTION_TONE } from '../views/TheaterView';
@@ -24,14 +24,6 @@ function hash(s: string) {
   return h;
 }
 
-export function statusColor(a: Asset, hour: number) {
-  if (a.status === 'maintenance') return '#5d7391';
-  if (a.status === 'transit') return '#a78bfa';
-  if (a.restoredAt !== undefined && hour - a.restoredAt < 12) return '#e0f7ff';
-  if (a.status === 'offline') return TONE_HEX.red;
-  if (a.status === 'degraded') return TONE_HEX.amber;
-  return TONE_HEX.green;
-}
 
 function satPosition(a: Asset, idx: number, hour: number): [number, number] {
   if (a.role === 'comms') return [a.pos[0], 0]; // geostationary-style relay

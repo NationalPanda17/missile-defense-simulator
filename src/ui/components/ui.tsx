@@ -1,7 +1,7 @@
 // Reusable presentational primitives.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Domain, Severity } from '../../engine';
+import type { Asset, Domain, Severity } from '../../engine';
 
 /** Meters move over one simulated hour at the current speed (--tick, set by the store), so values flow rather than jump. */
 export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
@@ -195,4 +195,14 @@ export function simClock(start: number, hour: number) {
     date: `${String(d.getUTCDate()).padStart(2, '0')} ${m} ${d.getUTCFullYear()}`,
     time: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}Z`,
   };
+}
+
+/** Map/list colour for an asset's status. */
+export function statusColor(a: Asset, hour: number) {
+  if (a.status === 'maintenance') return '#5d7391';
+  if (a.status === 'transit') return '#a78bfa';
+  if (a.restoredAt !== undefined && hour - a.restoredAt < 12) return '#e0f7ff';
+  if (a.status === 'offline') return TONE_HEX.red;
+  if (a.status === 'degraded') return TONE_HEX.amber;
+  return TONE_HEX.green;
 }
