@@ -4,6 +4,7 @@ import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
+import { sound } from './audio/sound';
 import { AcademyModal } from './training/Academy';
 import { Coach } from './training/Coach';
 import { UIProvider, useUI } from './uiState';
@@ -13,6 +14,8 @@ import { DomainView } from './views/DomainView';
 import { GlobalOps } from './views/GlobalOps';
 import { CommsView, InfraView, IntelView, LogisticsView } from './views/StaffViews';
 import { TheaterView } from './views/TheaterView';
+
+sound.install();
 
 export default function App() {
   return (
@@ -65,6 +68,7 @@ function Root() {
       const k = e.key.toUpperCase();
       if (k === 'T') return void dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours });
       if (k === 'B') return ui.setBottomOpen(!ui.bottomOpen);
+      if (k === 'V') return sound.toggleMute();
       const nav = NAV.find((n) => n.key === k);
       if (nav) ui.setView(nav.id);
     };

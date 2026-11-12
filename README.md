@@ -84,6 +84,8 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    have done it, explains why it matters and checks your understanding with a short question.
    Progress is kept in the browser, and with your account when you are signed in to the save server.
    The campaign has three difficulty levels: **Recruit**, **Officer** (as designed) and **Commander**.
+   Sound effects and ambient music are synthesized in the browser (no audio files). They start after
+   your first click; the speaker button in the top bar sets effect and music volume, and **V** mutes.
 2. Read the **briefing**, then choose *Assume command*. The clock starts.
 3. Watch the **Active Events** list (right). Open an event to see its confidence, impact,
    decision window and management responses (cost, duration and success chance).

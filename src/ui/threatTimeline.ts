@@ -11,13 +11,18 @@ export type TrackPhase =
 /** How long (sim hours) interception and impact markers linger, fading. */
 export const LINGER = { intercepted: 2, impact: 6 };
 
-export function trackPhase(w: ThreatWave, tr: Track, t: number): TrackPhase {
+/** When a track's flight ends (interception or arrival), and where along its path. */
+export function trackEnd(w: ThreatWave, tr: Track): { launch: number; flight: number; end: number; endTime: number; stopped: boolean } {
   const launch = tr.launchAt ?? w.launchAt ?? w.atHour;
   const flight = Math.max(0.05, w.atHour - launch);
-  if (t < launch || !w.resolved) return { kind: 'pending' };
   const stopped = tr.outcome === 'stopped' || tr.outcome === 'decoyStopped';
   const end = stopped ? tr.stopAt ?? 0.8 : 1;
-  const endTime = launch + flight * end;
+  return { launch, flight, end, endTime: launch + flight * end, stopped };
+}
+
+export function trackPhase(w: ThreatWave, tr: Track, t: number): TrackPhase {
+  const { launch, flight, end, endTime, stopped } = trackEnd(w, tr);
+  if (t < launch || !w.resolved) return { kind: 'pending' };
   if (t < endTime) return { kind: 'flight', f: ((t - launch) / flight) };
   const age = t - endTime;
   if (stopped) return age < LINGER.intercepted ? { kind: 'intercepted', f: end, age } : { kind: 'gone' };
