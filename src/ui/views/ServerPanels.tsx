@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SLOTS, type Slot } from '../../engine';
 import type { CampaignDetail } from '../../shared/api';
 import { api } from '../../store/remote';
-import { store, useStoreVersion } from '../../store/simStore';
+import { BROWSER_ONLY, store, useStoreVersion } from '../../store/simStore';
 import { Chip, Panel, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
@@ -33,7 +33,8 @@ export function ServerStatusChip() {
   const label = sv.status === 'online' ? (sv.syncing ? 'SYNC…' : sv.user!.username) : sv.status === 'offline' ? 'LOCAL ONLY' : 'DB …';
   const title = sv.status === 'online'
     ? `Signed in as ${sv.user!.username}. Campaigns persist to PostgreSQL.${sv.lastSync ? ` Last sync ${ago(sv.lastSync)}.` : ''}`
-    : `Persistence server unavailable${sv.error ? ` (${sv.error})` : ''}. Saves stay in this browser.`;
+    : BROWSER_ONLY ? 'Browser version: saves stay in this browser. Accounts need the desktop app.'
+      : `Persistence server unavailable${sv.error ? ` (${sv.error})` : ''}. Saves stay in this browser.`;
   return (
     <button className="leading-tight text-left" onClick={() => (sv.status === 'online' ? ui.setAccountOpen(true) : ui.setView('campaign'))} title={title}>
       <div className="label">{sv.status === 'online' ? 'Account · DB' : 'Storage'}</div>
@@ -52,13 +53,22 @@ export function ServerSavesPanel({ canSave }: { canSave: boolean }) {
     try { await fn(); } finally { setBusy(null); }
   };
   return (
-    <Panel title={sv.user ? `Server Saves · ${sv.user.username}` : 'Server Saves · PostgreSQL'} right={
+    <Panel title={sv.user ? `Server Saves · ${sv.user.username}` : BROWSER_ONLY ? 'Saves & Accounts' : 'Server Saves · PostgreSQL'} right={BROWSER_ONLY ? <Chip t="cyan">browser version</Chip> :
       <span className="flex items-center gap-1">
         <Chip t={sv.status === 'online' && sv.user ? 'green' : 'amber'}>{sv.status === 'online' ? (sv.user ? 'signed in' : 'signed out') : sv.status}</Chip>
         <button className="btn px-1.5" onClick={() => run('refresh', () => store.refreshServer())} disabled={busy === 'refresh'} aria-label="Refresh server status">⟳</button>
       </span>
     }>
-      {sv.status !== 'online' ? (
+      {sv.status !== 'online' && BROWSER_ONLY ? (
+        <div className="space-y-1 text-[11px] text-ops-dim">
+          <p>This is the browser version: your saves stay in this browser, and it plays offline once loaded.</p>
+          {ONLINE_URL && <p><a className="text-ops-cyan underline" href={ONLINE_URL}>Play the online version</a> to keep campaigns in an account, from any device.</p>}
+          <p>
+            For accounts and server saves on your own computer, get the{' '}
+            <a className="text-ops-cyan underline" href="https://github.com/NationalPanda17/missile-defense-simulator/blob/main/docs/DESKTOP_APP.md" target="_blank" rel="noreferrer">desktop app</a>.
+          </p>
+        </div>
+      ) : sv.status !== 'online' ? (
         <div className="space-y-1 text-[11px] text-ops-dim">
           <p>The persistence server is not reachable{sv.error ? ` (${sv.error})` : ''}. Browser saves still work.</p>
           {ONLINE_URL && (

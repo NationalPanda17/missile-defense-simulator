@@ -1,14 +1,14 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
-  maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
+  maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { Bar, Chip, ConfirmDelete, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, statusColor, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
-import { loadProgress } from './training/progress';
+import { loadProgress, startLesson } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl, DisplaySettings } from './a11y/DisplayControl';
@@ -222,6 +222,20 @@ export function AssetModal({ s }: { s: SimState }) {
   );
 }
 
+/** How to meet each kind of objective, shown under it in the briefing. */
+const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
+  readiness: 'keep assets serviced (domain screens → open an asset → Schedule maintenance) and fix events that hurt a domain.',
+  network: 'respond quickly to comms events and fund the Network Resilience Program (Communications or Logistics).',
+  stability: 'resolve events before they escalate and stop threat waves reaching sites; unrest and damage lower stability.',
+  infrastructure: 'defend sites from threat waves, and fund Harden or Recovery projects in Infrastructure.',
+  maintenanceDone: 'on a domain screen (Space, Air, Sea or Ground) open an asset and press Schedule maintenance. Each finished cycle counts; it needs a free crew.',
+  confirmations: 'open a low-confidence report and press Task confirmation. It counts when the result comes back.',
+  escalationsMax: 'act on reports before their timer runs out: respond, or use Monitor Only once to buy time.',
+  resolved: 'open a report, pick a response and execute it. It counts when the response succeeds.',
+  falseDismissed: 'expose false reports: task a confirmation, or dismiss a report you are sure is false.',
+  credits: 'keep this much in hand at the end of the phase; above the reserve level, idle money is reclaimed.',
+};
+
 const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
 
 export function BriefingModal({ s }: { s: SimState }) {
@@ -231,13 +245,37 @@ export function BriefingModal({ s }: { s: SimState }) {
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const [step, setStep] = useState<'brief' | 'deploy'>('brief');
-  const advice = useAdvice(s).filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'));
+  const [confirmBegin, setConfirmBegin] = useState(false);
+  // Before the phase starts: forecast regions nothing can defend, and money that will otherwise sit idle.
+  const beginIssues: string[] = s.settings.mode === 'training' ? [] : [
+    ...advise(s).filter((a) => a.id.startsWith('undefended:')).map((a) => a.text),
+    ...(s.credits > SIM_CONFIG.reserve.threshold * 1.5 ? [`${Math.round(s.credits)} credits are unspent. Reserves above ${SIM_CONFIG.reserve.threshold} shrink every hour.`] : []),
+  ];
+  // While the begin check is showing it already lists undefended regions; don't repeat them.
+  const advice = useAdvice(s)
+    .filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'))
+    .filter((a) => !(confirmBegin && a.id.startsWith('undefended:')));
   return (
-    <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
+    <Modal wide tall={step === 'deploy'} title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
-        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
+        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
+          if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
+        }}>
+          {confirmBegin ? 'Begin anyway ▶' : 'Assume command — begin phase ▶'}
+        </button>
       </>}>
+      {confirmBegin && step === 'brief' && beginIssues.length > 0 && (
+        <div className="mb-3 rounded border border-ops-amber/60 bg-ops-amber/10 p-3 text-[12px]" role="alert">
+          <div className="label mb-1 text-ops-amber">Before you begin</div>
+          <ul className="list-disc space-y-0.5 pl-4 text-white">{beginIssues.map((x) => <li key={x}>{x}</li>)}</ul>
+          <p className="mt-1 text-[11px] text-ops-dim">Equipment can only be placed during a briefing. Once the phase starts, you can still raise alerts, resupply and move systems, but not add new ones.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {tactical && <button className="btn btn-primary" onClick={() => { setConfirmBegin(false); setStep('deploy'); }}>Deploy defenses</button>}
+            <button className="btn" onClick={() => setConfirmBegin(false)}>Back to the briefing</button>
+          </div>
+        </div>
+      )}
       {advice.length > 0 && (
         <div className="mb-3">
           <div className="label mb-1">Adjutant</div>
@@ -269,7 +307,12 @@ export function BriefingModal({ s }: { s: SimState }) {
           <div className="space-y-3">
             <div><div className="label mb-1">Strategic situation</div><p className="leading-relaxed">{phase.situation}</p></div>
             {phase.objectives.length > 0 && <div><div className="label mb-1">Objectives</div>
-              <ul className="space-y-1">{phase.objectives.map((o) => <li key={o.id} className="flex justify-between gap-2"><span>▸ {o.text}</span>{o.reward > 0 && <span className="shrink-0 text-ops-green">+{o.reward} cr</span>}</li>)}</ul>
+              <ul className="space-y-1.5">{phase.objectives.map((o) => (
+                <li key={o.id}>
+                  <div className="flex justify-between gap-2"><span>▸ {o.text}</span>{o.reward > 0 && <span className="shrink-0 text-ops-green">+{o.reward} cr</span>}</div>
+                  <div className="pl-3 text-[10px] leading-relaxed text-ops-dim">How: {OBJECTIVE_HOW[o.metric]}</div>
+                </li>
+              ))}</ul>
             </div>}
             <div><div className="label mb-1">Special conditions</div><div className="flex flex-wrap gap-1">{phase.special.map((x) => <Chip key={x} t="amber">{x}</Chip>)}</div></div>
             <div><div className="label mb-1">Current resources</div>
@@ -279,6 +322,11 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <div><div className="label">Crews</div>{s.crews}</div>
                 <div><div className="label">Resilience</div>{Math.round(s.resilience)}</div>
               </div>
+              {s.settings.mode !== 'training' && s.credits > SIM_CONFIG.reserve.threshold && (
+                <p className="mt-1 text-[11px] text-ops-amber">
+                  Unspent: {Math.round(s.credits - SIM_CONFIG.reserve.threshold)} above the {SIM_CONFIG.reserve.threshold} reserve. Excess reserves are reclaimed at {SIM_CONFIG.reserve.ratePerHour * 100}% an hour once the phase runs, so spend them on defenses, maintenance or investments.
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-3">
@@ -301,6 +349,19 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <div className="label mb-1 text-ops-red">Threat forecast</div>
                 Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
+                <ul className="mt-1 space-y-0.5">
+                  {tactical.forecast.map((r) => {
+                    const p = previewDefense(s, r, 12);
+                    if (!p) return null;
+                    const pct = Math.round(p.prevented * 100);
+                    return (
+                      <li key={r}>
+                        ▸ {s.regions[r].name}: with your current layout, about{' '}
+                        <b className={pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red'}>{pct}%</b> of the expected damage would be prevented.
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>
@@ -309,6 +370,19 @@ export function BriefingModal({ s }: { s: SimState }) {
       )}
     </Modal>
   );
+}
+
+const WELCOME_KEY = 'mds.welcomed';
+/** A first visit: no saves, no Academy progress and the welcome not dismissed. */
+function isNewcomer(saveCount: number): boolean {
+  try {
+    if (localStorage.getItem(WELCOME_KEY)) return false;
+  } catch { return false; }
+  const p = loadProgress();
+  return saveCount === 0 && p.done.length === 0 && !p.bestExam;
+}
+function markWelcomed() {
+  try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* ignore */ }
 }
 
 const LEVEL_KEY = 'mds.level';
@@ -325,7 +399,7 @@ function LevelPicker({ value, onChange }: { value: CommandLevel; onChange: (l: C
       <div className="label" id="level-label">Difficulty</div>
       <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-labelledby="level-label">
         {COMMAND_LEVEL_IDS.map((l) => (
-          <button key={l} role="radio" aria-checked={value === l} className={`btn px-1 ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}>{COMMAND_LEVELS[l].label}</button>
+          <button key={l} role="radio" aria-checked={value === l} className={`btn min-w-0 px-0.5 text-[10px] tracking-normal ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}><span className="truncate">{COMMAND_LEVELS[l].label}</span></button>
         ))}
       </div>
       <p className="text-[10px] leading-relaxed text-ops-dim">{COMMAND_LEVELS[value].description}</p>
@@ -358,26 +432,43 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     try { localStorage.setItem(LEVEL_KEY, l); } catch { /* ignore */ }
   };
   const start = (mode: 'campaign' | 'crisis' | 'training') => {
+    markWelcomed();
     if (mode !== 'campaign') return store.newGame(defaultSettings(mode));
     if (!tacticalOn) return store.newGame(withLevel(defaultSettings('campaign'), level));
     const base = defaultSettings('campaign');
     const std = scenario.tactical.preset === 'standard';
     store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical }, level));
   };
+  const newcomer = isNewcomer(saves.length);
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
     { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours.', cta: 'Enter crisis' },
     { id: 'training' as const, title: 'Training Academy', desc: `${LESSONS.length - 1} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.`, cta: 'Open the Academy' },
   ];
+  // New players see the Academy first.
+  if (newcomer) modes.unshift(modes.splice(2, 1)[0]);
   return (
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
         <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
-          <h1 className="mt-2 font-sans text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl">MISSILE DEFENSE SIMULATOR</h1>
+          <h1 className="mt-2 break-words font-sans text-[clamp(1.25rem,8vw,2.25rem)] font-bold leading-tight tracking-[0.08em] text-white sm:text-5xl sm:tracking-[0.2em]">MISSILE DEFENSE SIMULATOR</h1>
           <p className="mx-auto mt-3 max-w-2xl text-ops-dim">Command a fictional four-domain defense network — Space, Air, Sea and Ground — across seven strategic regions. Manage readiness, communications, uncertain intelligence and scarce resources through a dynamic campaign.</p>
+          <p className="mx-auto mt-2 max-w-2xl text-[12px] text-ops-cyan">You build the defense; the simulation fights it. Place systems in each briefing, then during the phase raise alerts, resupply, move systems and handle reports.</p>
         </div>
+        {newcomer && (
+          <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-cyan/60 p-4" role="region" aria-label="Welcome">
+            <div className="min-w-0 max-w-xl">
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">New here?</div>
+              <p className="mt-1 text-[12px] leading-relaxed">Start with Lesson 1, Command basics: five minutes, with a coach that shows you each control. The campaign makes much more sense after the first few lessons.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn" onClick={() => { markWelcomed(); store.notify(); }}>I know the basics</button>
+              <button className="btn btn-primary px-5 py-2" autoFocus onClick={() => { markWelcomed(); startLesson('basics'); ui.setView('global'); }}>Start Lesson 1 ▶</button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-4">
           {modes.map((m) => (
             <div key={m.id} className="panel flex flex-col p-4">

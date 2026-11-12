@@ -95,7 +95,11 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    The campaign has three difficulty levels: **Recruit**, **Officer** (as designed) and **Commander**.
    Sound effects and ambient music are synthesized in the browser (no audio files). They start after
    your first click; the speaker button in the top bar sets effect and music volume, and **V** mutes.
-2. Read the **briefing**, then choose *Assume command*. The clock starts.
+2. Read the **briefing**, then choose *Assume command*. The clock starts. You build the defense; the
+   simulation fights it: systems are placed in briefings, and during a phase you raise alerts, resupply, move
+   systems and handle reports. The game pauses itself when something needs you (launch warnings, reports about
+   to escalate; on Recruit, every new report). Change this under **Aa → Auto-pause**. Unspent credits above
+   1,200 are reclaimed at 2% an hour, so put money to work.
 3. Watch the **Active Events** list (right). Open an event to see its confidence, impact,
    decision window and management responses (cost, duration and success chance).
    - Confidence is low? **Task confirmation** (15 cr) to confirm or expose a spurious report.

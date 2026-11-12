@@ -37,6 +37,7 @@ jobs:
         # ONLINE_URL (a repository variable) points players at the hosted version with accounts, once there is one.
         env:
           VITE_ONLINE_URL: ${{ vars.ONLINE_URL }}
+          VITE_BROWSER_ONLY: '1' # no save server behind GitHub Pages: don't probe for one
         run: npx vite build --base=/missile-defense-simulator/
 
       - uses: actions/upload-pages-artifact@v3

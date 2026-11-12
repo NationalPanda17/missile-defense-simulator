@@ -2,6 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
+  defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
 } from '../engine';
 import type { AccountInfo, CampaignSummary, SaveSummary } from '../shared/api';
 import { api, ApiError, forgetLegacyPlayerId, legacyPlayerId, newId } from './remote';
@@ -18,8 +19,22 @@ export interface ServerState {
   error: string | null;
 }
 
+const PACING_KEY = 'mds.autopause';
+
+/** The player's auto-pause choices, or null to use the defaults for the scenario's difficulty. */
+function loadPacing(): AutoPauseSettings | null {
+  try {
+    const raw = localStorage.getItem(PACING_KEY);
+    return raw ? (JSON.parse(raw) as AutoPauseSettings) : null;
+  } catch { return null; }
+}
+
 class SimStore {
   state: SimState | null = null;
+  /** Why the game just paused itself (shown with what the player can do), or null. */
+  pausePrompt: PauseReason[] | null = null;
+  pacing: AutoPauseSettings | null = loadPacing();
+  private pMemo: PauseMemo | null = null;
   version = 0;
   toasts: Toast[] = [];
   server: ServerState = { status: 'unknown', user: null, saves: [], campaigns: [], lastSync: null, syncing: false, error: null };
@@ -45,6 +60,8 @@ class SimStore {
   newGame(settings: ScenarioSettings) {
     this.state = createInitialState(settings);
     this.state.campaignId = newId();
+    this.pMemo = pauseMemo(this.state);
+    this.pausePrompt = null;
     this.toast('info', `New scenario: ${settings.name}`);
     this.ensureLoop();
     this.notify();
@@ -54,6 +71,8 @@ class SimStore {
     this.state = state;
     state.paused = true;
     if (!state.campaignId) state.campaignId = newId(); // saves from before the server existed
+    this.pMemo = pauseMemo(state);
+    this.pausePrompt = null;
     this.ensureLoop();
     this.notify();
   }
@@ -66,13 +85,53 @@ class SimStore {
   dispatch = (cmd: Command): CommandResult => {
     if (!this.state) return { ok: false, message: 'No active scenario' };
     const before = this.state.hour;
-    const r = execute(this.state, cmd);
+    const r = cmd.type === 'advance' ? this.advanceWatched(cmd.hours) : execute(this.state, cmd);
+    if (cmd.type === 'setPaused' && !cmd.paused) this.pausePrompt = null;
     if (!r.ok) this.toast('err', r.message);
     else if (!['setPaused', 'setSpeed', 'advance', 'beginPhase'].includes(cmd.type)) this.toast('ok', r.message);
     if (this.state.hour !== before) this.afterHours(before);
     this.notify();
     return r;
   };
+
+  /** Auto-pause choices in force for the current scenario (training lessons have the coach instead). */
+  autoPause(): AutoPauseSettings | null {
+    const s = this.state;
+    if (!s || s.settings.mode === 'training') return null;
+    return this.pacing ?? defaultAutoPause(s.settings.level);
+  }
+
+  setPacing(p: AutoPauseSettings | null) {
+    this.pacing = p;
+    try { if (p) localStorage.setItem(PACING_KEY, JSON.stringify(p)); else localStorage.removeItem(PACING_KEY); } catch { /* ignore */ }
+    this.notify();
+  }
+
+  /** Advance hour by hour, stopping as soon as something the player asked to be stopped for happens. */
+  private advanceWatched(hours: number) {
+    const s = this.state!;
+    let r = { ok: true, message: `Advanced ${hours}h` };
+    for (let i = 0; i < hours && s.status === 'running'; i++) {
+      r = execute(s, { type: 'advance', hours: 1 });
+      if (!r.ok) return r;
+      const found = pauseReasons(this.pMemo, s);
+      this.pMemo = found.memo;
+      const want = this.autoPause();
+      const hits = want ? found.reasons.filter((x) => want[x.kind]) : [];
+      if (hits.length) {
+        this.pausePrompt = hits;
+        s.paused = true; // the game's own pause, not a player order: not written to the command log
+        this.acc = 0;
+        break;
+      }
+    }
+    return r;
+  }
+
+  dismissPausePrompt() {
+    this.pausePrompt = null;
+    this.notify();
+  }
 
   toast(tone: Toast['tone'], text: string) {
     const id = ++this.toastId;
@@ -95,6 +154,10 @@ class SimStore {
 
   /** Probe the API and refresh the save list and campaign history. */
   async refreshServer() {
+    if (BROWSER_ONLY) {
+      this.server = { ...this.server, status: 'offline', error: null };
+      return;
+    }
     try {
       const h = await api.health();
       if (!h.db) throw new ApiError(503, 'Database unavailable');
@@ -304,8 +367,14 @@ class SimStore {
   }
 }
 
+/**
+ * The GitHub Pages build has no save server, so it never asks for one (set VITE_BROWSER_ONLY=1 at build time).
+ * Saves stay in the browser; accounts need the desktop app, the start files or a hosted server.
+ */
+export const BROWSER_ONLY = import.meta.env.VITE_BROWSER_ONLY === '1';
+
 export const store = new SimStore();
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !BROWSER_ONLY) {
   void store.refreshServer();
   // Re-probe periodically so the game picks the server up if it starts later.
   window.setInterval(() => {

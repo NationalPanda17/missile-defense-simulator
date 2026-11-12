@@ -344,6 +344,7 @@ export interface Track {
   damage?: number; // integrity lost by the target site
   launchAt?: number; // sim hour (fractional) it launches; it impacts at the wave's atHour
   stopAt?: number; // 0-1 along its path where it was stopped (for drawing the interception)
+  cost?: number; // credits of interceptor rounds fired at it (absent in older saves)
   via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
 }
 
@@ -430,6 +431,7 @@ export interface SimState {
   difficulty: number; // adaptive director multiplier
 
   tactical?: TacticalState; // absent in saves made before the tactical layer
+  reserveLost?: number; // credits reclaimed from unspent reserves (absent in older saves)
 
   // Derived metrics (recomputed each tick)
   metrics: Metrics;

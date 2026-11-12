@@ -16,3 +16,4 @@ export * from './training';
 export { clamp } from './rng';
 export * from './advisor';
 export * from './challenge';
+export * from './autopause';

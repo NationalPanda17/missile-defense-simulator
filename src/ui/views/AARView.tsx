@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import {
-  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, isActive, lessonsLearned, tacticalReport,
+  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type ScoreKey, type SimState,
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
@@ -49,16 +50,30 @@ export function AARView({ s }: { s: SimState }) {
   const first = s.history[0];
   const tactical = tacticalReport(s);
   const tStats = s.tactical?.stats;
+  const drill = lessonOf(s)?.drill;
+  const drillScore = drill ? drill.score(s) : 0;
+  const drillStars = drill ? starsFor(drill, drillScore) : 0;
+  const [showReplay, setShowReplay] = useState(false);
 
   return (
     <div className="grid gap-2 xl:grid-cols-3">
       <Panel className="xl:col-span-3" title={final ? 'After-Action Review · Final Report' : 'After-Action Review · Interim Report'} right={<button className="btn" onClick={() => window.print()}>Print</button>}>
         <div className="flex flex-wrap items-center gap-6">
-          <div className="text-center">
-            <div className="label">Final score</div>
-            <div className="font-sans text-6xl font-bold leading-none text-ops-cyan">{score.total.toFixed(1)}</div>
-            <div className="font-sans text-2xl font-bold text-white">GRADE {score.grade}</div>
-          </div>
+          {drill ? (
+            // A drill is scored on its own goal; the management score below is context, not the result.
+            <div className="text-center">
+              <div className="label">Drill score</div>
+              <div className="font-sans text-6xl font-bold leading-none text-ops-cyan">{drillScore}</div>
+              <div className="text-2xl text-ops-amber" aria-label={`${drillStars} of 3 stars`}>{'★'.repeat(drillStars)}<span className="text-ops-line">{'★'.repeat(3 - drillStars)}</span></div>
+              <div className="mt-1 max-w-[12rem] text-[10px] text-ops-dim">{drill.goal} Management score: {score.total.toFixed(1)}.</div>
+            </div>
+          ) : (
+            <div className="text-center">
+              <div className="label">Final score</div>
+              <div className="font-sans text-6xl font-bold leading-none text-ops-cyan">{score.total.toFixed(1)}</div>
+              <div className="font-sans text-2xl font-bold text-white">GRADE {score.grade}</div>
+            </div>
+          )}
           <div className="grid min-w-[16rem] flex-1 grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3">
             {(Object.keys(score.weights) as ScoreKey[]).map((k) => (
               <div key={k}>
@@ -94,7 +109,15 @@ export function AARView({ s }: { s: SimState }) {
         </ul>
       </Panel>
 
-      {s.tactical?.waves.some((w) => w.resolved) && <MissionReplay s={s} />}
+      {s.tactical?.waves.some((w) => w.resolved) && (showReplay ? <MissionReplay s={s} /> : (
+        // The replay draws a full theater map: build it only when asked, so the report itself opens instantly.
+        <Panel className="xl:col-span-3" title="Mission Replay">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-ops-dim">
+            <span>Play the run back on each region’s map, with every wave and decision on a timeline.</span>
+            <button className="btn btn-primary" onClick={() => setShowReplay(true)}>▶ Open the replay</button>
+          </div>
+        </Panel>
+      ))}
 
       {tactical && (
         <Panel className="xl:col-span-3" title="Tactical Defense">
@@ -133,6 +156,7 @@ export function AARView({ s }: { s: SimState }) {
               </div>
             </div>
           </div>
+          <CostExchange s={s} />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="min-w-0">
               <div className="label mb-1">Most effective systems</div>
@@ -234,6 +258,44 @@ export function AARView({ s }: { s: SimState }) {
         {degraded.slice(0, 8).map((a) => <div key={a.id} className="text-[11px]"><button className="text-white hover:underline" onClick={() => ui.openAsset(a.id)}>{a.name}</button> <span className="text-ops-dim">{Math.round(a.condition)}%</span></div>)}
         {!degraded.length && <div className="text-ops-dim">None.</div>}
       </Panel>
+    </div>
+  );
+}
+
+/** Per wave: interceptor credits spent against the attacker cost of what was stopped. */
+function CostExchange({ s }: { s: SimState }) {
+  const rows = costExchange(s);
+  if (!rows.length) return null;
+  const sum = (k: keyof (typeof rows)[number]) => rows.reduce((a, r) => a + (r[k] as number), 0);
+  const spent = sum('spent');
+  const value = sum('valueStopped');
+  const ratio = (sp: number, v: number) => (v > 0 ? `${(sp / v).toFixed(1)}×` : sp > 0 ? '—' : '0');
+  return (
+    <div className="mt-4 min-w-0">
+      <div className="label mb-1">Cost exchange</div>
+      <p className="mb-1 text-[11px] text-ops-dim">
+        Interceptor rounds spent (at resupply prices) against the rough attacker cost of what they stopped.
+        {value > 0 && <> Overall you spent <b className="text-white">{Math.round(spent)}</b> credits to stop threats worth <b className="text-white">{Math.round(value)}</b>: {ratio(spent, value)} the attacker’s cost{spent > value * 3 ? '. Expensive interceptors on cheap drones drive this up; guns, Coyote and jamming are cheaper per kill.' : '.'}</>}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="table-ops w-full">
+          <thead><tr><th>Wave</th><th>Region</th><th>Stopped</th><th>Spent</th><th>On decoys</th><th>Worth stopped</th><th>Exchange</th><th>Damage</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.waveId}>
+                <td className="text-white">T+{r.atHour}h</td>
+                <td>{s.regions[r.region].short}</td>
+                <td className={TONE_TEXT[tone(r.threats ? (r.stopped / r.threats) * 100 : 0)]}>{r.stopped}/{r.threats}</td>
+                <td className="tabular-nums">{r.spent}</td>
+                <td className={`tabular-nums ${r.wasted ? 'text-ops-amber' : ''}`}>{r.wasted || '—'}{r.decoysEngaged ? ` (${r.decoysEngaged})` : ''}</td>
+                <td className="tabular-nums">{r.valueStopped}</td>
+                <td className="tabular-nums">{ratio(r.spent, r.valueStopped)}</td>
+                <td className={r.damageTaken ? 'text-ops-red' : ''}>{r.damageTaken || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

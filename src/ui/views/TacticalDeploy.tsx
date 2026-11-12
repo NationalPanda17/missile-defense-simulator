@@ -1,8 +1,8 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  equipmentCost, isEffector, isUnlimited, previewDefense, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -158,6 +158,44 @@ function DeployGuide({ s, region, onPick, onHide }: { s: SimState; region: Regio
   );
 }
 
+/** What each threat class needs, in a sentence, for the forecast check. */
+const CLASS_ADVICE: Record<ThreatClass, string> = {
+  slowDrone: 'slow drones: cheap to stop with guns, Coyote or jamming; low, so radars must be close or on high ground',
+  fastDrone: 'fast drones: counter-drone guns and short-range missiles; low-flying',
+  cruise: 'cruise missiles: fly very low; short/medium-range missiles (NASAMS, IRIS-T) with a radar nearby or airborne early warning',
+  rocket: 'rockets: fast and short-lived; Iron Dome-class systems near the sites they target',
+  ballistic: 'ballistic missiles: only upper-tier or long-range systems reach them (Patriot PAC-3, THAAD, Arrow, SM-3/SM-6)',
+};
+
+/** Forecast check: the expected threats in this region and how the current layout would do against them. */
+function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
+  const t = s.tactical!;
+  const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}`).join('|');
+  // Recomputed only when this region's layout (or the phase) changes.
+  const p = useMemo(() => previewDefense(s, region), [key, region, s.phaseIndex, s.hour]);
+  if (!p) {
+    return t.forecast.includes(region) ? null : (
+      <p className="text-[11px] text-ops-dim">{s.regions[region].name} is not in this phase’s forecast. Surprise attacks are possible in later phases.</p>
+    );
+  }
+  const pct = Math.round(p.prevented * 100);
+  const tone = pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red';
+  const classes = (Object.entries(p.mix) as [ThreatClass, number][]).sort((a, b) => b[1] - a[1]);
+  return (
+    <details className="rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
+      <summary className="cursor-pointer list-none">
+        <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
+        With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
+        <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+      </summary>
+      <ul className="mt-1 space-y-0.5 text-ops-dim">
+        {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
+      </ul>
+      <div className="mt-1 text-[10px] text-ops-dim">An estimate from replaying the forecast waves against your layout. Surprise attacks are not included.</div>
+    </details>
+  );
+}
+
 export function DeployPanel({ s }: { s: SimState }) {
   const t = s.tactical!;
   const [region, setRegion] = useState<RegionId>(t.forecast[0] ?? 'NAM');
@@ -188,20 +226,23 @@ export function DeployPanel({ s }: { s: SimState }) {
     : 'Pick equipment from the catalog, then click the map to place it (or Tab to the map, move with the arrow keys and press Enter). Click or Tab to a placed system to move or withdraw it.';
 
   return (
-    <div className="space-y-3">
-      <div className="rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+    // Short screens: region tabs, the forecast check and the map come first; the forecast note and guide follow.
+    <div className="flex flex-col gap-3">
+      <div className="order-4 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
         <span className="label mr-2 text-ops-red">Threat forecast</span>
         Attacks are expected in{' '}
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
         {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
       </div>
 
-      {showGuide && <DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} />}
+      <div className="order-2"><ForecastCheck s={s} region={region} /></div>
+
+      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
-        <button className="text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
+        <button className="order-5 self-start text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
       )}
 
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
+      <div className="order-1 flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => (
           <button key={r} data-coach={`region-${r}`} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelectedDep(null); setMoving(false); }}>
             {s.regions[r].short}
@@ -212,7 +253,7 @@ export function DeployPanel({ s }: { s: SimState }) {
       </div>
 
       {/* Phones: map, catalog, then coverage. Wider screens: map and coverage on the left, catalog on the right. */}
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1" data-coach="deploy-map">
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
             highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}

@@ -3,8 +3,9 @@ import { SIM_CONFIG, lessonOf, saveGame } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
-import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
+import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
 import { sound } from './audio/sound';
+import { PausePrompt } from './PausePrompt';
 import { installA11y } from './a11y/settings';
 import { ChallengeInvite } from './Challenge';
 import { checkForUpdate, desktopVersion, dismissUpdate, type UpdateInfo } from './desktopUpdate';
@@ -123,7 +124,7 @@ function Root() {
         if (st.status === 'running') dispatch({ type: 'setPaused', paused: !st.paused });
         return;
       }
-      if (['1', '2', '3', '4'].includes(e.key)) return void dispatch({ type: 'setSpeed', speed: ([1, 2, 4, 8] as const)[Number(e.key) - 1] });
+      if (['1', '2', '3', '4'].includes(e.key)) return chooseSpeed(st, ([1, 2, 4, 8] as const)[Number(e.key) - 1]);
       if (e.key === '?') return ui.setHelp(true);
       if (e.key === 'Escape') { if (!ui.eventId && !ui.assetId) ui.setRegion(null); return; }
       const k = e.key.toUpperCase();
@@ -178,7 +179,7 @@ function Root() {
         <div className="flex items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">
           SCENARIO COMPLETE — review the after-action report.
           <button className="btn" onClick={() => ui.setView('aar')}>Open AAR</button>
-          <button className="btn" onClick={() => ui.setView('campaign')}>New run</button>
+          <button className="btn" onClick={() => { store.quit(); ui.setView('global'); }} title="Back to the start screen to begin a new run (this run stays in your autosave)">New run</button>
         </div>
       )}
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
@@ -190,6 +191,7 @@ function Root() {
       </div>
       <BottomPanel s={s} />
       {s.status === 'briefing' && <BriefingModal s={s} />}
+      <PausePrompt s={s} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <HelpModal />}

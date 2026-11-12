@@ -1,5 +1,6 @@
 // Tactical Theater: watch threat waves play out, track magazines and resupply during a phase.
 import { useEffect, useRef, useState } from 'react';
+import { WaveActions } from '../PausePrompt';
 import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
@@ -181,8 +182,10 @@ export function TheaterView({ s }: { s: SimState }) {
 
   return (
     <div className="space-y-2">
-      {inbound.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" role="status">
+      {/* Always the same height, so the controls below don't jump when a warning appears or clears. */}
+      <div className="flex min-h-[30px] flex-wrap items-center gap-1.5" role="status" aria-live="polite">
+        {inbound.length === 0 && <span className="text-[11px] text-ops-dim">No waves inbound.</span>}
+        {inbound.length > 0 && (<>
           {inbound.map(({ wave, eta, launched, launchIn }) => (
             <button key={wave.id} className="chip blink border-ops-red/60 bg-ops-red/15 px-3 py-1 text-[11px] text-ops-red" onClick={() => setRegion(wave.region)}>
               {launched
@@ -190,8 +193,8 @@ export function TheaterView({ s }: { s: SimState }) {
                 : `⚠ Launch expected: ${s.regions[wave.region].name} from the ${wave.axis}, ${launchIn <= 0 ? 'now' : `~${launchIn}h`}`}
             </button>
           ))}
-        </div>
-      )}
+        </>)}
+      </div>
 
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => {
@@ -207,6 +210,12 @@ export function TheaterView({ s }: { s: SimState }) {
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Panel title={`Theater · ${s.regions[region].name}`} right={<Chip t={PROTECTION_TONE[prot.level]}>{prot.level} · {Math.round(prot.coverage * 100)}% covered</Chip>}>
+          {inbound.some((x) => x.wave.region === region) && (
+            <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+              <div className="label text-ops-red">Wave inbound · what you can do now</div>
+              <WaveActions s={s} region={region} compact />
+            </div>
+          )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
             {alertActive(s, region) ? (
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
@@ -282,7 +291,13 @@ export function TheaterView({ s }: { s: SimState }) {
             {deps.length ? (
               <ul className="max-h-[26rem] space-y-1.5 overflow-y-auto pr-1">{deps.map((d) => <DeploymentRow key={d.id} s={s} d={d} moving={moving === d.id} onRedeploy={() => setMoving(moving === d.id ? null : d.id)} />)}</ul>
             ) : (
-              <p className="text-[11px] text-ops-dim">Nothing deployed in {s.regions[region].name}. Equipment is placed during campaign briefings.</p>
+              <div className="rounded border border-ops-line p-2 text-[11px] leading-relaxed">
+                <div className="text-white">Nothing deployed in {s.regions[region].name}.</div>
+                <p className="text-ops-dim">
+                  You build the defense; the simulation fights it. New systems are placed in each phase’s briefing (Deploy defenses).
+                  {s.status === 'running' ? ' During the phase you can raise alerts, resupply magazines, move a system here with an emergency redeploy, and handle reports.' : ''}
+                </p>
+              </div>
             )}
             <p className="mt-2 text-[10px] text-ops-dim">
               Systems wear down like other equipment: send them for maintenance from Ground, Air or Maritime Command.

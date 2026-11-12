@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, reserveDrain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -24,6 +24,20 @@ function PhaseProgress({ s }: { s: SimState }) {
   const phase = s.phases[s.phaseIndex];
   const pct = s.status === 'running' ? Math.min(100, ((t - s.phaseStartHour) / phase.hours) * 100) : s.status === 'complete' ? 100 : 0;
   return <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-ops-line/70"><div className="h-full bg-ops-cyan/70" style={{ width: `${pct}%` }} /></div>;
+}
+
+/** Picking a speed also resumes a paused clock (outside turn mode): choosing a speed means "run at this speed". */
+let warned8 = false;
+export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
+  if (sp === 8 && !warned8 && s.speed !== 8) {
+    warned8 = true;
+    const p = store.autoPause();
+    store.toast('info', p && (p.launch || p.deadline)
+      ? '8× is fast: a day passes in seconds. Auto-pause will stop for launches and decisions.'
+      : '8× is fast: a day passes in seconds, and reports and launches can pass unnoticed. Turn on auto-pause under Aa.');
+  }
+  dispatch({ type: 'setSpeed', speed: sp });
+  if (s.status === 'running' && s.paused && !s.turnBased) dispatch({ type: 'setPaused', paused: false });
 }
 
 export function TopBar({ s }: { s: SimState }) {
@@ -65,7 +79,7 @@ export function TopBar({ s }: { s: SimState }) {
           {s.paused || s.turnBased ? '▶ Resume' : '❚❚ Pause'}
         </button>
         {([1, 2, 4, 8] as const).map((sp, i) => (
-          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setSpeed', speed: sp })} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
+          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}
         <button data-coach="turn" className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })} title="Toggle turn-based mode">Turn</button>
         <button data-coach="advance" className="btn" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn — 6 hours (T)">+{SIM_CONFIG.turnHours}h ⏭</button>
@@ -76,7 +90,14 @@ export function TopBar({ s }: { s: SimState }) {
         <TopMetric label="Network" v={m.network} />
         <div className="leading-tight">
           <div className="label">Credits</div>
-          <div className={`tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>{Math.round(s.credits)}</div>
+          <div className={`whitespace-nowrap tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>
+            {Math.round(s.credits)}
+            {reserveDrain(s) >= 1 && (
+              <span className="ml-1 text-[10px] text-ops-amber" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
+                unspent −{Math.round(reserveDrain(s))}/h
+              </span>
+            )}
+          </div>
         </div>
         <div className="leading-tight">
           <div className="label">Alert</div>
@@ -270,7 +291,7 @@ export function BottomPanel({ s }: { s: SimState }) {
     );
   }
   return (
-    <div className="flex h-52 flex-col border-t border-ops-line bg-ops-panel/80">
+    <div className="flex h-[min(13rem,28vh)] min-h-[8rem] flex-col border-t border-ops-line bg-ops-panel/80">
       <div className="flex items-center gap-2 border-b border-ops-line px-2 py-1">
         <Tabs<BottomTab> value={tab} onChange={setTab} tabs={[
           { id: 'timeline', label: 'Event Timeline' }, { id: 'commands', label: 'Command History' },

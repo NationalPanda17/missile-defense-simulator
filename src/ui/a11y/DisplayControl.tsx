@@ -1,6 +1,7 @@
 // Button with display and accessibility settings: high contrast, reduced motion, screen-reader announcements.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { a11y, setA11y, subscribeA11y } from './settings';
+import { PacingSettings } from '../PausePrompt';
 
 export function DisplaySettings() {
   const st = useSyncExternalStore(subscribeA11y, a11y);
@@ -36,9 +37,11 @@ export function DisplayControl() {
         <span aria-hidden className="font-sans text-[13px] font-bold normal-case leading-none">Aa</span>
       </button>
       {open && (
-        <div role="dialog" aria-label="Display and accessibility" className="panel fadein absolute right-0 top-full z-[60] mt-1 w-72 border-ops-cyan/40 bg-ops-panel p-3">
+        <div role="dialog" aria-label="Display and accessibility" className="panel fadein absolute right-0 top-full z-[60] mt-1 max-h-[80vh] w-72 overflow-y-auto border-ops-cyan/40 bg-ops-panel p-3">
           <div className="label mb-2">Display & accessibility</div>
           <DisplaySettings />
+          <div className="label mb-2 mt-4">Auto-pause</div>
+          <PacingSettings />
         </div>
       )}
     </div>

@@ -8,6 +8,13 @@ import { sound } from '../audio/sound';
 import { Stars } from './Stars';
 import { loadProgress, loadStep, markLessonDone, recordDrill, recordExam, saveStep, startLesson } from './progress';
 
+/**
+ * On large screens the coach docks in the strip between the left navigation (14rem) and the situation sidebar
+ * (20rem), so it never covers either; wide and short, it leaves dialogs most of the screen's height.
+ */
+const DOCK = 'lg:left-[calc(14rem+0.75rem)]';
+const DOCK_OPEN = 'lg:right-[calc(20rem+0.75rem)] lg:w-auto lg:max-h-[28vh]';
+
 export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();
   const [i, setI] = useState(() => Math.min(loadStep(s.campaignId), lesson.steps.length - 1));
@@ -91,7 +98,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
 
   if (!open) {
     return (
-      <div ref={ref} className="fixed bottom-2 left-2 right-2 z-[55] sm:right-auto sm:w-[380px]">
+      <div ref={ref} className={`fixed bottom-2 left-2 right-2 z-[55] sm:right-auto sm:w-[380px] ${DOCK}`}>
         {spot}
         <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => setOpen(true)} aria-expanded={false}>
           <span className="label shrink-0 text-ops-cyan">Coach {i + 1}/{lesson.steps.length}</span>
@@ -103,7 +110,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   }
 
   return (
-    <div ref={ref} className="panel fadein fixed bottom-2 left-2 right-2 z-[55] max-h-[45vh] overflow-y-auto border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[70vh]" role="complementary" aria-label="Training coach">
+    <div ref={ref} className={`panel fadein fixed bottom-2 left-2 right-2 z-[55] max-h-[45vh] overflow-y-auto border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[60vh] ${DOCK} ${DOCK_OPEN}`} role="complementary" aria-label="Training coach">
       {spot}
       <div className="panel-title sticky top-0 z-10 bg-ops-panel">
         <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>

@@ -224,3 +224,37 @@ function tacticalLessons(s: SimState): Lesson[] {
   if (lost > 0) out.push({ tone: 'poor', text: `${lost} site(s) were left at half integrity or worse.` });
   return out;
 }
+
+export interface WaveExchange {
+  waveId: string;
+  region: RegionId;
+  atHour: number;
+  threats: number; // genuine
+  stopped: number;
+  decoysEngaged: number;
+  spent: number; // credits of interceptor rounds fired at the wave (decoys included)
+  wasted: number; // of which at decoys
+  valueStopped: number; // attacker cost of the genuine threats stopped
+  damageTaken: number; // site integrity lost
+}
+
+/** Cost exchange per resolved wave: what the defense spent against what it stopped. */
+export function costExchange(s: SimState): WaveExchange[] {
+  const t = s.tactical;
+  if (!t) return [];
+  const costOf = TACTICAL_CONFIG.threatCost;
+  return t.waves.filter((w) => w.resolved).sort((a, b) => a.atHour - b.atHour).map((w) => {
+    const real = w.tracks.filter((x) => !x.decoy);
+    const decoys = w.tracks.filter((x) => x.decoy);
+    return {
+      waveId: w.id, region: w.region, atHour: w.atHour,
+      threats: real.length,
+      stopped: real.filter((x) => x.outcome === 'stopped').length,
+      decoysEngaged: decoys.filter((x) => x.shots > 0).length,
+      spent: Math.round(w.tracks.reduce((a, x) => a + (x.cost ?? 0), 0)),
+      wasted: Math.round(decoys.reduce((a, x) => a + (x.cost ?? 0), 0)),
+      valueStopped: real.filter((x) => x.outcome === 'stopped').reduce((a, x) => a + costOf[x.cls], 0),
+      damageTaken: real.reduce((a, x) => a + (x.damage ?? 0), 0),
+    };
+  });
+}

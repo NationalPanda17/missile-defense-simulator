@@ -461,6 +461,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       if (!isUnlimited(spec)) {
         if (d.stock <= 0) break;
         d.stock -= 1;
+        tr.cost = (tr.cost ?? 0) + roundCost(spec);
       }
       tr.shots += 1;
       t.stats.shots += 1;
@@ -532,6 +533,57 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   w.applied = false;
   const real = w.tracks.filter((x) => !x.decoy).length;
   if (real) tlog(s, 'crit', `LAUNCH: threat wave ${w.id} (${real} threats) inbound to ${region.name} from the ${w.axis}, impact T+${w.atHour}h.`, w.region);
+}
+
+export interface DefensePreview {
+  waves: number; // forecast waves still to come in the region this phase
+  threats: number; // genuine threats in them
+  stopRate: number; // expected share of genuine threats stopped (0-1)
+  prevented: number; // expected share of their damage prevented, weighted by site importance (0-1)
+  mix: Partial<Record<ThreatClass, number>>; // threats by class
+}
+
+/**
+ * What-if for a briefing: plays the region's forecast waves against the current layout many times with fresh
+ * random numbers (never the game's own stream) and averages the result. Uses the real engagement rules, so moving
+ * or adding a system changes the estimate exactly as it would change the fight. Surprise waves are not included.
+ */
+export function previewDefense(s: SimState, region: RegionId, runs = 24): DefensePreview | null {
+  const t = s.tactical;
+  if (!t?.enabled) return null;
+  const waves = t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved && w.forecast);
+  if (!waves.length) return null;
+  const sites = new Map(t.sites.map((x) => [x.id, x]));
+  const mix: Partial<Record<ThreatClass, number>> = {};
+  for (const w of waves) for (const tr of w.tracks) if (!tr.decoy) mix[tr.cls] = (mix[tr.cls] ?? 0) + 1;
+  let stopped = 0;
+  let total = 0;
+  let saved = 0;
+  let potential = 0;
+  for (let k = 0; k < runs; k++) {
+    const t2: TacticalState = {
+      ...t,
+      rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
+      deployments: t.deployments.map((d) => ({ ...d })),
+      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined })) })),
+      stats: emptyStats(),
+    };
+    const s2 = { ...s, tactical: t2, log: [] } as SimState;
+    for (const w of t2.waves) {
+      resolveWave(s2, t2, w);
+      for (const tr of w.tracks) {
+        if (tr.decoy) continue;
+        const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
+        total++;
+        potential += v;
+        if (tr.outcome === 'stopped') { stopped++; saved += v; }
+      }
+    }
+  }
+  return {
+    waves: waves.length, threats: Math.round(total / runs), stopRate: total ? stopped / total : 0,
+    prevented: potential ? saved / potential : 0, mix,
+  };
 }
 
 /** Is a raised alert in force in this region now? */
@@ -618,6 +670,12 @@ export function waveLeadHours(tracks: { cls: ThreatClass }[]): number {
 // ── Read-only helpers for the UI ─────────────────────────────────────────
 
 /** Credits to refill a deployment's magazine: a share of its cost, in proportion to the rounds missing. */
+/** Credits one interceptor round costs to replace (the resupply price per round). Unlimited systems: 0. */
+export function roundCost(spec: EquipmentSpec): number {
+  if (isUnlimited(spec) || spec.magazine <= 0) return 0;
+  return (equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate) / spec.magazine;
+}
+
 export function resupplyCost(d: Deployment): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
