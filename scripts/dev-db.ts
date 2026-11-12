@@ -100,5 +100,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 /** Folder of this platform's PostgreSQL binary package. It only exports dist/index.js, so resolve that and go up. */
 function nativePackageDir(require: NodeRequire): string {
-  return path.resolve(path.dirname(require.resolve(`@embedded-postgres/${process.platform}-${process.arch}`)), '..');
+  const os = process.platform === 'win32' ? 'windows' : process.platform; // the packages are named windows-x64, darwin-arm64, …
+  return path.resolve(path.dirname(require.resolve(`@embedded-postgres/${os}-${process.arch}`)), '..');
 }
