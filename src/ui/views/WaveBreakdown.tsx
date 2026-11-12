@@ -1,5 +1,5 @@
 // What happened to every threat in a wave, and why: shared by the after-action review and Mission Replay.
-import { EQUIPMENT_MAP, THREAT_LABELS, type SimState, type ThreatWave } from '../../engine';
+import { EQUIPMENT_MAP, THREAT_LABELS, leakText, whyEntries, type SimState, type ThreatWave } from '../../engine';
 
 export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
   const t = s.tactical!;
@@ -9,7 +9,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
   const real = wave.tracks.filter((x) => !x.decoy);
   const decoys = wave.tracks.filter((x) => x.decoy);
   if (!wave.resolved) return <p className="text-[11px] text-ops-dim">Not launched yet.</p>;
-  if (real.length && real.every((x) => x.fired === undefined && x.leak === undefined)) {
+  if (real.length && real.every((x) => x.fired === undefined && x.leak === undefined && x.why === undefined)) {
     return <p className="text-[11px] text-ops-dim">Details were not recorded for this wave (it was played before breakdowns existed).</p>;
   }
 
@@ -17,7 +17,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
   const idle = new Map<string, Map<string, number>>();
   const firedAny = new Set(wave.tracks.flatMap((x) => (x.fired ?? []).map((f) => f.dep)));
   for (const tr of wave.tracks) {
-    for (const w of tr.why ?? []) {
+    for (const w of whyEntries(tr)) {
       if (firedAny.has(w.dep)) continue;
       const m = idle.get(w.dep) ?? new Map<string, number>();
       m.set(w.reason, (m.get(w.reason) ?? 0) + 1);
@@ -44,7 +44,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
                 <td className={tr.detected ? 'text-ops-green' : 'text-ops-amber'}>{tr.detected === undefined ? '—' : tr.detected ? 'yes' : 'no'}</td>
                 <td>{tr.fired?.length ? tr.fired.map((f) => `${sys(f.dep)} ×${f.shots}`).join(', ') : <span className="text-ops-dim">nobody</span>}</td>
                 <td className={tr.outcome === 'stopped' ? 'text-ops-green' : 'text-ops-red'}>
-                  {tr.outcome === 'stopped' ? `stopped by ${sys(tr.stoppedBy ?? '')}` : <>got through{tr.damage ? ` (−${tr.damage})` : ''}{tr.leak && <div className="text-[10px] leading-snug text-ops-dim">{tr.leak}</div>}</>}
+                  {tr.outcome === 'stopped' ? `stopped by ${sys(tr.stoppedBy ?? '')}` : <>got through{tr.damage ? ` (−${tr.damage})` : ''}<div className="text-[10px] leading-snug text-ops-dim">{leakText(tr, t.deployments)}</div></>}
                 </td>
               </tr>
             ))}

@@ -3,10 +3,11 @@
 import { SIM_CONFIG } from './config';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
 import { isActive } from './metrics';
-import { incomingWaves, isUnlimited, resupplyRounds, stockpileOf } from './tactical';
+import { incomingWaves, isUnlimited, resupplyRounds, siteDamageShare, stockpileOf } from './tactical';
 import { objectiveMet, objectiveValue } from './scoring';
 import { WEATHER, conditionsAt } from './weather';
 import type { Domain, Objective, RegionId, SimState } from './types';
+import { REGION_IDS } from './types';
 
 export type AdviceLevel = 'urgent' | 'warn' | 'info';
 
@@ -116,6 +117,20 @@ export function advise(s: SimState): Advice[] {
           action: { label: 'Theater', view: 'theater', region: r },
         });
       }
+    }
+  }
+
+  // Damage that carries over: badly hit regions keep losing stability and draw more attacks until rebuilt.
+  if (t) {
+    for (const r of REGION_IDS) {
+      const share = siteDamageShare(s, r);
+      if (share < 0.2 || s.projects.some((p) => p.investmentId === 'rebuild' && p.region === r)) continue;
+      out.push({
+        id: `rebuild:${r}:${Math.round(share * 10)}`,
+        level: 'info',
+        text: `${name(r)}’s sites are down to ${Math.round(100 - share * 100)}% of their value. That keeps pulling stability down and makes it a likelier target; Rebuild Damaged Sites repairs them.`,
+        action: { label: 'Logistics', view: 'logistics' },
+      });
     }
   }
 
