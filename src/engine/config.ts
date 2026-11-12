@@ -174,3 +174,15 @@ export const SCORE_WEIGHTS = {
   information: 0.1,
   recovery: 0.1,
 };
+
+/** Tactical layer tuning. Real equipment figures live in equipment.ts; these are the game's own choices. */
+export const TACTICAL_CONFIG = {
+  /** Credits = creditsScale × (unit cost in $M) ^ costExponent, at least minCost. Compresses a 0.1–2200 $M spread. */
+  creditsScale: 6,
+  costExponent: 0.5,
+  minCost: 4,
+  /** Hourly upkeep as a fraction of deployment cost. */
+  upkeepRate: 0.004,
+  /** Size of each region's theater map, in km. */
+  theaterKm: { width: 600, height: 400 },
+};

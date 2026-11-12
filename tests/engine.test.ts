@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
+  EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
 } from '../src/engine';
 import type { SimState } from '../src/engine';
 
@@ -67,5 +68,78 @@ describe('simulation engine', () => {
     const t = importJSON(exportJSON(s))!;
     expect(t.hour).toBe(s.hour);
     expect(t.events.length).toBe(s.events.length);
+  });
+});
+
+describe('tactical layer: equipment catalog', () => {
+  it('has unique ids and complete, sane figures', () => {
+    expect(new Set(EQUIPMENT.map((e) => e.id)).size).toBe(EQUIPMENT.length);
+    expect(EQUIPMENT.length).toBeGreaterThanOrEqual(30);
+    for (const e of EQUIPMENT) {
+      expect(e.name, e.id).toBeTruthy();
+      expect(e.description, e.id).toBeTruthy();
+      expect(LAYER_LABELS[e.layer], e.id).toBeTruthy();
+      expect(e.rangeKm, e.id).toBeGreaterThan(0);
+      expect(e.altitudeKm, e.id).toBeGreaterThan(0);
+      expect(e.unitCostUsdM, e.id).toBeGreaterThan(0);
+      expect(e.reactionSec, e.id).toBeGreaterThan(0);
+      for (const t of THREAT_CLASSES) {
+        expect(e.killRate[t], `${e.id} ${t}`).toBeGreaterThanOrEqual(0);
+        expect(e.killRate[t], `${e.id} ${t}`).toBeLessThanOrEqual(1);
+      }
+      if (e.radar) expect(e.radar.rangeKm, e.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('sensors engage nothing and effectors carry a magazine', () => {
+    for (const e of EQUIPMENT) {
+      if (e.layer === 'detection') expect(isEffector(e), e.id).toBe(false);
+      else {
+        expect(isEffector(e), e.id).toBe(true);
+        expect(e.magazine, e.id).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('every threat class can be engaged by something', () => {
+    for (const t of THREAT_CLASSES) expect(EQUIPMENT.some((e) => e.killRate[t] > 0), t).toBe(true);
+  });
+
+  it('named products list their official references', () => {
+    // The ZU-23-2 is widely built with no single official source, so its figures are game values.
+    for (const e of EQUIPMENT.filter((e) => !e.generic && e.id !== 'zu-23-2')) expect(e.sources.length, e.id).toBeGreaterThan(0);
+  });
+
+  it('compresses real costs into an affordable credit range', () => {
+    const costs = EQUIPMENT.map(equipmentCost);
+    expect(Math.min(...costs)).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...costs)).toBeLessThan(400);
+    for (const e of EQUIPMENT) expect(equipmentUpkeep(e), e.id).toBeGreaterThan(0);
+  });
+});
+
+describe('tactical layer: state and saves', () => {
+  it('new games start with an empty tactical state', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
+    expect(s.tactical).toEqual({ deployments: [] });
+  });
+
+  it('loads a save made before the tactical layer', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
+    delete s.tactical;
+    const t = importJSON(exportJSON(s))!;
+    expect(t).not.toBeNull();
+    expect(t.tactical).toEqual({ deployments: [] });
+  });
+
+  it('rejects malformed tactical state', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
+    const dep = { id: 'd1', equipmentId: 'iris-t-slm', region: 'EUR' as const, x: 100, y: 100, stock: 24, deployedAt: 0 };
+    s.tactical = { deployments: [dep] };
+    expect(stateShapeError(s)).toBeNull();
+    s.tactical = { deployments: [{ ...dep, equipmentId: 'not-real' }] };
+    expect(stateShapeError(s)).toMatch(/unknown equipment/);
+    s.tactical = { deployments: [{ ...dep, x: 9999 }] };
+    expect(stateShapeError(s)).toMatch(/outside the theater/);
   });
 });

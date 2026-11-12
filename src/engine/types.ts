@@ -275,6 +275,22 @@ export interface ScenarioSettings {
   domainCondition: Partial<Record<Domain, number>>;
 }
 
+/** A real-world system placed in a region's theater (tactical layer). Positions are km from the theater's top-left. */
+export interface Deployment {
+  id: string;
+  equipmentId: string; // key into EQUIPMENT
+  region: RegionId;
+  x: number;
+  y: number;
+  stock: number; // engagements left before resupply
+  deployedAt: number; // sim hour
+}
+
+/** Tactical layer state. Optional on SimState so saves from before the tactical layer still load. */
+export interface TacticalState {
+  deployments: Deployment[];
+}
+
 export interface SimState {
   version: number;
   campaignId?: string; // stable id of this scenario run (used by the persistence service)
@@ -312,6 +328,8 @@ export interface SimState {
   spendByCategory: Record<SpendCategory, number>;
   nextId: number;
   difficulty: number; // adaptive director multiplier
+
+  tactical?: TacticalState; // absent in saves made before the tactical layer
 
   // Derived metrics (recomputed each tick)
   metrics: Metrics;

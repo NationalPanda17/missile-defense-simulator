@@ -7,9 +7,11 @@ domains (Space, Air, Sea and Ground) across seven strategic regions. You manage 
 communications, unreliable intelligence and scarce resources through a four-phase campaign
 with dynamic events.
 
-All countries, equipment, names and figures are fictional. The mechanics are abstract
-strategic management (readiness, maintenance, communications, information quality). They do
-not model real systems, targeting or engagement.
+The world is fictional: its countries, network assets, sites and scenarios are invented, and
+no scenario recreates a real attack. The tactical layer's equipment catalog uses real air
+defense systems, with figures taken only from official public manufacturer or government
+statements, or made up for the game where none exist. No classified or leaked information
+is used.
 
 ## Quick start
 
@@ -173,6 +175,8 @@ missile-defense-simulator/
     │   ├── actions.ts            Player commands (validate → cost → mutate → log)
     │   ├── scoring.ts            Objectives, score breakdown, lessons learned
     │   ├── persistence.ts        Save/load/export
+    │   ├── equipment.ts          Tactical layer: real air defense equipment catalog
+    │   ├── tactical.ts           Tactical layer: state defaults and validation
     │   └── index.ts
     ├── shared/api.ts             Types shared by the API and its client
     ├── store/simStore.ts         Real-time loop, autosave + server sync, toasts; React binding

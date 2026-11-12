@@ -2,6 +2,7 @@
 import { CAMPAIGN_PHASES, REGION_DEFS, SIM_CONFIG } from './config';
 import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
+import { emptyTactical } from './tactical';
 import type {
   Asset, AssetRole, Domain, GameMode, PhaseConfig, Region, RegionId, ScenarioSettings, SimState,
 } from './types';
@@ -241,6 +242,7 @@ export function createInitialState(settings: ScenarioSettings): SimState {
     },
     baseline: { infrastructure: 0, readiness: 0 },
     minReadiness: 100,
+    tactical: emptyTactical(),
   };
   recomputeMetrics(state);
   // Settle derived regional values so the opening briefing shows a coherent picture.
