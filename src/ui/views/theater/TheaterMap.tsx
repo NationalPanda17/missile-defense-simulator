@@ -9,6 +9,7 @@ import {
 import { store } from '../../../store/simStore';
 import { LAYER_COLOR, SiteMarker, SystemIcon } from './icons';
 import { fanOut, layoutLabels, textWidth, type Box, type LabelRequest } from './labels';
+import { LiveThreats } from './LiveThreats';
 import { MapFurniture, TerrainLayer, peakHeight } from './terrain';
 
 export { LAYER_COLOR } from './icons';
@@ -293,6 +294,7 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
       {keyCursor && hover && !ghost && onPoint && (
         <g pointerEvents="none" stroke="#38d6f5" strokeWidth={1.5}><path d={`M${hover[0] - 10},${hover[1]} H${hover[0] + 10} M${hover[0]},${hover[1] - 10} V${hover[1] + 10}`} /></g>
       )}
+      <LiveThreats s={s} region={region} />
       {children}
     </svg>
   );

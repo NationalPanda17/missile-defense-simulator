@@ -337,13 +337,17 @@ export interface Track {
   stoppedBy?: string; // deployment id
   shots: number; // engagements fired at it
   damage?: number; // integrity lost by the target site
+  launchAt?: number; // sim hour (fractional) it launches; it impacts at the wave's atHour
+  stopAt?: number; // 0-1 along its path where it was stopped (for drawing the interception)
 }
 
 export interface ThreatWave {
   id: string;
   region: RegionId;
   phaseIndex: number;
-  atHour: number; // sim hour the wave arrives
+  atHour: number; // sim hour the wave arrives (impact)
+  launchAt?: number; // sim hour the wave launches and its outcome is decided; absent in older saves (= atHour)
+  applied?: boolean; // false while damage is pending impact; absent in older saves (applied with resolution)
   axis: ThreatAxis;
   forecast: boolean; // whether the briefing forecast this region
   tracks: Track[];

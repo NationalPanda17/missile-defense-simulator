@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
-    "user:reset-password": "tsx scripts/reset-password.ts"
+    "user:reset-password": "tsx scripts/reset-password.ts",
+    "build:geography": "tsx scripts/build-geography.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",
@@ -26,13 +27,18 @@
     "@types/pg": "^8.11.10",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
+    "@types/topojson-client": "3.1.5",
+    "@types/topojson-simplify": "3.0.3",
     "@vitejs/plugin-react": "4.3.4",
     "autoprefixer": "10.4.20",
     "embedded-postgres": "^18.4.0-beta.17",
     "postcss": "8.4.49",
     "tailwindcss": "3.4.17",
+    "topojson-client": "3.1.0",
+    "topojson-simplify": "3.0.3",
     "typescript": "5.6.3",
     "vite": "5.4.11",
-    "vitest": "2.1.8"
+    "vitest": "2.1.8",
+    "world-atlas": "2.0.2"
   }
 }

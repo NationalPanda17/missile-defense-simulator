@@ -53,7 +53,7 @@ export const REGION_DEFS: { id: RegionId; name: string; short: string; center: [
   { id: 'EUR', name: 'Europe', short: 'EURO', center: [15, 52] },
   { id: 'AFR', name: 'Africa', short: 'AFRI', center: [20, 5] },
   { id: 'MDE', name: 'Middle East', short: 'MIDE', center: [48, 28] },
-  { id: 'IPA', name: 'Indo-Pacific', short: 'INPAC', center: [115, 20] },
+  { id: 'IPA', name: 'Indo-Pacific', short: 'INPAC', center: [108, 24] },
   { id: 'POL', name: 'Polar Regions', short: 'POLAR', center: [-40, 75] },
 ];
 
@@ -241,6 +241,11 @@ export const TACTICAL_CONFIG = {
   },
   /** Altitude (km) at which each class is engaged; a system whose ceiling is lower can't engage it. */
   threatAltitudeKm: { slowDrone: 0.1, fastDrone: 0.3, cruise: 0.05, rocket: 3, ballistic: 12 } as Record<ThreatClass, number>,
+  /**
+   * Time in flight (sim hours) from launch to impact, per class (game values, chosen to be watchable). A wave
+   * launches early enough that its slowest threat arrives at the wave's impact hour; interception is decided at launch.
+   */
+  flightHours: { slowDrone: 3, fastDrone: 1.5, cruise: 1.2, rocket: 0.4, ballistic: 0.6 } as Record<ThreatClass, number>,
   /** Threat speed in km per second (game values). Sets how long a threat stays in each system's range. */
   threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2 } as Record<ThreatClass, number>,
   /** Site integrity lost when a threat of each class gets through. */

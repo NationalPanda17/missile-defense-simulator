@@ -37,7 +37,7 @@ export function RegionPanel({ s, id }: { s: SimState; id: RegionId }) {
   const hist = s.history.slice(-72).map((h) => h.regions[id]);
   const regional = INVESTMENTS.filter((i) => i.scope === 'region');
   return (
-    <aside className="panel fadein absolute inset-y-0 right-0 z-10 flex w-[min(360px,100%)] flex-col overflow-hidden bg-ops-panel/95 md:static">
+    <aside className="panel fadein absolute inset-y-0 right-0 z-10 flex w-[min(360px,100%)] flex-col overflow-hidden bg-ops-panel md:static md:bg-ops-panel/95">
       <div className="panel-title">
         <span>Regional Command · {r.short}</span>
         <button className="btn px-2" onClick={() => ui.setRegion(null)} aria-label="Close regional panel">✕</button>

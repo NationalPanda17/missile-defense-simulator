@@ -134,7 +134,8 @@ export function TheaterView({ s }: { s: SimState }) {
   const inbound = incomingWaves(s);
   const lastResolved = t ? [...t.waves].filter((w) => w.resolved).sort((a, b) => b.atHour - a.atHour)[0] : undefined;
   const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
-  const [replayId, setReplayId] = useState<string | null>(lastResolved?.id ?? null);
+  const [replayId, setReplayId] = useState<string | null>(lastResolved?.id ?? null); // wave shown in the summary
+  const [playing, setPlaying] = useState<string | null>(null); // wave being replayed on demand
   const [selected, setSelected] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
   const movingDep = t?.deployments.find((d) => d.id === moving) ?? null;
@@ -151,8 +152,10 @@ export function TheaterView({ s }: { s: SimState }) {
   useEffect(() => {
     if (lastResolved && lastResolved.id !== seen.current) {
       seen.current = lastResolved.id;
+      // A new wave has launched: follow it live (no replay needed).
       setRegion(lastResolved.region);
       setReplayId(lastResolved.id);
+      setPlaying(null);
     }
   }, [lastResolved?.id]);
 
@@ -171,9 +174,11 @@ export function TheaterView({ s }: { s: SimState }) {
     <div className="space-y-2">
       {inbound.length > 0 && (
         <div className="flex flex-wrap gap-1.5" role="status">
-          {inbound.map(({ wave, eta }) => (
+          {inbound.map(({ wave, eta, launched, launchIn }) => (
             <button key={wave.id} className="chip blink border-ops-red/60 bg-ops-red/15 px-3 py-1 text-[11px] text-ops-red" onClick={() => setRegion(wave.region)}>
-              ⚠ Inbound: {s.regions[wave.region].name} from the {wave.axis}, {eta <= 0 ? 'now' : `~${eta}h`}
+              {launched
+                ? `⚠ In flight: ${s.regions[wave.region].name} from the ${wave.axis}, impact ${eta <= 0 ? 'now' : `~${eta}h`}`
+                : `⚠ Launch expected: ${s.regions[wave.region].name} from the ${wave.axis}, ${launchIn <= 0 ? 'now' : `~${launchIn}h`}`}
             </button>
           ))}
         </div>
@@ -214,18 +219,24 @@ export function TheaterView({ s }: { s: SimState }) {
           <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
             onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
             onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
-            {replay && <WaveReplay key={replay.id} s={s} wave={replay} />}
+            {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} />}
           </TheaterMap>
           <div className="mt-1.5"><MapLegend region={region} /></div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-            {replay ? (
+            {replay && replay.applied === false ? (
+              <>
+                <span className="text-white">{replay.id}, from the {replay.axis}</span>
+                <span className="blink text-ops-red">in flight · impact {replay.atHour - s.hour <= 0 ? 'now' : `in ~${replay.atHour - s.hour}h`}</span>
+                <span className="text-ops-dim">{threatMix(real)}</span>
+              </>
+            ) : replay ? (
               <>
                 <span className="text-white">{replay.id}, T+{replay.atHour}h, from the {replay.axis}</span>
                 <span className="text-ops-green">{real.filter((x) => x.outcome === 'stopped').length} stopped</span>
                 <span className="text-ops-red">{real.filter((x) => x.outcome === 'leaked').length} got through</span>
                 {replay.tracks.some((x) => x.decoy) && <span className="text-ops-dim">{replay.tracks.filter((x) => x.decoy).length} false tracks</span>}
                 <span className="text-ops-dim">{threatMix(real)}</span>
-                <button className="btn px-2 py-0.5" onClick={() => { setReplayId(null); requestAnimationFrame(() => setReplayId(replay.id)); }}>Replay</button>
+                <button className="btn px-2 py-0.5" onClick={() => { setPlaying(null); requestAnimationFrame(() => setPlaying(replay.id)); }}>Replay</button>
               </>
             ) : (
               <span className="text-ops-dim">No waves have reached {s.regions[region].name} yet this campaign.</span>
@@ -236,8 +247,9 @@ export function TheaterView({ s }: { s: SimState }) {
               {regionWaves.map((w) => {
                 const r = w.tracks.filter((x) => !x.decoy);
                 const leaked = r.filter((x) => x.outcome === 'leaked').length;
+                if (w.applied === false) return <span key={w.id} className="chip border-ops-red/50 text-ops-red">T+{w.atHour}h in flight</span>;
                 return (
-                  <button key={w.id} className={`btn px-2 py-0.5 ${w.id === replayId ? 'btn-active' : ''}`} onClick={() => setReplayId(w.id)}>
+                  <button key={w.id} className={`btn px-2 py-0.5 ${w.id === replayId ? 'btn-active' : ''}`} onClick={() => { setReplayId(w.id); setPlaying(null); }}>
                     T+{w.atHour}h <span className={leaked ? 'text-ops-red' : 'text-ops-green'}>{r.length - leaked}/{r.length}</span>
                   </button>
                 );

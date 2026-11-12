@@ -156,20 +156,22 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
         </div>
       </Panel>
       <Panel title="Regional Conditions">
+        <div className="overflow-x-auto">
         <table className="table-ops w-full">
-          <thead><tr><th>Region</th><th>Stability</th><th>Infrastructure</th></tr></thead>
+          <thead><tr><th>Region</th><th title="Stability">Stab.</th><th title="Infrastructure">Infra.</th></tr></thead>
           <tbody>
             {REGION_IDS.map((id) => (
               <tr key={id}><td>{id}</td>
                 {(['regionStability', 'regionInfrastructure'] as const).map((k) => (
-                  <td key={k}><input type="range" min={20} max={100} value={cfg[k][id] ?? 75} aria-label={`${id} ${k}`}
-                    onChange={(e) => set(k, { ...cfg[k], [id]: Number(e.target.value) } as Partial<Record<RegionId, number>>)} className="w-24 accent-cyan-400" />
-                    <span className="ml-1 tabular-nums">{cfg[k][id] ?? 75}</span></td>
+                  <td key={k} className="whitespace-nowrap"><input type="range" min={20} max={100} value={cfg[k][id] ?? 75} aria-label={`${id} ${k === 'regionStability' ? 'stability' : 'infrastructure'}`}
+                    onChange={(e) => set(k, { ...cfg[k], [id]: Number(e.target.value) } as Partial<Record<RegionId, number>>)} className="w-16 accent-cyan-400 align-middle" />
+                    <span className="ml-1 inline-block w-6 text-right tabular-nums">{cfg[k][id] ?? 75}</span></td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </Panel>
       <Panel title="Domain Readiness (starting condition)">
         <div className="space-y-3">

@@ -680,7 +680,7 @@ describe('tactical layer: in-phase orders', () => {
       execute(s, { type: 'beginPhase' });
       let g = 0;
       while (s.status === 'running' && g++ < 100) {
-        if (alert) for (const w of s.tactical!.waves) if (!w.resolved && w.atHour === s.hour + 1) execute(s, { type: 'raiseAlert', region: w.region });
+        if (alert) for (const w of s.tactical!.waves) if (!w.resolved && (w.launchAt ?? w.atHour) === s.hour + 1) execute(s, { type: 'raiseAlert', region: w.region });
         execute(s, { type: 'advance', hours: 1 });
       }
       return s.tactical!.stats;
@@ -713,5 +713,46 @@ describe('smooth movement', () => {
     expect(a.status).not.toBe('transit');
     expect(a.pos).toEqual(route.to);
     expect(a.transitRoute).toBeUndefined();
+  });
+});
+
+describe('threat timeline: launch, flight, impact', () => {
+  it('decides outcomes at launch and lands damage only at impact', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 9 }));
+    const r = s.tactical!.forecast[0];
+    const ss = s.tactical!.sites.filter((x) => x.region === r).sort((a, b) => b.importance - a.importance);
+    execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: r, x: ss[0].x, y: ss[0].y });
+    execute(s, { type: 'beginPhase' });
+    const w = s.tactical!.waves.find((x) => x.region === r)!;
+    expect(w.launchAt).toBeLessThan(w.atHour);
+    execute(s, { type: 'advance', hours: w.launchAt! - s.hour - 1 });
+    expect(w.resolved).toBe(false);
+    const integrityBefore = s.tactical!.sites.map((x) => x.integrity);
+    execute(s, { type: 'advance', hours: 1 }); // launch
+    expect(w.resolved).toBe(true);
+    expect(w.applied).toBe(false);
+    for (const tr of w.tracks) {
+      expect(tr.outcome).toBeDefined();
+      expect(tr.launchAt!).toBeLessThan(w.atHour);
+      if (tr.outcome === 'stopped') { expect(tr.stopAt!).toBeGreaterThan(0); expect(tr.stopAt!).toBeLessThan(1); }
+    }
+    // In flight: nothing has landed yet.
+    if (w.atHour - s.hour > 1) execute(s, { type: 'advance', hours: w.atHour - s.hour - 1 });
+    expect(s.tactical!.sites.map((x) => x.integrity)).toEqual(integrityBefore);
+    execute(s, { type: 'advance', hours: 1 }); // impact
+    expect(w.applied).toBe(true);
+    const leaked = w.tracks.filter((x) => !x.decoy && x.outcome === 'leaked').length;
+    const changed = s.tactical!.sites.some((x, i) => x.integrity !== integrityBefore[i]);
+    expect(changed).toBe(leaked > 0);
+  });
+
+  it('applies older saves\' waves (no launch time) in a single hour, as before', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 9 }));
+    execute(s, { type: 'beginPhase' });
+    const w = s.tactical!.waves[0];
+    delete w.launchAt;
+    execute(s, { type: 'advance', hours: w.atHour - s.hour });
+    expect(w.resolved).toBe(true);
+    expect(w.applied).toBe(true);
   });
 });
