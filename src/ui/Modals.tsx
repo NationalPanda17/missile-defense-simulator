@@ -251,16 +251,21 @@ export function BriefingModal({ s }: { s: SimState }) {
     ...advise(s).filter((a) => a.id.startsWith('undefended:')).map((a) => a.text),
     ...(s.credits > SIM_CONFIG.reserve.threshold * 1.5 ? [`${Math.round(s.credits)} credits are unspent. Reserves above ${SIM_CONFIG.reserve.threshold} shrink every hour.`] : []),
   ];
-  const advice = useAdvice(s).filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'));
+  // While the begin check is showing it already lists undefended regions; don't repeat them.
+  const advice = useAdvice(s)
+    .filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'))
+    .filter((a) => !(confirmBegin && a.id.startsWith('undefended:')));
   return (
-    <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
+    <Modal wide tall={step === 'deploy'} title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
-        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => (beginIssues.length && !confirmBegin ? setConfirmBegin(true) : dispatch({ type: 'beginPhase' }))}>
+        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
+          if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
+        }}>
           {confirmBegin ? 'Begin anyway ▶' : 'Assume command — begin phase ▶'}
         </button>
       </>}>
-      {confirmBegin && beginIssues.length > 0 && (
+      {confirmBegin && step === 'brief' && beginIssues.length > 0 && (
         <div className="mb-3 rounded border border-ops-amber/60 bg-ops-amber/10 p-3 text-[12px]" role="alert">
           <div className="label mb-1 text-ops-amber">Before you begin</div>
           <ul className="list-disc space-y-0.5 pl-4 text-white">{beginIssues.map((x) => <li key={x}>{x}</li>)}</ul>

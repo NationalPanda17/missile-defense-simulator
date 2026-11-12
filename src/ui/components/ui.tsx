@@ -154,7 +154,7 @@ export function Sparkline({ data, color = '#38d6f5', w = 80, h = 22 }: { data: n
   );
 }
 
-export function Modal({ title, onClose, children, wide = false, footer }: { title: ReactNode; onClose?: () => void; children: ReactNode; wide?: boolean; footer?: ReactNode }) {
+export function Modal({ title, onClose, children, wide = false, tall = false, footer }: { title: ReactNode; onClose?: () => void; children: ReactNode; wide?: boolean; tall?: boolean; footer?: ReactNode }) {
   useEffect(() => {
     if (!onClose) return;
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -165,7 +165,7 @@ export function Modal({ title, onClose, children, wide = false, footer }: { titl
   // that panel instead of the viewport.
   return createPortal(
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className={`panel fadein flex max-h-full w-full flex-col ${wide ? 'max-w-5xl' : 'max-w-2xl'} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
+      <div className={`panel fadein flex max-h-full w-full flex-col ${wide ? 'max-w-5xl' : 'max-w-2xl'} ${tall ? 'h-full' : ''} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
         <header className="panel-title">
           <span className="truncate">{title}</span>
           {onClose && <button className="btn px-2" onClick={onClose} aria-label="Close">✕</button>}

@@ -90,12 +90,14 @@ export function TopBar({ s }: { s: SimState }) {
         <TopMetric label="Network" v={m.network} />
         <div className="leading-tight">
           <div className="label">Credits</div>
-          <div className={`tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>{Math.round(s.credits)}</div>
-          {reserveDrain(s) >= 1 && (
-            <div className="whitespace-nowrap text-[9px] text-ops-amber" title={`Credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
-              unspent −{Math.round(reserveDrain(s))}/h
-            </div>
-          )}
+          <div className={`whitespace-nowrap tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>
+            {Math.round(s.credits)}
+            {reserveDrain(s) >= 1 && (
+              <span className="ml-1 text-[10px] text-ops-amber" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
+                unspent −{Math.round(reserveDrain(s))}/h
+              </span>
+            )}
+          </div>
         </div>
         <div className="leading-tight">
           <div className="label">Alert</div>

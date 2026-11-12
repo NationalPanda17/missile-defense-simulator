@@ -13,7 +13,7 @@ import { loadProgress, loadStep, markLessonDone, recordDrill, recordExam, saveSt
  * (20rem), so it never covers either; wide and short, it leaves dialogs most of the screen's height.
  */
 const DOCK = 'lg:left-[calc(14rem+0.75rem)]';
-const DOCK_OPEN = 'lg:right-[calc(20rem+0.75rem)] lg:w-auto lg:max-h-[34vh]';
+const DOCK_OPEN = 'lg:right-[calc(20rem+0.75rem)] lg:w-auto lg:max-h-[28vh]';
 
 export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();

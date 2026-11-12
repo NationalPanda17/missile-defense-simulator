@@ -182,16 +182,17 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   const tone = pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red';
   const classes = (Object.entries(p.mix) as [ThreatClass, number][]).sort((a, b) => b[1] - a[1]);
   return (
-    <div className="rounded border border-ops-line p-2 text-[11px]" aria-live="polite">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="label">Forecast check · {s.regions[region].name}</span>
-        <span>With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b> <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped)</span></span>
-      </div>
+    <details className="rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
+      <summary className="cursor-pointer list-none">
+        <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
+        With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
+        <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+      </summary>
       <ul className="mt-1 space-y-0.5 text-ops-dim">
-        {classes.map(([c, n]) => <li key={c}>▸ ~{n} {CLASS_ADVICE[c]}</li>)}
+        {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
       </ul>
       <div className="mt-1 text-[10px] text-ops-dim">An estimate from replaying the forecast waves against your layout. Surprise attacks are not included.</div>
-    </div>
+    </details>
   );
 }
 
@@ -225,22 +226,23 @@ export function DeployPanel({ s }: { s: SimState }) {
     : 'Pick equipment from the catalog, then click the map to place it (or Tab to the map, move with the arrow keys and press Enter). Click or Tab to a placed system to move or withdraw it.';
 
   return (
-    <div className="space-y-3">
-      <div className="rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+    // Short screens: region tabs, the forecast check and the map come first; the forecast note and guide follow.
+    <div className="flex flex-col gap-3">
+      <div className="order-4 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
         <span className="label mr-2 text-ops-red">Threat forecast</span>
         Attacks are expected in{' '}
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
         {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
       </div>
 
-      <ForecastCheck s={s} region={region} />
+      <div className="order-2"><ForecastCheck s={s} region={region} /></div>
 
-      {showGuide && <DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} />}
+      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
-        <button className="text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
+        <button className="order-5 self-start text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
       )}
 
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
+      <div className="order-1 flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => (
           <button key={r} data-coach={`region-${r}`} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelectedDep(null); setMoving(false); }}>
             {s.regions[r].short}
@@ -251,7 +253,7 @@ export function DeployPanel({ s }: { s: SimState }) {
       </div>
 
       {/* Phones: map, catalog, then coverage. Wider screens: map and coverage on the left, catalog on the right. */}
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1" data-coach="deploy-map">
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
             highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
