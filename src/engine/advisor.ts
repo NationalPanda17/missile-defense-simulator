@@ -48,7 +48,7 @@ export function advise(s: SimState): Advice[] {
         level: 'urgent',
         text: surprise
           ? `A wave is heading for ${name(r)}, outside the forecast, and nothing there can engage it. Emergency-redeploy a system now.`
-          : `${name(r)} is expected to be attacked but has no system that can engage threats.`,
+          : `Attacks are expected in ${name(r)}, but nothing there can engage threats.${s.status === 'running' ? (t.deployments.length ? ' Emergency-redeploy a system there.' : ' New defenses can only be placed in the next briefing.') : ''}`,
         action: s.status === 'briefing' ? { label: 'Deploy', view: 'theater', region: r, deploy: true } : { label: 'Theater', view: 'theater', region: r },
       });
     }

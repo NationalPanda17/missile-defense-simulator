@@ -209,13 +209,13 @@ export function statusColor(a: Asset, hour: number) {
 
 /**
  * A delete button that asks first: the first click turns it into "Delete?", a second click within a few seconds
- * deletes. Moving away or waiting cancels.
+ * deletes. Moving away or waiting six seconds cancels.
  */
 export function ConfirmDelete({ onConfirm, label, text = '✕', confirmText = 'Delete?', className = '' }: { onConfirm: () => void; label: string; text?: string; confirmText?: string; className?: string }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
     if (!armed) return;
-    const t = window.setTimeout(() => setArmed(false), 4000);
+    const t = window.setTimeout(() => setArmed(false), 6000);
     return () => window.clearTimeout(t);
   }, [armed]);
   return (
