@@ -60,3 +60,23 @@ describe('briefing what-if preview', () => {
     expect(previewDefense(s, 'EUR')!.waves).toBe(2);
   });
 });
+
+import { EQUIPMENT_MAP, TACTICAL_CONFIG, costExchange, roundCost } from '../src/engine';
+
+describe('cost exchange', () => {
+  it('adds up interceptor rounds fired per wave at resupply prices, and what they stopped', () => {
+    const s = createInitialState(lessonSettings('tactical1', defaultSettings('training')));
+    for (const site of s.tactical!.sites.filter((x) => x.region === 'EUR').slice(0, 3)) {
+      execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', ...landNear(s, 'EUR', site.x, site.y) });
+    }
+    execute(s, { type: 'beginPhase' });
+    execute(s, { type: 'advance', hours: 12 });
+    const [row] = costExchange(s);
+    const w = s.tactical!.waves[0];
+    const nasamsRound = roundCost(EQUIPMENT_MAP.get('nasams')!);
+    expect(row.spent).toBe(Math.round(w.tracks.reduce((a, t) => a + t.shots, 0) * nasamsRound)); // every shot was a NASAMS round
+    expect(row.stopped).toBe(s.tactical!.stats.stopped);
+    expect(row.valueStopped).toBe(w.tracks.filter((t) => !t.decoy && t.outcome === 'stopped').reduce((a, t) => a + TACTICAL_CONFIG.threatCost[t.cls], 0));
+    expect(row.damageTaken).toBe(s.tactical!.stats.siteDamage);
+  });
+});

@@ -253,6 +253,11 @@ export const TACTICAL_CONFIG = {
   flightHours: { slowDrone: 3, fastDrone: 1.5, cruise: 1.2, rocket: 0.4, ballistic: 0.6 } as Record<ThreatClass, number>,
   /** Threat speed in km per second (game values). Sets how long a threat stays in each system's range. */
   threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2 } as Record<ThreatClass, number>,
+  /**
+   * Rough attacker cost of each threat, in the game's credits, for the after-action cost-exchange readout (a decoy
+   * counts as a cheap drone). Game values, chosen to show the usual pattern: cheap drones, expensive missiles.
+   */
+  threatCost: { slowDrone: 2, fastDrone: 5, cruise: 30, rocket: 1, ballistic: 70 } as Record<ThreatClass, number>,
   /** Site integrity lost when a threat of each class gets through. */
   threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15 } as Record<ThreatClass, number>,
   /** Regional infrastructure and stability lost per point of site damage, scaled by site importance / 3. */

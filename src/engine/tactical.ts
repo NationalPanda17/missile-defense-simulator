@@ -461,6 +461,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       if (!isUnlimited(spec)) {
         if (d.stock <= 0) break;
         d.stock -= 1;
+        tr.cost = (tr.cost ?? 0) + roundCost(spec);
       }
       tr.shots += 1;
       t.stats.shots += 1;
@@ -669,6 +670,12 @@ export function waveLeadHours(tracks: { cls: ThreatClass }[]): number {
 // ── Read-only helpers for the UI ─────────────────────────────────────────
 
 /** Credits to refill a deployment's magazine: a share of its cost, in proportion to the rounds missing. */
+/** Credits one interceptor round costs to replace (the resupply price per round). Unlimited systems: 0. */
+export function roundCost(spec: EquipmentSpec): number {
+  if (isUnlimited(spec) || spec.magazine <= 0) return 0;
+  return (equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate) / spec.magazine;
+}
+
 export function resupplyCost(d: Deployment): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
