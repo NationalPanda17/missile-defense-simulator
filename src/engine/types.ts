@@ -430,6 +430,7 @@ export interface SimState {
   difficulty: number; // adaptive director multiplier
 
   tactical?: TacticalState; // absent in saves made before the tactical layer
+  reserveLost?: number; // credits reclaimed from unspent reserves (absent in older saves)
 
   // Derived metrics (recomputed each tick)
   metrics: Metrics;

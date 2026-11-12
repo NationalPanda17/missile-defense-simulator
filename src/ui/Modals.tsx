@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -231,13 +231,32 @@ export function BriefingModal({ s }: { s: SimState }) {
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const [step, setStep] = useState<'brief' | 'deploy'>('brief');
+  const [confirmBegin, setConfirmBegin] = useState(false);
+  // Before the phase starts: forecast regions nothing can defend, and money that will otherwise sit idle.
+  const beginIssues: string[] = s.settings.mode === 'training' ? [] : [
+    ...advise(s).filter((a) => a.id.startsWith('undefended:')).map((a) => a.text),
+    ...(s.credits > SIM_CONFIG.reserve.threshold * 1.5 ? [`${Math.round(s.credits)} credits are unspent. Reserves above ${SIM_CONFIG.reserve.threshold} shrink every hour.`] : []),
+  ];
   const advice = useAdvice(s).filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'));
   return (
     <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
-        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
+        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => (beginIssues.length && !confirmBegin ? setConfirmBegin(true) : dispatch({ type: 'beginPhase' }))}>
+          {confirmBegin ? 'Begin anyway ▶' : 'Assume command — begin phase ▶'}
+        </button>
       </>}>
+      {confirmBegin && beginIssues.length > 0 && (
+        <div className="mb-3 rounded border border-ops-amber/60 bg-ops-amber/10 p-3 text-[12px]" role="alert">
+          <div className="label mb-1 text-ops-amber">Before you begin</div>
+          <ul className="list-disc space-y-0.5 pl-4 text-white">{beginIssues.map((x) => <li key={x}>{x}</li>)}</ul>
+          <p className="mt-1 text-[11px] text-ops-dim">Equipment can only be placed during a briefing. Once the phase starts, you can still raise alerts, resupply and move systems, but not add new ones.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {tactical && <button className="btn btn-primary" onClick={() => { setConfirmBegin(false); setStep('deploy'); }}>Deploy defenses</button>}
+            <button className="btn" onClick={() => setConfirmBegin(false)}>Back to the briefing</button>
+          </div>
+        </div>
+      )}
       {advice.length > 0 && (
         <div className="mb-3">
           <div className="label mb-1">Adjutant</div>
@@ -279,6 +298,11 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <div><div className="label">Crews</div>{s.crews}</div>
                 <div><div className="label">Resilience</div>{Math.round(s.resilience)}</div>
               </div>
+              {s.settings.mode !== 'training' && s.credits > SIM_CONFIG.reserve.threshold && (
+                <p className="mt-1 text-[11px] text-ops-amber">
+                  Unspent: {Math.round(s.credits - SIM_CONFIG.reserve.threshold)} above the {SIM_CONFIG.reserve.threshold} reserve. Excess reserves are reclaimed at {SIM_CONFIG.reserve.ratePerHour * 100}% an hour once the phase runs, so spend them on defenses, maintenance or investments.
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-3">

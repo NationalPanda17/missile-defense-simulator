@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, reserveDrain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -91,6 +91,11 @@ export function TopBar({ s }: { s: SimState }) {
         <div className="leading-tight">
           <div className="label">Credits</div>
           <div className={`tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>{Math.round(s.credits)}</div>
+          {reserveDrain(s) >= 1 && (
+            <div className="whitespace-nowrap text-[9px] text-ops-amber" title={`Credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
+              unspent −{Math.round(reserveDrain(s))}/h
+            </div>
+          )}
         </div>
         <div className="leading-tight">
           <div className="label">Alert</div>

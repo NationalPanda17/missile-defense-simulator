@@ -339,6 +339,11 @@ function tickEconomy(s: SimState) {
   const upkeep = s.assets.reduce((x, a) => x + a.upkeep, 0);
   const income = SIM_CONFIG.baseIncomePerHour * (0.5 + s.metrics.stability / 200);
   s.credits = Math.max(0, s.credits + income - upkeep);
+  const drain = reserveDrain(s);
+  if (drain > 0) {
+    s.credits -= drain;
+    s.reserveLost = (s.reserveLost ?? 0) + drain;
+  }
   s.personnel = clamp(s.personnel + SIM_CONFIG.personnelRegenPerHour, 0, s.personnelMax);
   const shortage = s.events.some((e) => isActive(e) && e.isGenuine && e.category === 'logistics');
   s.logistics = clamp(s.logistics + (shortage ? -0.6 : 0.3));
@@ -387,6 +392,13 @@ function checkAchievements(s: SimState) {
 }
 
 /** Advance the simulation one hour. */
+/** Credits reclaimed this hour from reserves above the threshold (0 in training). */
+export function reserveDrain(s: SimState): number {
+  if (s.settings.mode === 'training') return 0;
+  const { threshold, ratePerHour } = SIM_CONFIG.reserve;
+  return Math.max(0, s.credits - threshold) * ratePerHour;
+}
+
 export function tick(s: SimState): void {
   if (s.status !== 'running') return;
   s.hour += 1;

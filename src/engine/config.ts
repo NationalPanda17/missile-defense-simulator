@@ -30,6 +30,11 @@ export const SIM_CONFIG = {
   /** Condition decay per hour by domain (before overdue penalty). */
   decayPerHour: { space: 0.06, air: 0.16, sea: 0.12, ground: 0.09 } as Record<Domain, number>,
   overdueDecayMult: 2.5,
+  /**
+   * Unspent reserves are reclaimed: credits above the threshold lose this share of the excess every hour, so banking
+   * everything is not a safe strategy. Not applied in training.
+   */
+  reserve: { threshold: 1200, ratePerHour: 0.02 },
   serviceInterval: { space: 220, air: 90, sea: 130, ground: 160 } as Record<Domain, number>,
   maintenanceHours: { space: 18, air: 10, sea: 16, ground: 12 } as Record<Domain, number>,
   maintenanceCost: { space: 120, air: 50, sea: 75, ground: 55 } as Record<Domain, number>,
