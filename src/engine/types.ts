@@ -289,6 +289,7 @@ export interface ScenarioSettings {
   regionInfrastructure: Partial<Record<RegionId, number>>;
   domainCondition: Partial<Record<Domain, number>>;
   tactical?: TacticalSettings; // campaign only; absent means the standard scenario
+  lesson?: string; // training mode: Training Academy lesson id (see training.ts)
 }
 
 // ── Tactical layer ─────────────────────────────────────────────────────

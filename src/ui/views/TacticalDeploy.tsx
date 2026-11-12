@@ -171,7 +171,7 @@ export function DeployPanel({ s }: { s: SimState }) {
   const count = (r: RegionId) => t.deployments.filter((d) => d.region === r).length;
   const [hideGuide, setHideGuide] = useState(guideHidden);
   const spentNow = s.commands.filter((c) => c.t === s.hour && (c.kind === 'deploy' || c.kind === 'relocate')).reduce((a, c) => a + c.credits, 0);
-  const showGuide = s.phaseIndex === 0 && !hideGuide;
+  const showGuide = s.phaseIndex === 0 && !hideGuide && s.settings.mode === 'campaign'; // training lessons have their own coach
   const guideTarget = showGuide && !guideSteps(s, region).find((x) => x.id === 'cover')!.done
     ? t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0] : undefined;
 

@@ -18,7 +18,7 @@ things and how well you have run the network (readiness, maintenance, comms, int
 | Equipment | **Real-world systems** with name, role, tier, range, cost, and detailed performance figures (kill rates, reaction times, radar specs). Figures come only from official public statements by manufacturers or governments. Where none exists, the game makes up a plausible value. Never classified or leaked information. |
 | Scenarios | Fictional only. No scenario recreates, is named after, or is dated to a real attack. |
 | Placement | A deployment step inside the campaign, in the briefing before each phase. No separate mode. |
-| Modes | **Campaign only.** Crisis and Training stay as they are. |
+| Modes | **Campaign only.** Crisis stays as it is. The one exception: the Training Academy's two tactical lessons and its certification exercise turn the layer on with scripted waves, to teach it. |
 | Threats | Threat **waves** of generic classes, resolved by game math that uses the real equipment figures as inputs. |
 
 ## What changes in the project rules

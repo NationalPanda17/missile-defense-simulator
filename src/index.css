@@ -84,3 +84,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .radar-sweep, .pulse-ring, .flow, .flow-slow, .blink { animation: none; }
 }
+
+/* While the training coach is on screen, dialogs stop above it instead of sliding underneath. */
+body.coach-on .modal-overlay { padding-bottom: calc(var(--coach-h, 0px) + 12px); }

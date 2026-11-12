@@ -58,7 +58,11 @@ export function ServerSavesPanel({ canSave }: { canSave: boolean }) {
       {sv.status !== 'online' ? (
         <div className="space-y-1 text-[11px] text-ops-dim">
           <p>The persistence server is not reachable{sv.error ? ` (${sv.error})` : ''}. Browser saves still work.</p>
-          <p>Start it with <code className="text-ops-cyan">npm run dev:full</code>, or <code className="text-ops-cyan">npm run db:start</code> + <code className="text-ops-cyan">npm run server</code>.</p>
+          <p>
+            Server saves need the simulator running on your own computer.{' '}
+            <a className="text-ops-cyan underline" href="https://github.com/NationalPanda17/missile-defense-simulator/blob/main/docs/LOCAL_SERVER_GUIDE.md" target="_blank" rel="noreferrer">Step-by-step setup guide</a>
+            {' '}(no technical background needed). Developers: <code className="text-ops-cyan">npm run dev:full</code>.
+          </p>
         </div>
       ) : !sv.user ? (
         <div className="space-y-2 text-[11px] text-ops-dim">

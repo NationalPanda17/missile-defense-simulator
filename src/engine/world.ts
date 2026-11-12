@@ -1,5 +1,6 @@
 // Fictional starting world: regions and asset inventory. All names and figures are invented and abstract.
 import { CAMPAIGN_PHASES, REGION_DEFS, SIM_CONFIG } from './config';
+import { LESSON_MAP, lessonPhase } from './training';
 import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
 import { normalizeTactical } from './scenarios';
@@ -124,6 +125,8 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
     }];
   }
   if (settings.mode === 'training') {
+    const lesson = settings.lesson ? LESSON_MAP.get(settings.lesson) : undefined;
+    if (lesson) return [lessonPhase(lesson, settings)];
     return [{
       id: 1, name: 'Command Familiarization', hours: settings.durationHours, eventRate: 0.05, falseRate: settings.falseReportRate,
       maxSeverity: 2, delayedInfo: false, conflicting: false, chains: false,

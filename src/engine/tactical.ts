@@ -7,6 +7,7 @@ import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
+import { LESSON_MAP, type ScriptedWave } from './training';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -21,7 +22,10 @@ const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'b
 
 const emptyStats = (): TacticalStats => ({ tracks: 0, stopped: 0, leaked: 0, decoysEngaged: 0, shots: 0, siteDamage: 0 });
 
-const tacticalAllowed = (s: SimState) => s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign;
+/** Training lesson with scripted threat waves, if this is one. The only training scenarios with a tactical layer. */
+const tacticalLesson = (s: SimState) => (s.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined);
+const tacticalAllowed = (s: SimState) =>
+  (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length;
 
 /** A fresh tactical state for a game. Sites are generated from the seed; waves are scheduled separately. */
 export function createTactical(s: SimState): TacticalState {
@@ -161,6 +165,8 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const phase = s.phases[s.phaseIndex];
   t.waves = t.waves.filter((w) => w.phaseIndex !== s.phaseIndex);
   t.forecast = [];
+  const lesson = tacticalLesson(s);
+  if (lesson?.waves) return scheduleLessonWaves(s, t, lesson.waves);
   if (!base || !phase) return;
   // Apply the scenario's multipliers. The standard scenario (all 1s) reproduces the base profile exactly.
   const sc = normalizeTactical(s.settings.tactical);
@@ -210,6 +216,26 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     t.waves.push({
       id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis, forecast: !surprise, tracks,
       resolved: false,
+    });
+  }
+}
+
+/** A training lesson's waves are written out in full, so every player meets the same attacks. */
+function scheduleLessonWaves(s: SimState, t: TacticalState, waves: ScriptedWave[]) {
+  const start = s.status === 'running' ? s.phaseStartHour : s.hour;
+  t.forecast = [...new Set(waves.filter((w) => w.forecast).map((w) => w.region))];
+  for (const sw of waves) {
+    const tracks: Track[] = [];
+    for (const cls of CLASSES) {
+      for (let i = 0; i < (sw.tracks[cls] ?? 0); i++) {
+        const tr = makeTrack(t, sw.region, cls, sw.axis, false);
+        if (tr) tracks.push(tr);
+      }
+    }
+    const atHour = start + sw.atHour;
+    t.waves.push({
+      id: `WAVE-${t.nextId++}`, region: sw.region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis: sw.axis,
+      forecast: sw.forecast, tracks, resolved: false,
     });
   }
 }

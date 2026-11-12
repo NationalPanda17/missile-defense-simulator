@@ -15,6 +15,10 @@ is used.
 
 ## Quick start
 
+**Not a developer?** Follow the step-by-step [guide to running the simulator on your own computer](docs/LOCAL_SERVER_GUIDE.md).
+It uses double-click start files (`Start Simulator (Mac).command`, `Start Simulator (Windows).bat`), so no typing
+is needed after installing Node.js.
+
 Requirements: **Node.js 22+** (CI tests Node 22 and 24; developed on Node 26) and npm. PostgreSQL is optional. If you
 don't have it, the project runs a real PostgreSQL server from `node_modules` for you.
 
@@ -72,8 +76,12 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
 ## How to play
 
 1. Pick a mode on the start screen: **Campaign** (240h, four phases), **Crisis** (96h, starts
-   mid-disaster), **Training** (guided), or **Sandbox** (configure everything in the Scenario
-   Editor).
+   mid-disaster), the **Training Academy**, or **Sandbox** (configure everything in the Scenario
+   Editor). New players should start with the Academy: nine short guided lessons (command basics,
+   reading the situation, information quality, event response, maintenance, resources, two
+   tactical lessons and the debrief) and a graded certification exercise. Each lesson is its own
+   small scenario. A coach gives one task at a time, waits until you have done it, explains why
+   it matters and checks your understanding with a short question. Progress is kept in the browser.
 2. Read the **briefing**, then choose *Assume command*. The clock starts.
 3. Watch the **Active Events** list (right). Open an event to see its confidence, impact,
    decision window and management responses (cost, duration and success chance).
@@ -200,6 +208,7 @@ missile-defense-simulator/
     │   ├── equipment.ts          Tactical layer: real air defense equipment catalog
     │   ├── tactical.ts           Tactical layer: theaters, waves, resolution, helpers
     │   ├── scenarios.ts          Tactical scenario presets, limits, export/import
+    │   ├── training.ts           Training Academy: lessons, step checks, scripted waves, exam grading
     │   └── index.ts
     ├── shared/api.ts             Types shared by the API and its client
     ├── store/simStore.ts         Real-time loop, autosave + server sync, toasts; React binding
@@ -210,6 +219,7 @@ missile-defense-simulator/
         ├── uiState.tsx           UI-only state (view, selection, layers)
         ├── Shell.tsx             Top bar, left nav, right sidebar, bottom panel
         ├── Modals.tsx            Event investigation, asset inspection, briefing, start screen, tutorial
+        ├── training/             Training Academy picker, in-game coach, progress
         ├── components/ui.tsx     Panels, bars, gauges, line charts, sparklines, modal, tabs
         ├── map/                  SVG geospatial display + stylized region geometry
         └── views/                Global ops, domain dashboards, staff views, campaign, editor, AAR
