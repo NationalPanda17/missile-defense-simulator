@@ -310,6 +310,7 @@ export interface Deployment {
   y: number;
   stock: number; // engagements left before resupply
   reloadRemaining?: number; // hours until a resupply completes
+  reloadRounds?: number; // rounds that resupply brings (absent: a full magazine)
   transit?: { region: RegionId; x: number; y: number; remaining: number; hours?: number }; // emergency redeploy under way
   deployedAt: number; // sim hour
 }
@@ -394,6 +395,7 @@ export interface TacticalState {
   waves: ThreatWave[];
   forecast: RegionId[]; // regions the current briefing warns about
   alerts?: { region: RegionId; until: number }[]; // raised alerts (sim hour they end)
+  stockpile?: Record<string, number>; // national reserve of interceptor rounds per equipment type (Officer/Commander)
   stats: TacticalStats;
 }
 

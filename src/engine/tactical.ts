@@ -2,7 +2,7 @@
 //
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
-import { SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
+import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, levelOf } from './config';
 import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
@@ -718,7 +718,9 @@ export function tickTactical(s: SimState) {
     d.reloadRemaining -= 1;
     if (d.reloadRemaining <= 0) {
       d.reloadRemaining = undefined;
-      d.stock = EQUIPMENT_MAP.get(d.equipmentId)!.magazine;
+      const mag = EQUIPMENT_MAP.get(d.equipmentId)!.magazine;
+      d.stock = d.reloadRounds === undefined ? mag : Math.min(mag, d.stock + d.reloadRounds);
+      d.reloadRounds = undefined;
     }
   }
   for (const w of t.waves) {
@@ -742,10 +744,47 @@ export function roundCost(spec: EquipmentSpec): number {
   return (equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate) / spec.magazine;
 }
 
-export function resupplyCost(d: Deployment): number {
+/** Stockpile rules in force: the campaign at Officer or Commander. Null means unlimited reserves. */
+export function stockpileRules(s: SimState) {
+  if (s.settings.mode !== 'campaign') return null;
+  return STOCKPILES[s.settings.level ?? 'officer'] ?? null;
+}
+
+/** Rounds left in the national reserve for an equipment type (Infinity when reserves are unlimited). */
+export function stockpileOf(s: SimState, equipmentId: string): number {
+  if (!stockpileRules(s)) return Infinity;
+  return s.tactical?.stockpile?.[equipmentId] ?? 0;
+}
+
+/** Rounds a resupply would bring now: what is missing, limited by the national reserve. */
+export function resupplyRounds(s: SimState, d: Deployment): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
-  return Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (1 - d.stock / spec.magazine));
+  return Math.max(0, Math.min(spec.magazine - d.stock, stockpileOf(s, d.equipmentId)));
+}
+
+/** At each later phase start, the reserve of every fielded type is restocked (up to its cap). */
+export function restockStockpiles(s: SimState) {
+  const sp = stockpileRules(s);
+  const t = s.tactical;
+  if (!sp || !t) return;
+  const units = new Map<string, number>();
+  for (const d of t.deployments) units.set(d.equipmentId, (units.get(d.equipmentId) ?? 0) + 1);
+  t.stockpile = t.stockpile ?? {};
+  for (const [id, n] of units) {
+    const spec = EQUIPMENT_MAP.get(id)!;
+    if (!isEffector(spec) || isUnlimited(spec)) continue;
+    const cap = Math.floor(spec.magazine * sp.cap * n);
+    t.stockpile[id] = Math.min(cap, (t.stockpile[id] ?? 0) + Math.floor(spec.magazine * sp.restock * n));
+  }
+}
+
+/** Credits to resupply: a share of the deployment cost, in proportion to the rounds brought. */
+export function resupplyCost(d: Deployment, rounds?: number): number {
+  const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+  if (isUnlimited(spec) || spec.magazine <= 0) return 0;
+  const n = rounds ?? spec.magazine - d.stock;
+  return Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine));
 }
 
 export type ProtectionLevel = 'protected' | 'thin' | 'exposed';
@@ -820,6 +859,12 @@ export function addDeployment(s: SimState, spec: EquipmentSpec, region: RegionId
   });
   const d: Deployment = { id: `DEP-${n}`, equipmentId: spec.id, assetId, region, x, y, stock: spec.magazine, deployedAt: s.hour };
   t.deployments.push(d);
+  // Fielding a unit brings its share of the national reserve.
+  const sp = stockpileRules(s);
+  if (sp && isEffector(spec) && !isUnlimited(spec)) {
+    t.stockpile = t.stockpile ?? {};
+    t.stockpile[spec.id] = (t.stockpile[spec.id] ?? 0) + Math.floor(spec.magazine * sp.initial);
+  }
   return d;
 }
 

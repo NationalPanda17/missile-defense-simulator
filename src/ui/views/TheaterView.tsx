@@ -5,7 +5,7 @@ import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
-  regionProtection, resupplyCost, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track,
+  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
@@ -94,8 +94,10 @@ function WaveReplay({ s, wave }: { s: SimState; wave: ThreatWave }) {
 function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deployment; moving: boolean; onRedeploy: () => void }) {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   const asset = s.assets.find((a) => a.id === d.assetId);
-  const cost = resupplyCost(d);
+  const rounds = resupplyRounds(s, d);
+  const cost = resupplyCost(d, rounds);
   const unlimited = isUnlimited(spec);
+  const reserve = stockpileOf(s, d.equipmentId);
   return (
     <li className={`rounded border p-2 ${moving ? 'border-ops-cyan bg-ops-cyan/5' : 'border-ops-line'}`}>
       <div className="flex items-baseline justify-between gap-2">
@@ -110,8 +112,12 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
       </div>
       {isEffector(spec) && !unlimited && (
         <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
-          <span className="text-ops-dim">{d.reloadRemaining !== undefined ? `Resupplying, ${d.reloadRemaining}h left` : `${d.stock}/${spec.magazine} rounds`}</span>
-          <button data-coach="resupply" className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || s.credits < cost}
+          <span className="text-ops-dim">
+            {d.reloadRemaining !== undefined ? `Resupplying, ${d.reloadRemaining}h left` : `${d.stock}/${spec.magazine} rounds`}
+            {Number.isFinite(reserve) && <span className={reserve === 0 ? 'text-ops-red' : ''} title="National stockpile for this type: resupply draws from it; restocked at each phase start"> · stockpile {reserve}</span>}
+          </span>
+          <button data-coach="resupply" className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || rounds <= 0 || s.credits < cost}
+            title={rounds <= 0 && d.stock < spec.magazine ? 'The national stockpile is empty until the next phase' : rounds < spec.magazine - d.stock ? `Only ${rounds} rounds left in the stockpile` : undefined}
             onClick={() => dispatch({ type: 'resupply', deploymentId: d.id })}>
             Resupply{cost ? ` (${cost} cr)` : ''}
           </button>

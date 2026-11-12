@@ -3,7 +3,7 @@
 import { SIM_CONFIG } from './config';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
 import { isActive } from './metrics';
-import { incomingWaves, isUnlimited } from './tactical';
+import { incomingWaves, isUnlimited, resupplyRounds, stockpileOf } from './tactical';
 import { objectiveMet, objectiveValue } from './scoring';
 import type { Domain, Objective, RegionId, SimState } from './types';
 
@@ -64,11 +64,26 @@ export function advise(s: SimState): Advice[] {
       const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
       if (!isEffector(spec) || isUnlimited(spec) || d.reloadRemaining !== undefined || d.transit || !threatened.has(d.region)) continue;
       if (d.stock > Math.max(2, Math.floor(spec.magazine * 0.25))) continue;
+      if (resupplyRounds(s, d) <= 0) continue; // nothing to resupply with: the stockpile warning covers it
       out.push({
         id: `ammo:${d.id}:${d.stock}`,
         level: d.stock === 0 ? 'urgent' : 'warn',
         text: `${name(d.region)}’s ${spec.name} is ${d.stock === 0 ? 'out of rounds' : `down to ${d.stock} round${d.stock === 1 ? '' : 's'}`} and a wave is expected. Resupply it.`,
         action: { label: 'Theater', view: 'theater', region: d.region },
+      });
+    }
+
+    // An interceptor type whose national stockpile is empty while its units run low.
+    for (const [id, left] of Object.entries(t.stockpile ?? {})) {
+      if (!Number.isFinite(stockpileOf(s, id)) || left > 0) continue;
+      const lowUnits = t.deployments.filter((d) => d.equipmentId === id && d.stock <= EQUIPMENT_MAP.get(id)!.magazine / 2);
+      if (!lowUnits.length) continue;
+      const spec = EQUIPMENT_MAP.get(id)!;
+      out.push({
+        id: `stockpile:${id}:${s.phaseIndex}`,
+        level: 'warn',
+        text: `The national stockpile of ${spec.name} rounds is empty until the next phase, and ${lowUnits.length} unit${lowUnits.length === 1 ? ' is' : 's are'} below half. Save them for the waves that matter, or lean on other systems.`,
+        action: { label: 'Theater', view: 'theater', region: lowUnits[0].region },
       });
     }
 

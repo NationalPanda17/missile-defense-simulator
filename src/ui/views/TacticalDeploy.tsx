@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, previewDefense, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  equipmentCost, isEffector, isUnlimited, previewDefense, stockpileRules, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -243,6 +243,11 @@ export function DeployPanel({ s }: { s: SimState }) {
         Attacks are expected in{' '}
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
         {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
+        {stockpileRules(s) && (
+          <div className="mt-1 text-ops-amber">
+            Interceptor stockpiles are on: each unit you field adds {stockpileRules(s)!.initial === 1 ? 'one magazine' : 'half a magazine'} to its type’s national reserve. Resupply draws from it, and it is restocked at each phase start.
+          </div>
+        )}
       </div>
 
       <div className="order-2"><ForecastCheck s={s} region={region} /></div>
