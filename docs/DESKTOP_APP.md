@@ -41,6 +41,13 @@ After that it opens normally. The first start takes a few seconds while it sets 
 - Only one copy runs at a time; opening it again brings the open window to the front.
 - Links to guides and GitHub open in your normal web browser.
 
+## Updates
+
+When a newer version is published, the app shows a **"Version … is available"** notice with a **Download** button
+that opens the release page. Download and install it over the old one: your accounts and saves are kept (they live
+outside the app, see below). The app checks GitHub at most once every six hours, and only reads the latest release's
+version number. **Not now** hides the notice until the next version.
+
 ## Where your data lives
 
 | Computer | Folder |
@@ -61,3 +68,11 @@ npm run desktop:dist
 The installers appear in `release/`. Each platform's app has to be built on that platform (the database programs
 inside are platform-specific). The **Desktop app** workflow in GitHub Actions builds all three; push a tag like
 `v0.2.0` to attach them to a release.
+
+## Publishing a new version (maintainers)
+
+1. Merge your changes to `main` as usual. The browser version on GitHub Pages updates by itself.
+2. Raise `version` in `package.json` (for example `0.1.0` → `0.2.0`), commit it, and push a matching tag:
+   `git tag v0.2.0 && git push origin v0.2.0`.
+3. The **Desktop app** workflow builds the installers and attaches them to the `v0.2.0` release.
+4. Desktop players see the update notice the next time they open the app.

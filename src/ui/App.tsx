@@ -7,6 +7,7 @@ import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
 import { sound } from './audio/sound';
 import { installA11y } from './a11y/settings';
 import { ChallengeInvite } from './Challenge';
+import { checkForUpdate, desktopVersion, dismissUpdate, type UpdateInfo } from './desktopUpdate';
 import { applyUpdate, onUpdateReady, updateReady } from './pwa';
 
 import { UIProvider, useUI } from './uiState';
@@ -51,11 +52,35 @@ function UpdateBanner() {
   );
 }
 
+/** Desktop app: a newer version is on GitHub. */
+function DesktopUpdateNotice() {
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const version = desktopVersion();
+  useEffect(() => {
+    if (!version) return;
+    let live = true;
+    void checkForUpdate(version).then((u) => { if (live) setInfo(u); });
+    return () => { live = false; };
+  }, [version]);
+  if (!info || !version) return null;
+  return (
+    <div className="fixed bottom-3 right-3 z-[60] max-w-sm rounded border border-ops-cyan/50 bg-ops-panel px-3 py-2 text-[11px] shadow-lg" role="status">
+      <div className="text-white">Version {info.version} is available.</div>
+      <div className="text-ops-dim">You have {version}. Your accounts and saves are kept when you install it.</div>
+      <div className="mt-1.5 flex justify-end gap-2">
+        <button className="btn" onClick={() => { dismissUpdate(info.version); setInfo(null); }}>Not now</button>
+        <a className="btn btn-primary" href={info.url} target="_blank" rel="noreferrer">Download</a>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <UIProvider>
       <Root />
       <UpdateBanner />
+      <DesktopUpdateNotice />
       <ChallengeInvite />
       <Toasts />
     </UIProvider>
