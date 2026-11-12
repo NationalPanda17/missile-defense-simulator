@@ -3,7 +3,7 @@
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
 import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, levelOf } from './config';
-import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
+import { EQUIPMENT, EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
@@ -902,4 +902,109 @@ export function tacticalShapeError(x: unknown): string | null {
     if (d.transit && (!REGION_IDS.includes(d.transit.region) || !insideTheater(d.transit.x, d.transit.y))) return 'state.tactical deployment transit is invalid';
   }
   return null;
+}
+
+// ── After-action: what would have helped ────────────────────────────────
+
+export interface FixSuggestion {
+  region: RegionId;
+  leaked: number; // genuine threats that got through in the region
+  mainClass: ThreatClass;
+  reason: string; // the most common reason they got through
+  equipmentId: string;
+  near: string; // site the suggested system goes beside
+  cost: number;
+  stoppedMore: number; // extra threats it would have stopped, on average
+  text: string;
+}
+
+const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles' };
+
+/** A legal spot near a point, searching outwards (for placing a suggested system). */
+function spotNear(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number): [number, number] | null {
+  for (let r = 0; r <= 120; r += 6) {
+    for (let a = 0; a < 16; a++) {
+      const p: [number, number] = [Math.round(x + Math.cos((a / 16) * Math.PI * 2) * r), Math.round(y + Math.sin((a / 16) * Math.PI * 2) * r)];
+      if (!placementError(s, spec, region, p[0], p[1])) return p;
+      if (r === 0) break;
+    }
+  }
+  return null;
+}
+
+/**
+ * Replays a region's resolved waves (fresh random numbers, several times) against its final layout plus an optional
+ * extra system, and returns the average number of genuine threats stopped. Pure: the state is not changed.
+ */
+function replayRegion(s: SimState, region: RegionId, extra: { spec: EquipmentSpec; x: number; y: number } | null, runs = 10): number {
+  const t = s.tactical!;
+  const waves = t.waves.filter((w) => w.region === region && w.resolved);
+  const extraAsset = extra ? {
+    id: 'WHATIF', name: extra.spec.name, className: extra.spec.name, domain: extra.spec.domain, role: 'defense' as const, region,
+    coverage: [region], condition: 100, capability: 0, status: 'operational' as const, hoursToService: 999, maintenanceRemaining: 0,
+    upkeep: 0, pos: [0, 0] as [number, number], history: [],
+  } : null;
+  let stopped = 0;
+  for (let k = 0; k < runs; k++) {
+    // Full magazines: the question is where systems stand, not how well they were resupplied.
+    const deployments: Deployment[] = t.deployments.filter((d) => d.region === region).map((d) => ({ ...d, stock: EQUIPMENT_MAP.get(d.equipmentId)!.magazine, transit: undefined, reloadRemaining: undefined }));
+    if (extra) deployments.push({ id: 'WHATIF', equipmentId: extra.spec.id, assetId: 'WHATIF', region, x: extra.x, y: extra.y, stock: extra.spec.magazine, deployedAt: 0 });
+    const t2: TacticalState = {
+      ...t, rng: (0x7f4a7c15 + k * 2246822519) >>> 0, deployments, stats: emptyStats(), alerts: [],
+      waves: waves.map((w) => ({ ...w, resolved: false, tracks: w.tracks.filter((x) => !x.decoy).map((tr) => ({ id: tr.id, cls: tr.cls, siteId: tr.siteId, from: tr.from, via: tr.via, decoy: false, shots: 0 })) })),
+    };
+    // Defended sites as they were before the waves hit, and the same weather and daylight at each launch.
+    const s2 = { ...s, tactical: t2, log: [], assets: extraAsset ? [...s.assets, extraAsset] : s.assets } as SimState;
+    for (const w of t2.waves) {
+      const deps = t2.deployments.filter((d) => d.region === w.region);
+      w.conditions = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
+      for (const tr of w.tracks) resolveTrack(s2, t2, w, tr, deps);
+      stopped += w.tracks.filter((x) => x.outcome === 'stopped').length;
+    }
+  }
+  return stopped / runs;
+}
+
+/**
+ * For each region where threats got through, try a few affordable systems that can engage what leaked, placed
+ * beside the most-hit site, by replaying that region's waves; suggest the best value. Up to `max` suggestions.
+ */
+export function suggestFixes(s: SimState, max = 3): FixSuggestion[] {
+  const t = s.tactical;
+  if (!t?.enabled) return [];
+  const out: FixSuggestion[] = [];
+  const sites = new Map(t.sites.map((x) => [x.id, x]));
+  for (const region of REGION_IDS) {
+    const leaked = t.waves.filter((w) => w.region === region && w.resolved).flatMap((w) => w.tracks.filter((x) => !x.decoy && x.outcome === 'leaked'));
+    if (leaked.length < 2) continue;
+    const byClass = new Map<ThreatClass, number>();
+    for (const tr of leaked) byClass.set(tr.cls, (byClass.get(tr.cls) ?? 0) + 1);
+    const mainClass = [...byClass].sort((a, b) => b[1] - a[1])[0][0];
+    const reasons = new Map<string, number>();
+    for (const tr of leaked) if (tr.leak) reasons.set(tr.leak, (reasons.get(tr.leak) ?? 0) + 1);
+    const reason = [...reasons].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+    const hits = new Map<string, number>();
+    for (const tr of leaked) hits.set(tr.siteId, (hits.get(tr.siteId) ?? 0) + 1);
+    const site = sites.get([...hits].sort((a, b) => b[1] - a[1])[0][0])!;
+    // The four cheapest ground or sea systems that can engage the main threat class.
+    const candidates = EQUIPMENT.filter((e) => isEffector(e) && e.domain !== 'air' && canEngageClass(e, mainClass))
+      .sort((a, b) => equipmentCost(a) - equipmentCost(b)).slice(0, 4);
+    const base = replayRegion(s, region, null);
+    let best: { spec: EquipmentSpec; gain: number; value: number } | null = null;
+    for (const spec of candidates) {
+      const p = spotNear(s, spec, region, site.x, site.y);
+      if (!p) continue;
+      const gain = replayRegion(s, region, { spec, x: p[0], y: p[1] }) - base;
+      const value = gain / Math.max(1, equipmentCost(spec));
+      if (gain >= 1 && (!best || value > best.value)) best = { spec, gain, value };
+    }
+    if (!best) continue;
+    const n = Math.round(best.gain);
+    out.push({
+      region, leaked: leaked.length, mainClass, reason, equipmentId: best.spec.id, near: site.name, cost: equipmentCost(best.spec), stoppedMore: n,
+      text: `${leaked.length} threats got through in ${s.regions[region].name}, mostly ${PLURAL[mainClass]}. ${reason ? `Typical reason: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, '')}. ` : ''}`
+        + `${/^[AEIOU]/i.test(best.spec.name) ? 'An' : 'A'} ${best.spec.name} beside ${site.name} (${equipmentCost(best.spec)} cr) would have stopped about ${n} more of them.`,
+    });
+  }
+  return out.sort((a, b) => b.stoppedMore - a.stoppedMore).slice(0, max);
 }
