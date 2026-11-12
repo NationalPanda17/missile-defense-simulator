@@ -1,5 +1,8 @@
 # Running the simulator on your own computer (with server saves)
 
+> **Easier option:** the [desktop app](DESKTOP_APP.md) does all of this in one download, with no Node.js needed.
+> This guide is for running it from the source files instead.
+
 This guide is for anyone, including people who have never used a terminal. It takes about 10–15 minutes the
 first time. After that, starting the game is a double-click.
 

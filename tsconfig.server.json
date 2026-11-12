@@ -5,5 +5,5 @@
     "types": ["node"],
     "jsx": "react-jsx"
   },
-  "include": ["server", "scripts", "src/engine", "src/shared", "tests"]
+  "include": ["server", "scripts", "desktop/main.ts", "src/engine", "src/shared", "tests"]
 }

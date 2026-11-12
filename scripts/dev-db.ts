@@ -41,7 +41,8 @@ function hydrateNativeSymlinks() {
   try {
     const require = createRequire(import.meta.url);
     const pkg = path.dirname(require.resolve(`@embedded-postgres/${process.platform}-${process.arch}/package.json`));
-    execFileSync(process.execPath, ['scripts/hydrate-symlinks.js'], { cwd: pkg, stdio: 'ignore' });
+    // ELECTRON_RUN_AS_NODE: inside the desktop app, process.execPath is the app itself, not Node.
+    execFileSync(process.execPath, ['scripts/hydrate-symlinks.js'], { cwd: pkg, stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
   } catch { /* other platforms or already hydrated */ }
 }
 

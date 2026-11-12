@@ -1,0 +1,29 @@
+# Packages desktop/app (built by scripts/build-desktop.ts) into installers. See docs/DESKTOP_APP.md.
+appId: io.github.nationalpanda17.missiledefense
+productName: Missile Defense Simulator
+electronVersion: 33.2.1
+directories:
+  app: desktop/app
+  output: release
+  buildResources: desktop/build
+# The PostgreSQL binaries are run as programs, so they can't live inside an asar archive.
+asar: false
+npmRebuild: false
+artifactName: Missile-Defense-Simulator-${version}-${os}-${arch}.${ext}
+mac:
+  target: [{ target: dmg }, { target: zip }]
+  category: public.app-category.simulation-games
+  icon: public/icon-512.png
+  identity: null # not code-signed: see docs/DESKTOP_APP.md for the first-launch step
+win:
+  target: [{ target: nsis, arch: [x64] }]
+  icon: public/icon-512.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+linux:
+  target: [{ target: AppImage, arch: [x64] }]
+  category: Game
+  icon: public/icon-512.png
+publish: null
