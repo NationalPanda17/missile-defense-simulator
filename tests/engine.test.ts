@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
-  TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical,
+  TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
 } from '../src/engine';
 import type { SimState } from '../src/engine';
 
@@ -221,11 +221,17 @@ describe('tactical layer: engine', () => {
     }
   });
 
-  it('sends at least one wave to every forecast region when no wave is a surprise', () => {
+  it('sends at least one wave to every forecast region, in every phase', () => {
     for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      const t = createInitialState(defaultSettings('campaign', { seed })).tactical!;
-      if (t.waves.some((w) => !w.forecast)) continue;
-      for (const r of t.forecast) expect(t.waves.some((w) => w.region === r), `seed ${seed} ${r}`).toBe(true);
+      const s = createInitialState(defaultSettings('campaign', { seed }));
+      while (s.status !== 'complete') {
+        const t = s.tactical!;
+        const phaseWaves = t.waves.filter((w) => w.phaseIndex === s.phaseIndex);
+        for (const r of t.forecast) expect(phaseWaves.some((w) => w.region === r), `seed ${seed} phase ${s.phaseIndex} ${r}`).toBe(true);
+        expect(phaseWaves.filter((w) => !w.forecast).length).toBeLessThanOrEqual(Math.max(0, phaseWaves.length - t.forecast.length));
+        execute(s, { type: 'beginPhase' });
+        execute(s, { type: 'advance', hours: s.phases[s.phaseIndex].hours });
+      }
     }
   });
 
@@ -330,6 +336,35 @@ describe('tactical layer: engine', () => {
       expect(defended.stopped / defended.tracks, `seed ${seed}`).toBeGreaterThan(0.4);
       expect(defended.siteDamage, `seed ${seed}`).toBeLessThan(none.siteDamage * 0.7);
     }
+  });
+
+  it('rates regional protection by covered site value', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    expect(regionProtection(s, 'EUR').level).toBe('exposed');
+    // A 300 km system mid-theater reaches every site.
+    execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: 'EUR', x: 300, y: 200 });
+    expect(regionProtection(s, 'EUR')).toEqual({ coverage: 1, level: 'protected' });
+    // Out of rounds means it no longer counts.
+    s.tactical!.deployments[0].stock = 0;
+    expect(regionProtection(s, 'EUR').level).toBe('exposed');
+    // Sensors alone protect nothing.
+    execute(s, { type: 'deploy', equipmentId: 'gm400', region: 'NAM', x: 300, y: 200 });
+    expect(regionProtection(s, 'NAM').level).toBe('exposed');
+  });
+
+  it('warns of waves earlier when awareness is better', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    s.regions.EUR.awareness = 0;
+    expect(warningHours(s, 'EUR')).toBe(TACTICAL_CONFIG.warningHours.base);
+    s.regions.EUR.awareness = 100;
+    expect(warningHours(s, 'EUR')).toBe(TACTICAL_CONFIG.warningHours.base + TACTICAL_CONFIG.warningHours.atFullAwareness);
+    expect(incomingWaves(s)).toEqual([]); // nothing is announced during a briefing
+    execute(s, { type: 'beginPhase' });
+    const w = s.tactical!.waves[0];
+    s.hour = w.atHour - 1;
+    const inbound = incomingWaves(s);
+    expect(inbound[0].wave.id).toBe(w.id);
+    expect(inbound[0].eta).toBe(1);
   });
 
   it('measures the part of a path inside a circle', () => {

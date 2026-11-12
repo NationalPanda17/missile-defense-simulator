@@ -1,5 +1,5 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useRef, useState, type MouseEvent } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, detectionRange,
   equipmentCost, isEffector, isUnlimited, type DefenseLayer, type Deployment, type EquipmentSpec, type RegionId, type SimState,
@@ -18,8 +18,8 @@ export const LAYER_COLOR: Record<DefenseLayer, string> = {
   long: '#3b82f6',
   upper: '#f2545b',
 };
-const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
-const SITE_GLYPH: Record<SiteType, string> = { city: '●', port: '⚓', power: '⚡', comms: '◆', command: '★' };
+export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
+export const SITE_GLYPH: Record<SiteType, string> = { city: '●', port: '⚓', power: '⚡', comms: '◆', command: '★' };
 
 const effectorsCovering = (s: SimState, region: RegionId, x: number, y: number) =>
   (s.tactical?.deployments ?? []).filter((d) => {
@@ -38,7 +38,7 @@ function bestKill(s: SimState, region: RegionId, x: number, y: number): Record<T
   return out;
 }
 
-function KillBars({ k }: { k: Record<ThreatClass, number> }) {
+export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   return (
     <div className="grid grid-cols-5 gap-1">
       {THREAT_CLASSES.map((c) => (
@@ -53,13 +53,15 @@ function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   );
 }
 
-function TheaterMap({ s, region, ghost, selectedId, onPoint, onPick }: {
+/** The theater map. With `onPoint` it is a placement surface; without it, a read-only display. */
+export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, children }: {
   s: SimState;
   region: RegionId;
-  ghost: EquipmentSpec | null;
+  ghost?: EquipmentSpec | null;
   selectedId: string | null;
-  onPoint: (x: number, y: number) => void;
+  onPoint?: (x: number, y: number) => void;
   onPick: (d: Deployment) => void;
+  children?: ReactNode; // overlay drawn on top, in km coordinates
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
@@ -97,13 +99,13 @@ function TheaterMap({ s, region, ghost, selectedId, onPoint, onPick }: {
     <svg
       ref={svg}
       viewBox={`0 0 ${W} ${H}`}
-      className="block h-auto w-full cursor-crosshair select-none rounded border border-ops-line bg-[#040912]"
+      className={`block h-auto w-full select-none rounded border border-ops-line bg-[#040912] ${onPoint ? 'cursor-crosshair' : ''}`}
       role="img"
       aria-label={`Theater map of ${s.regions[region].name}`}
       onMouseMove={(e) => setHover(toKm(e))}
       onMouseLeave={() => setHover(null)}
       onClick={(e) => {
-        const p = toKm(e);
+        const p = onPoint && toKm(e);
         if (p) onPoint(Math.round(p[0]), Math.round(p[1]));
       }}
     >
@@ -149,6 +151,7 @@ function TheaterMap({ s, region, ghost, selectedId, onPoint, onPick }: {
           <rect x={hover[0] - 6} y={hover[1] - 6} width={12} height={12} fill={LAYER_COLOR[ghost.layer]} transform={`rotate(45 ${hover[0]} ${hover[1]})`} />
         </g>
       )}
+      {children}
       <text x={6} y={H - 6} fontSize={10} fill="#5d7391">{W} × {H} km · grid 50 km</text>
     </svg>
   );
@@ -249,7 +252,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         <span className="label mr-2 text-ops-red">Threat forecast</span>
         Attacks are expected in{' '}
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
-        {' '}Red arrows show the expected approach. One wave in five may strike elsewhere.
+        {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
       </div>
 
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">

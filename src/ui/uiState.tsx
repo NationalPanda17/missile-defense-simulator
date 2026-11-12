@@ -3,7 +3,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { RegionId } from '../engine';
 
 export type ViewId =
-  | 'global' | 'space' | 'air' | 'sea' | 'ground' | 'intel' | 'comms' | 'logistics' | 'infra'
+  | 'global' | 'theater' | 'space' | 'air' | 'sea' | 'ground' | 'intel' | 'comms' | 'logistics' | 'infra'
   | 'campaign' | 'editor' | 'aar';
 
 export type OverlayMetric = 'readiness' | 'stability' | 'comms' | 'awareness' | 'infrastructure' | 'none';

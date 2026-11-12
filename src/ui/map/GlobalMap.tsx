@@ -1,8 +1,9 @@
 // Interactive SVG operational map: zoom/pan, region selection, layered domain assets, network links and event markers.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPE, type ReactNode } from 'react';
-import { REGION_IDS, isActive, isKnown, confidenceLabel, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
+import { REGION_IDS, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
 import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone } from '../components/ui';
 import { useUI, type Layers, type OverlayMetric } from '../uiState';
+import { PROTECTION_TONE } from '../views/TheaterView';
 import { CONTEXT_LAND, MAP_H, MAP_W, REGION_SHAPES, project, regionBounds, ringPath } from './geography';
 
 interface View { x: number; y: number; w: number }
@@ -70,6 +71,7 @@ export function regionMetric(s: SimState, id: RegionId, m: OverlayMetric) {
 
 export default function GlobalMap({ s }: { s: SimState }) {
   const ui = useUI();
+  const incoming = new Set(incomingWaves(s).map((x) => x.wave.region)); // regions with a threat wave inbound
   const { layers, overlay } = ui;
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>(FULL);
@@ -394,6 +396,18 @@ export default function GlobalMap({ s }: { s: SimState }) {
             <g key={`lbl${id}`} pointerEvents="none" transform={`translate(${x},${y})`}>
               <text textAnchor="middle" fontSize={fs} fontFamily="Rajdhani" fontWeight={700} fill="#c9d8ec" letterSpacing={1.5} style={{ paintOrder: 'stroke' }} stroke="#040912" strokeWidth={2}>{r.short}</text>
               {overlay !== 'none' && <text y={fs * 1.05} textAnchor="middle" fontSize={fs * 0.8} fill={TONE_HEX[tone(val)]} style={{ paintOrder: 'stroke' }} stroke="#040912" strokeWidth={2}>{Math.round(val)}</text>}
+              {s.tactical?.enabled && (() => {
+                const lvl = regionProtection(s, id).level;
+                const inbound = incoming.has(id);
+                return (
+                  <g transform={`translate(0,${-fs * 1.15})`}>
+                    {inbound && <circle r={fs * 0.9} fill="none" stroke="#f2545b" strokeWidth={0.8} className="pulse-ring" />}
+                    <text textAnchor="middle" dy={fs * 0.32} fontSize={fs * 0.85} fill={TONE_HEX[PROTECTION_TONE[lvl]]} style={{ paintOrder: 'stroke' }} stroke="#040912" strokeWidth={2}>
+                      ◆<title>{`Tactical defenses: ${lvl}${inbound ? ' · threat wave inbound' : ''}`}</title>
+                    </text>
+                  </g>
+                );
+              })()}
             </g>
           );
         })}

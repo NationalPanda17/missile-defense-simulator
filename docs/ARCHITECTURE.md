@@ -139,7 +139,8 @@ it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of th
   `relocate` (briefing only), `withdraw` (50% refund) and `resupply` (refills the magazine after `reloadHours`,
   needs logistics) complete the set.
 - **Waves.** When a briefing opens, `scheduleWaves` picks forecast regions (weighted toward low stability) and
-  schedules the phase's waves (`TACTICAL_CONFIG.waves`). 20% strike outside the forecast. Each wave comes from one
+  schedules the phase's waves (`TACTICAL_CONFIG.waves`). Each forecast region gets one wave; each extra wave has a
+  20% chance to strike outside the forecast. Assignments are shuffled across the phase. Each wave comes from one
   axis and holds tracks of generic threat classes aimed at sites, weighted by importance.
 - **Resolution** (`tickTactical`, the hour a wave arrives). Poor regional awareness adds decoy tracks. For each
   track, the path runs from its entry point to its site:
@@ -150,6 +151,12 @@ it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of th
   3. Chance per shot = kill rate × availability (condition, maintenance) × detection × regional comms factor.
   4. A track that gets through lowers its site's integrity, plus the region's infrastructure and stability.
 - **Stats.** `tactical.stats` counts tracks, stopped, leaked, decoys engaged, shots and site damage, for the AAR.
+- **UI helpers.** `regionProtection` (share of live site value within range of a system that can engage:
+  protected ≥ 70%, thin ≥ 30%, else exposed), `warningHours` (2h + up to 6h more with awareness) and
+  `incomingWaves` (waves inside their warning window) feed the *Tactical Theater* view
+  (`ui/views/TheaterView.tsx`, key X), its inbound alerts, and the protection badges on the world map.
+  Each wave's tracks are stored with their outcome, so the view replays them; the interception point drawn is
+  where the path enters the stopping system's range.
 
 ## Scoring (`engine/scoring.ts`)
 
