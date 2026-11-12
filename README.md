@@ -1,5 +1,7 @@
 # Missile Defense Simulator v0.1 — Global Integrated Defense
 
+[![Tests](https://github.com/NationalPanda17/missile-defense-simulator/actions/workflows/test.yml/badge.svg)](https://github.com/NationalPanda17/missile-defense-simulator/actions/workflows/test.yml)
+
 A browser-based strategy game. You command a fictional defense network that spans four
 domains (Space, Air, Sea and Ground) across seven strategic regions. You manage readiness,
 communications, unreliable intelligence and scarce resources through a four-phase campaign
@@ -11,7 +13,7 @@ not model real systems, targeting or engagement.
 
 ## Quick start
 
-Requirements: **Node.js 18+** (tested on Node 26) and npm. PostgreSQL is optional. If you
+Requirements: **Node.js 22+** (CI tests Node 22 and 24; developed on Node 26) and npm. PostgreSQL is optional. If you
 don't have it, the project runs a real PostgreSQL server from `node_modules` for you.
 
 ```bash
@@ -35,7 +37,7 @@ the top bar shows **LOCAL ONLY**.
 | `npm run server` | API only, in watch mode (uses `DATABASE_URL`) |
 | `npm run build` | Type-check client and server, then build the client into `dist/` |
 | `npm start` | Production: one process that serves the API and `dist/` on `PORT` (default 8787) |
-| `npm test` | Engine tests plus API and auth integration tests against a throwaway PostgreSQL |
+| `npm test` | Engine tests plus API and auth integration tests against a throwaway PostgreSQL (CI: `.github/workflows/test.yml`) |
 | `npm run user:reset-password -- <username>` | Operator tool: issue a temporary password and sign the user out everywhere |
 | `npm run typecheck` | TypeScript only |
 
