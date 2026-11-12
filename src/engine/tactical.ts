@@ -466,7 +466,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     else if (spec.killRate[tr.cls] <= 0) why.set(d.id, `cannot engage ${THREAT_WORDS[tr.cls]}s`);
     else if (!shooters.some((x) => x.d === d)) {
       const blind = isLowFlying(tr.cls) && !cued && reachPath(terrain, d, spec, tr.cls, path, spec.rangeKm, true) > 0;
-      why.set(d.id, blind ? 'it flew below this system’s radar horizon or behind terrain' : 'its path never came within range');
+      why.set(d.id, blind ? 'it flew below the radar horizon or behind terrain' : 'out of range');
     }
   }
 
@@ -518,6 +518,9 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   tr.leak = leakReason(tr, deps);
 }
 
+/** "A —", "A and B —", "A, B and C —": the systems a reason applies to. */
+const listNames = (names: string[]) => `${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]} —`;
+
 const THREAT_WORDS: Record<ThreatClass, string> = { slowDrone: 'slow drone', fastDrone: 'fast drone', cruise: 'cruise missile', rocket: 'rocket', ballistic: 'ballistic missile' };
 
 /** One plain sentence on why a genuine threat got through. */
@@ -534,7 +537,7 @@ function leakReason(tr: Track, deps: Deployment[]): string {
   // Group systems by reason: "Patriot, NASAMS: its path never came within range".
   const groups = new Map<string, string[]>();
   for (const r of reasons) groups.set(r.reason, [...(groups.get(r.reason) ?? []), name(r.dep)]);
-  return `No system fired: ${[...groups].map(([reason, names]) => `${[...new Set(names)].join(', ')}: ${reason}`).join('; ')}.`;
+  return `Nothing engaged it: ${[...groups].map(([reason, names]) => `${listNames([...new Set(names)])} ${reason}`).join('; ')}.`;
 }
 
 /** At impact: threats that got through damage their site and the region. */

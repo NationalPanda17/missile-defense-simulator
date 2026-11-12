@@ -26,7 +26,7 @@ describe('why threats got through', () => {
     const w = run(s);
     const ballistic = w.tracks.filter((x) => x.cls === 'ballistic' && x.outcome === 'leaked');
     expect(ballistic.length).toBeGreaterThan(0);
-    for (const tr of ballistic) expect(tr.leak).toMatch(/Skynex: cannot reach a ballistic missile’s altitude/);
+    for (const tr of ballistic) expect(tr.leak).toMatch(/Nothing engaged it: Skynex — cannot reach a ballistic missile’s altitude/);
   });
 
   it('records who engaged each threat and how many rounds, matching the totals', () => {
