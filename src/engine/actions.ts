@@ -4,7 +4,7 @@ import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine
 import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
   addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
-  resupplyCost, theaterToLonLat,
+  resupplyCost, resupplyRounds, stockpileOf, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
@@ -284,13 +284,20 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (d.reloadRemaining !== undefined) return fail('A resupply is already underway.');
       if (d.stock >= spec.magazine) return fail('Magazine is already full.');
       if (s.logistics < TACTICAL_CONFIG.minLogisticsForResupply) return fail('Logistics capacity is too low to resupply.');
-      const cost = resupplyCost(d);
+      const rounds = resupplyRounds(s, d);
+      if (rounds <= 0) return fail(`The national stockpile of ${spec.name} rounds is empty until it is restocked at the next phase.`);
+      const cost = resupplyCost(d, rounds);
       const err = canAfford(s, cost, 0, 0);
       if (err) return fail(err);
       spend(s, cost, 0, 'maintenance');
-      d.reloadRemaining = spec.reloadHours;
-      record(s, 'resupply', `Resupply ordered: ${spec.name} (${d.id}), ${spec.reloadHours}h.`, cost, 'maintenance');
-      log(s, 'info', `${spec.name} resupplying (${spec.reloadHours}h).`, d.region);
+      const missing = spec.magazine - d.stock;
+      const hours = Math.max(1, Math.ceil(spec.reloadHours * (rounds / missing)));
+      d.reloadRemaining = rounds < missing ? hours : spec.reloadHours;
+      d.reloadRounds = rounds;
+      if (Number.isFinite(stockpileOf(s, d.equipmentId))) t.stockpile![d.equipmentId] -= rounds;
+      const partial = rounds < missing ? ` (${rounds} of ${missing} rounds: the national stockpile is short)` : '';
+      record(s, 'resupply', `Resupply ordered: ${spec.name} (${d.id}), ${d.reloadRemaining}h${partial}.`, cost, 'maintenance');
+      log(s, 'info', `${spec.name} resupplying (${d.reloadRemaining}h)${partial}.`, d.region);
       return { ok: true, message: 'Resupply ordered' };
     }
     case 'emergencyRedeploy': {

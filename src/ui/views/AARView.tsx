@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
+  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type ScoreKey, type SimState,
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
@@ -157,6 +157,7 @@ export function AARView({ s }: { s: SimState }) {
               </div>
             </div>
           </div>
+          <FixSuggestions s={s} />
           <CostExchange s={s} />
           <WaveBreakdowns s={s} />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -325,6 +326,26 @@ function WaveBreakdowns({ s }: { s: SimState }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Specific, tested advice: a system that would have stopped more of what got through, found by replaying the waves. */
+function FixSuggestions({ s }: { s: SimState }) {
+  const key = `${s.hour}:${s.tactical?.waves.filter((w) => w.resolved).length}`;
+  const fixes = useMemo(() => suggestFixes(s), [key]);
+  if (!fixes.length) return null;
+  return (
+    <div className="mt-4 min-w-0">
+      <div className="label mb-1">What would have helped</div>
+      <ul className="space-y-1.5 text-[11px]">
+        {fixes.map((f) => (
+          <li key={f.region} className="flex gap-2 rounded border border-ops-cyan/30 bg-ops-cyan/5 p-2 leading-relaxed">
+            <span className="text-ops-cyan" aria-hidden>▲</span><span>{f.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[10px] text-ops-dim">Found by replaying each region’s actual waves with a few affordable systems added beside the site hit hardest, and comparing.</p>
     </div>
   );
 }

@@ -281,7 +281,8 @@ export function BriefingModal({ s }: { s: SimState }) {
         </div>
       )}
       {advice.length > 0 && (
-        <div className="mb-3">
+        // On phones the deploy step needs every pixel; the begin check repeats anything urgent.
+        <div className={`mb-3 ${step === 'deploy' ? 'hidden md:block' : ''}`}>
           <div className="label mb-1">Adjutant</div>
           <AdviceList s={s} items={advice} compact onDeploy={tactical ? () => setStep('deploy') : undefined} />
         </div>
@@ -600,9 +601,10 @@ export function TutorialPanel() {
 export function Toasts() {
   useStoreVersion();
   return (
-    <div className="pointer-events-none fixed right-3 top-16 z-[60] flex w-72 flex-col gap-1.5" aria-live="polite">
-      {store.toasts.map((t) => (
-        <div key={t.id} className={`fadein rounded border px-3 py-2 text-[11px] shadow-lg backdrop-blur ${t.tone === 'err' ? 'border-ops-red/50 bg-ops-red/15 text-ops-red' : t.tone === 'ok' ? 'border-ops-green/40 bg-ops-green/10 text-ops-green' : 'border-ops-cyan/40 bg-ops-cyan/10 text-ops-cyan'}`}>{t.text}</div>
+    <div className="pointer-events-none fixed right-3 top-16 z-[60] flex w-72 max-w-[calc(100vw-1.5rem)] flex-col gap-1.5" aria-live="polite">
+      {store.toasts.map((t, i) => (
+        // Phones show only the latest two, so messages never cover the screen.
+        <div key={t.id} className={`fadein rounded border px-3 py-2 text-[11px] shadow-lg backdrop-blur ${i < store.toasts.length - 2 ? 'hidden sm:block' : ''} ${t.tone === 'err' ? 'border-ops-red/50 bg-ops-red/15 text-ops-red' : t.tone === 'ok' ? 'border-ops-green/40 bg-ops-green/10 text-ops-green' : 'border-ops-cyan/40 bg-ops-cyan/10 text-ops-cyan'}`}>{t.text}</div>
       ))}
     </div>
   );

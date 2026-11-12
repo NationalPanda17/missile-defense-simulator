@@ -303,15 +303,25 @@ export const COMMAND_LEVELS: Record<CommandLevel, {
     credits: 0, eventFrequency: 0.75, falseMult: 0.6, waveSize: 0.75, surpriseMult: 0.5, decoyMult: 0.6,
   },
   officer: {
-    label: 'Officer', description: 'The campaign as designed.',
+    label: 'Officer', description: 'The campaign as designed. Interceptor rounds come from a national stockpile, restocked each phase.',
     credits: 0, eventFrequency: 1, falseMult: 1, waveSize: 1, surpriseMult: 1, decoyMult: 1,
   },
   commander: {
-    label: 'Commander', description: 'A tighter budget, more incidents and false reports, and bigger attacks that strike outside the forecast more often. The adjutant starts off.',
+    label: 'Commander', description: 'A tighter budget, more incidents and false reports, and bigger attacks that strike outside the forecast more often. Interceptor stockpiles are thinner. The adjutant starts off.',
     credits: -250, eventFrequency: 1.3, falseMult: 1.3, waveSize: 1.3, surpriseMult: 1.6, decoyMult: 1.4,
   },
 };
 export const COMMAND_LEVEL_IDS: CommandLevel[] = ['recruit', 'officer', 'commander'];
+
+/**
+ * Interceptor stockpiles (campaign, Officer and Commander only): each interceptor type has a national reserve of
+ * rounds that resupply draws from. Sizes are in magazines per unit fielded: the reserve starts at `initial`, gains
+ * `restock` at each later phase start, and never holds more than `cap`. Recruit has unlimited reserves.
+ */
+export const STOCKPILES: Partial<Record<CommandLevel, { initial: number; restock: number; cap: number }>> = {
+  officer: { initial: 1, restock: 1, cap: 3 },
+  commander: { initial: 0.5, restock: 0.5, cap: 2 },
+};
 
 /** The difficulty settings for a scenario (Officer unless it is a campaign with another level). */
 export const levelOf = (settings: { mode: string; level?: CommandLevel }) =>

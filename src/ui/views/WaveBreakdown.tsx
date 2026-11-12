@@ -24,8 +24,15 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
       idle.set(w.dep, m);
     }
   }
+  const c = wave.conditions;
   return (
     <div className="space-y-2 text-[11px]">
+      {c && (c.night || c.storm) && (
+        <p className="text-ops-amber">
+          Launched {c.night ? 'at night' : ''}{c.night && c.storm ? ' and ' : ''}{c.storm ? 'in a storm (sensors at 60% of their range)' : ''}
+          {c.night ? '; Stinger, Avenger and ZU-23-2 were less accurate in the dark' : ''}.
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="table-ops w-full">
           <thead><tr><th>Threat</th><th>Target</th><th>Seen</th><th>Engaged by</th><th>Result</th></tr></thead>

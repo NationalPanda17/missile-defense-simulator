@@ -1,5 +1,6 @@
 // The simulation tick. Advances one simulated hour. Pure state mutation — no UI dependencies.
 import { INVESTMENTS, SIM_CONFIG } from './config';
+import { restockStockpiles } from './tactical';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
@@ -464,6 +465,7 @@ export function beginPhase(s: SimState) {
     sample(s);
   }
   s.phaseStartHour = s.hour;
+  if (s.phaseIndex > 0) restockStockpiles(s);
   s.status = 'running';
   s.paused = false;
   if (phase.grant) {

@@ -4,8 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   EQUIPMENT_MAP, TACTICAL_CONFIG, TERRAIN_PROFILES, canEngage, canEngageClass, detectionRange, isEffector, isUnlimited,
-  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState,
-} from '../../../engine';
+  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState, conditionsAt } from '../../../engine';
 import { store } from '../../../store/simStore';
 import { LAYER_COLOR, SiteMarker, SystemIcon } from './icons';
 import { fanOut, layoutLabels, textWidth, type Box, type LabelRequest } from './labels';
@@ -295,9 +294,27 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
       {keyCursor && hover && !ghost && onPoint && (
         <g pointerEvents="none" stroke="#38d6f5" strokeWidth={1.5}><path d={`M${hover[0] - 10},${hover[1]} H${hover[0] + 10} M${hover[0]},${hover[1] - 10} V${hover[1] + 10}`} /></g>
       )}
+      <WeatherOverlay s={s} region={region} hour={replayAt ?? s.hour} />
       <LiveThreats s={s} region={region} at={replayAt} />
       {children}
     </svg>
+  );
+}
+
+/** Darkness at night and rain hatching in a storm, over the whole theater. */
+function WeatherOverlay({ s, region, hour }: { s: SimState; region: RegionId; hour: number }) {
+  const c = conditionsAt(s, region, Math.floor(hour));
+  if (!c.night && !c.storm) return null;
+  return (
+    <g pointerEvents="none" aria-hidden>
+      <defs>
+        <pattern id={`rain-${region}`} width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(20)">
+          <line x1="0" y1="0" x2="0" y2="9" stroke="#9fb7d6" strokeOpacity="0.35" strokeWidth="1" />
+        </pattern>
+      </defs>
+      {c.night && <rect x={0} y={0} width={W} height={H} fill="#02040a" fillOpacity={0.28} />}
+      {c.storm && <rect x={0} y={0} width={W} height={H} fill={`url(#rain-${region})`} />}
+    </g>
   );
 }
 

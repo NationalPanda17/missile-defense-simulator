@@ -47,7 +47,7 @@ export function TopBar({ s }: { s: SimState }) {
   const phaseHour = s.hour - s.phaseStartHour;
   const running = s.status === 'running';
   return (
-    <header className="relative z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ops-line bg-ops-panel/90 px-3 py-2 backdrop-blur">
+    <header className="relative z-40 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-ops-line bg-ops-panel/90 px-2 py-1.5 backdrop-blur sm:gap-x-4 sm:gap-y-2 sm:px-3 sm:py-2">
       <div className="flex items-center gap-2">
         <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
           <circle cx="13" cy="13" r="11" fill="none" stroke="#38d6f5" strokeOpacity=".5" />
@@ -56,7 +56,7 @@ export function TopBar({ s }: { s: SimState }) {
         </svg>
         <div className="leading-none">
           <div className="font-sans text-[15px] font-bold tracking-[0.18em] text-white">MISSILE DEFENSE SIMULATOR</div>
-          <div className="text-[10px] tracking-widest text-ops-dim">GLOBAL INTEGRATED DEFENSE · v0.1</div>
+          <div className="hidden text-[10px] tracking-widest text-ops-dim sm:block">GLOBAL INTEGRATED DEFENSE · v0.1</div>
         </div>
       </div>
       <div className="hidden min-w-0 leading-tight xl:block">
@@ -91,8 +91,11 @@ export function TopBar({ s }: { s: SimState }) {
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-4">
-        <TopMetric label="Readiness" v={m.globalReadiness} />
-        <TopMetric label="Network" v={m.network} />
+        {/* Phones: the essentials only (time controls, credits, alert); the rest is on the Global Operations screen. */}
+        <span className="hidden sm:contents">
+          <TopMetric label="Readiness" v={m.globalReadiness} />
+          <TopMetric label="Network" v={m.network} />
+        </span>
         <div className="leading-tight">
           <div className="label">Credits</div>
           <div className={`whitespace-nowrap tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>
@@ -108,11 +111,11 @@ export function TopBar({ s }: { s: SimState }) {
           <div className="label">Alert</div>
           <Chip t={ALERT_TONE[m.alert]}><span className={m.alert === 'SEVERE' ? 'blink' : ''}>{m.alert}</span></Chip>
         </div>
-        <ServerStatusChip />
+        <span className="hidden sm:contents"><ServerStatusChip /></span>
         <DisplayControl />
         <SoundControl />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Help & shortcuts (?)">?</button>
-        <button className="btn" onClick={() => ui.setTutorial(!ui.tutorial)} title="Training guide">Guide</button>
+        <button className="btn hidden sm:inline-flex" onClick={() => ui.setTutorial(!ui.tutorial)} title="Training guide">Guide</button>
       </div>
     </header>
   );

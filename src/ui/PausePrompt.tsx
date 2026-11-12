@@ -2,7 +2,7 @@
 // the commander can do right now. The same actions appear in the Tactical Theater whenever a wave is inbound.
 import { useSyncExternalStore } from 'react';
 import {
-  EQUIPMENT_MAP, alertActive, alertCost, isActive, isEffector, isUnlimited, resupplyCost, type PauseReason, type RegionId, type SimState,
+  EQUIPMENT_MAP, alertActive, alertCost, isActive, isEffector, isUnlimited, resupplyCost, resupplyRounds, type PauseReason, type RegionId, type SimState,
 } from '../engine';
 import { dispatch, store } from '../store/simStore';
 import { useUI, type ViewId } from './uiState';
@@ -19,9 +19,9 @@ export function WaveActions({ s, region, compact }: { s: SimState; region: Regio
   const aCost = alertCost(s, region);
   const low = deps.filter((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return isEffector(spec) && !isUnlimited(spec) && d.reloadRemaining === undefined && d.stock < spec.magazine;
+    return isEffector(spec) && !isUnlimited(spec) && d.reloadRemaining === undefined && d.stock < spec.magazine && resupplyRounds(s, d) > 0;
   });
-  const rCost = low.reduce((a, d) => a + resupplyCost(d), 0);
+  const rCost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
   const unsure = s.events.filter((e) => isActive(e) && e.reportedAt <= s.hour && e.status === 'reported' && e.confidence < 55);
   const go = (view: ViewId) => { if (view === 'theater') ui.setTheaterFocus(region); ui.setView(view); };
   const running = s.status === 'running';
@@ -34,7 +34,7 @@ export function WaveActions({ s, region, compact }: { s: SimState; region: Regio
       </button>
       <button className="btn" disabled={!low.length || s.credits < rCost} title={low.length ? low.map((d) => EQUIPMENT_MAP.get(d.equipmentId)!.name).join(', ') : 'Every magazine there is full or reloading'}
         onClick={() => { for (const d of low) dispatch({ type: 'resupply', deploymentId: d.id }); }}>
-        {low.length ? `Resupply ${low.length} (${rCost} cr)` : 'Magazines full'}
+        {low.length ? `Resupply ${low.length} (${rCost} cr)` : deps.some((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return isEffector(sp) && !isUnlimited(sp) && d.stock < sp.magazine && d.reloadRemaining === undefined; }) ? 'Stockpile empty' : 'Magazines full'}
       </button>
       <button className="btn" onClick={() => go('theater')} title="Move a system there with an emergency redeploy (out of action while it moves)">Move a system…</button>
       {unsure.length > 0 && <button className="btn" onClick={() => go('intel')}>Review {unsure.length} uncertain report{unsure.length === 1 ? '' : 's'}</button>}
