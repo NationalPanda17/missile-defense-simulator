@@ -25,6 +25,7 @@ export interface Asset {
   hoursToService: number; // hours until scheduled maintenance is due (negative = overdue)
   maintenanceRemaining: number; // hours left in maintenance / transit
   transitTo?: RegionId;
+  transitRoute?: { from: [number, number]; to: [number, number]; hours: number }; // lon/lat, for smooth map movement
   upkeep: number; // credits per hour
   pos: [number, number]; // lon, lat for map placement
   history: number[]; // condition samples (every 6h)
@@ -303,7 +304,7 @@ export interface Deployment {
   y: number;
   stock: number; // engagements left before resupply
   reloadRemaining?: number; // hours until a resupply completes
-  transit?: { region: RegionId; x: number; y: number; remaining: number }; // emergency redeploy under way
+  transit?: { region: RegionId; x: number; y: number; remaining: number; hours?: number }; // emergency redeploy under way
   deployedAt: number; // sim hour
 }
 

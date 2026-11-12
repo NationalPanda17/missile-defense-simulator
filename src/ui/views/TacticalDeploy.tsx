@@ -1,12 +1,12 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, TERRAIN_PROFILES, THREAT_CLASSES, THREAT_LABELS,
   canEngage, canEngageClass, coverageAt, detectionRange, equipmentCost, isEffector, isUnlimited, lowHorizonKm, masked,
   placementError, type DefenseLayer,
   type Deployment, type EquipmentSpec, type RegionId, type SimState, type Site, type SiteType, type TheaterTerrain, type ThreatClass,
 } from '../../engine';
-import { dispatch } from '../../store/simStore';
+import { dispatch, store } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
 
 const { width: W, height: H } = TACTICAL_CONFIG.theaterKm;
@@ -44,6 +44,15 @@ export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
       ))}
     </div>
   );
+}
+
+/** Where a deployment's marker is at continuous time t: gliding toward its new spot during a same-region redeploy. */
+function deploymentPosAt(d: Deployment, t: number, hour: number): [number, number] {
+  const tr = d.transit;
+  if (!tr || tr.region !== d.region || !tr.hours) return [d.x, d.y];
+  const remaining = Math.max(0, tr.remaining - (t - hour));
+  const k = Math.min(1, Math.max(0, 1 - remaining / tr.hours));
+  return [d.x + (tr.x - d.x) * k, d.y + (tr.y - d.y) * k];
 }
 
 /** "Type 45 destroyer (Sea Viper)" → "Type 45 destroyer", for map labels. */
@@ -106,6 +115,22 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
+  // Systems redeploying inside this region glide to their new spot: a light per-frame loop rewrites their transform.
+  const movers = useRef(new Map<string, { el: SVGGElement; d: Deployment }>());
+  useEffect(() => {
+    let raf = 0;
+    const step = () => {
+      const t = store.simTime();
+      const h = store.state?.hour ?? 0;
+      for (const { el, d } of movers.current.values()) {
+        const [x, y] = deploymentPosAt(d, t, h);
+        el.setAttribute('transform', `translate(${x},${y})`);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
   const [keyCursor, setKeyCursor] = useState(false);
   const t = s.tactical!;
   const terrain = t.terrain?.[region];
@@ -227,8 +252,11 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
         const sel = d.id === selectedId;
         const asset = s.assets.find((a) => a.id === d.assetId);
         const down = asset && (asset.status === 'transit' || asset.status === 'maintenance' || asset.status === 'offline');
+        const [px, py] = deploymentPosAt(d, store.simTime(), s.hour);
+        const gliding = !!d.transit && d.transit.region === d.region;
         return (
-          <g key={d.id} transform={`translate(${d.x},${d.y})`} className="cursor-pointer outline-none" tabIndex={0} role="button"
+          <g key={d.id} transform={`translate(${px},${py})`} className="cursor-pointer outline-none" tabIndex={0} role="button"
+            ref={(el) => { if (el && gliding) movers.current.set(d.id, { el, d }); else movers.current.delete(d.id); }}
             aria-label={`${asset?.name ?? spec.name}${down ? `, ${asset!.status}` : ''}. Press Enter to select.`}
             onClick={(e) => { e.stopPropagation(); onPick(d); }}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onPick(d); } }}>

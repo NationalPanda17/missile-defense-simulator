@@ -3,7 +3,7 @@ import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
   TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
-  tacticalReport, lessonsLearned, alertActive, alertCost, redeployHours, isSea, coverageAt, onMassif, masked, TERRAIN_PROFILES, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
+  tacticalReport, lessonsLearned, assetPosAt, alertActive, alertCost, redeployHours, isSea, coverageAt, onMassif, masked, TERRAIN_PROFILES, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
   exportTacticalScenario, importTacticalScenario,
 } from '../src/engine';
 import type { RegionId, SimState } from '../src/engine';
@@ -689,5 +689,29 @@ describe('tactical layer: in-phase orders', () => {
     const alerted = play(true);
     expect(alerted.tracks).toBe(plain.tracks);
     expect(alerted.stopped).toBeGreaterThanOrEqual(plain.stopped);
+  });
+});
+
+describe('smooth movement', () => {
+  it('moves a redeploying asset along a fixed route and lands exactly at its end', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
+    execute(s, { type: 'beginPhase' });
+    const a = s.assets.find((x) => x.domain === 'air' && x.region !== 'IPA')!;
+    const from = [...a.pos];
+    expect(execute(s, { type: 'redeploy', assetId: a.id, region: 'IPA' }).ok).toBe(true);
+    const route = a.transitRoute!;
+    expect(route.from).toEqual(from);
+    // At the order: still at the start. Halfway through: halfway along. Fractions of an hour count too.
+    expect(assetPosAt(a, s.hour, s.hour)).toEqual(from);
+    const half = route.hours / 2;
+    const mid = assetPosAt(a, s.hour + half, s.hour);
+    expect(mid[0]).toBeCloseTo((route.from[0] + route.to[0]) / 2, 6);
+    const a1 = assetPosAt(a, s.hour + 0.25, s.hour);
+    const a2 = assetPosAt(a, s.hour + 0.5, s.hour);
+    expect(a1).not.toEqual(a2);
+    execute(s, { type: 'advance', hours: route.hours });
+    expect(a.status).not.toBe('transit');
+    expect(a.pos).toEqual(route.to);
+    expect(a.transitRoute).toBeUndefined();
   });
 });

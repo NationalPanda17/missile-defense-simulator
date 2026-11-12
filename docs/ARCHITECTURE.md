@@ -33,6 +33,16 @@ including the RNG state, so a save reproduces the run exactly. Key parts:
 
 ## The tick (`engine/engine.ts`)
 
+**Smooth display between ticks.** The simulation still advances in whole hours, but the UI shows continuous time:
+`store.simTime()` is the current hour plus the fraction of the next one already elapsed. The clock (with minutes),
+phase bar and event timeline use the `useSimTime()` hook (re-renders per animation frame, so keep it to small
+components). Moving map items (orbiting satellites, assets on a redeploy route via `assetPosAt`, tactical systems
+gliding during a same-region redeploy) are positioned from continuous time on render and then nudged each frame by a
+light loop that only rewrites their `transform`. Meters and gauges transition over one simulated hour at the current
+speed (`--tick`, set by the store), linearly, so values flow from hour to hour. Redeploy destinations are fixed when
+the order is given (`Asset.transitRoute`) so the route is known in advance.
+
+
 One tick is one simulated hour. The store calls `advance()` in real time
 (`msPerHourAt1x / speed`). It also calls it on demand in turn mode (+6h).
 

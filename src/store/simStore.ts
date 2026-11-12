@@ -1,5 +1,5 @@
 // Bridges the pure simulation engine to React: owns the real-time loop, autosave and notifications.
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
 } from '../engine';
@@ -255,6 +255,17 @@ class SimStore {
     } catch { /* non-critical */ }
   }
 
+  private tickVar = '';
+  /** Expose one simulated hour's real duration as the CSS variable --tick, so meters glide from hour to hour. */
+  private syncTickVar() {
+    const s = this.state;
+    const v = s && s.status === 'running' && !s.paused && !s.turnBased ? `${Math.round(SIM_CONFIG.msPerHourAt1x / s.speed)}ms` : '400ms';
+    if (v !== this.tickVar && typeof document !== 'undefined') {
+      this.tickVar = v;
+      document.documentElement.style.setProperty('--tick', v);
+    }
+  }
+
   private ensureLoop() {
     if (this.timer !== null) return;
     this.last = performance.now();
@@ -262,6 +273,7 @@ class SimStore {
   }
 
   private frame() {
+    this.syncTickVar();
     const now = performance.now();
     const dt = Math.min(500, now - this.last);
     this.last = now;
@@ -281,7 +293,14 @@ class SimStore {
 
   /** Fraction of the current hour elapsed — used for smooth map animation. */
   hourFraction() {
-    return this.state && !this.state.paused ? this.acc / SIM_CONFIG.msPerHourAt1x : 0;
+    const s = this.state;
+    if (!s || s.paused || s.turnBased || s.status !== 'running') return 0;
+    return Math.min(0.999, this.acc / SIM_CONFIG.msPerHourAt1x);
+  }
+
+  /** Continuous sim time in hours: the current hour plus the fraction already elapsed, for smooth display. */
+  simTime() {
+    return (this.state?.hour ?? 0) + this.hourFraction();
   }
 }
 
@@ -304,3 +323,22 @@ export function useStoreVersion() {
 }
 
 export const dispatch = store.dispatch;
+
+/**
+ * Continuous sim time (hours) that updates every animation frame while the clock runs. Use only in small components
+ * (clock, timeline, moving markers): each one re-renders per frame.
+ */
+export function useSimTime(): number {
+  useStoreVersion();
+  const [t, setT] = useState(() => store.simTime());
+  useEffect(() => {
+    let raf = 0;
+    const step = () => {
+      setT(store.simTime());
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return Math.max(t, store.state?.hour ?? 0);
+}
