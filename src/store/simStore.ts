@@ -43,6 +43,7 @@ class SimStore {
   pacing: AutoPauseSettings | null = loadPacing();
   private pMemo: PauseMemo | null = null;
   private held: PauseReason[] = [];
+  private warnedStorage = false;
   private lastBatchPause = -Infinity;
   version = 0;
   toasts: Toast[] = [];
@@ -166,7 +167,11 @@ class SimStore {
   private afterHours(before: number) {
     const s = this.state!;
     if (Math.floor(s.hour / 12) !== Math.floor(before / 12) || s.status === 'complete' || s.status === 'briefing') {
-      saveGame(s, autosaveSlot(s));
+      if (!saveGame(s, autosaveSlot(s)) && !this.warnedStorage) {
+        // Browser storage is full (about 5 MB per site): say so once, rather than failing silently.
+        this.warnedStorage = true;
+        this.toast('err', 'Couldn’t autosave: this browser’s storage is full. Delete old saves on the start screen, or export this one.');
+      }
       this.pushAutosave();
     }
   }
