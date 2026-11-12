@@ -50,8 +50,7 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
  * run as an administrator, and some players (and CI machines) run elevated; starting postgres directly then fails.
  */
 function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): { stop: () => Promise<void> } {
-  const require = createRequire(import.meta.url);
-  const bin = path.join(path.dirname(require.resolve('@embedded-postgres/windows-x64/package.json')), 'native', 'bin', 'pg_ctl.exe');
+  const bin = path.join(nativePackageDir(createRequire(import.meta.url)), 'native', 'bin', 'pg_ctl.exe');
   const run = (args: string[]) => {
     try {
       return execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
@@ -79,7 +78,7 @@ function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): 
 function hydrateNativeSymlinks() {
   try {
     const require = createRequire(import.meta.url);
-    const pkg = path.dirname(require.resolve(`@embedded-postgres/${process.platform}-${process.arch}/package.json`));
+    const pkg = nativePackageDir(require);
     // ELECTRON_RUN_AS_NODE: inside the desktop app, process.execPath is the app itself, not Node.
     execFileSync(process.execPath, ['scripts/hydrate-symlinks.js'], { cwd: pkg, stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
   } catch { /* other platforms or already hydrated */ }
@@ -97,4 +96,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+}
+
+/** Folder of this platform's PostgreSQL binary package. It only exports dist/index.js, so resolve that and go up. */
+function nativePackageDir(require: NodeRequire): string {
+  return path.resolve(path.dirname(require.resolve(`@embedded-postgres/${process.platform}-${process.arch}`)), '..');
 }
