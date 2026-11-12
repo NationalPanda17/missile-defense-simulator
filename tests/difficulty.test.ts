@@ -58,3 +58,17 @@ describe('campaign difficulty levels', () => {
     expect(s.startCredits).toBe(defaultSettings('crisis').startCredits);
   });
 });
+
+describe('sandbox threat waves', () => {
+  it('are off unless asked for, and spread over the scenario when on', () => {
+    const off = createInitialState(defaultSettings('sandbox', { seed: 8 }));
+    expect(off.tactical!.enabled).toBe(false);
+    const on = createInitialState(defaultSettings('sandbox', { seed: 8, waves: true, durationHours: 240 }));
+    expect(on.tactical!.enabled).toBe(true);
+    expect(on.tactical!.waves.length).toBe(10); // 3 per 72h over 240h
+    for (const w of on.tactical!.waves) expect(w.atHour).toBeLessThanOrEqual(240);
+    const crisis = createInitialState(defaultSettings('crisis', { seed: 8, waves: true }));
+    expect(crisis.tactical!.enabled).toBe(true);
+    expect(createInitialState(defaultSettings('crisis', { seed: 8 })).tactical!.enabled).toBe(false);
+  });
+});

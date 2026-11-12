@@ -291,6 +291,7 @@ export interface ScenarioSettings {
   tactical?: TacticalSettings; // campaign only; absent means the standard scenario
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
   level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
+  waves?: boolean; // sandbox and crisis: turn the tactical layer (threat waves, Deploy defenses) on
   challenge?: { score: number; grade: string }; // played from a challenge link: the challenger's score (-1 if none)
 }
 

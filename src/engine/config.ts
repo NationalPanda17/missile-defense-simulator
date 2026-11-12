@@ -299,8 +299,8 @@ export const COMMAND_LEVELS: Record<CommandLevel, {
   label: string; description: string; credits: number; eventFrequency: number; falseMult: number; waveSize: number; surpriseMult: number; decoyMult: number;
 }> = {
   recruit: {
-    label: 'Recruit', description: 'More money, fewer and clearer reports, smaller attacks that rarely surprise you. For learning the campaign.',
-    credits: 400, eventFrequency: 0.75, falseMult: 0.6, waveSize: 0.75, surpriseMult: 0.5, decoyMult: 0.6,
+    label: 'Recruit', description: 'Fewer and clearer reports and smaller attacks that rarely surprise you, on the standard budget. For learning the campaign.',
+    credits: 0, eventFrequency: 0.75, falseMult: 0.6, waveSize: 0.75, surpriseMult: 0.5, decoyMult: 0.6,
   },
   officer: {
     label: 'Officer', description: 'The campaign as designed.',

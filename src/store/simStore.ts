@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
-  BATCH_HOURS, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
+  BATCH_HOURS, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
 } from '../engine';
 import type { AccountInfo, CampaignSummary, SaveSummary } from '../shared/api';
 import { api, ApiError, forgetLegacyPlayerId, legacyPlayerId, newId } from './remote';
@@ -166,7 +166,7 @@ class SimStore {
   private afterHours(before: number) {
     const s = this.state!;
     if (Math.floor(s.hour / 12) !== Math.floor(before / 12) || s.status === 'complete' || s.status === 'briefing') {
-      saveGame(s, 'auto');
+      saveGame(s, autosaveSlot(s));
       this.pushAutosave();
     }
   }
@@ -256,7 +256,7 @@ class SimStore {
     try {
       do {
         this.pushQueued = false;
-        await this.writeServer('auto', this.state!, false);
+        await this.writeServer(autosaveSlot(this.state!), this.state!, false);
       } while (this.pushQueued && this.state);
     } finally {
       this.pushInFlight = false;

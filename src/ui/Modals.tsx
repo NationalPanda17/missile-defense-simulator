@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -443,7 +443,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const newcomer = isNewcomer(saves.length);
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
-    { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours.', cta: 'Enter crisis' },
+    { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours, network management only (no threat waves; the Scenario Editor can add them).', cta: 'Enter crisis' },
     { id: 'training' as const, title: 'Training Academy', desc: `${LESSONS.length - 1} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.`, cta: 'Open the Academy' },
   ];
   // New players see the Academy first.
@@ -506,11 +506,11 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
                 {saves.map((m) => (
                   <div key={m.slot} className="flex items-stretch gap-1">
                     <button className="min-w-0 flex-1 rounded border border-ops-line p-2 text-left hover:border-ops-cyan/50" onClick={() => { const st = loadGame(m.slot as Slot); if (st) store.load(st); }}>
-                      <div className="flex justify-between gap-2"><span className="truncate text-white">{m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} · {m.name}</span><span className="shrink-0 text-ops-dim">T+{m.hour}h</span></div>
+                      <div className="flex justify-between gap-2"><span className="truncate text-white">{slotLabel(m.slot)} · {m.name}</span><span className="shrink-0 text-ops-dim">T+{m.hour}h</span></div>
                       <div className="text-[10px] text-ops-dim">{m.mode} · {m.phase} · {new Date(m.savedAt).toLocaleString()}</div>
                     </button>
-                    <ConfirmDelete className="px-2" label={`Delete ${m.slot === 'auto' ? 'the autosave' : m.slot.toUpperCase()}`}
-                      onConfirm={() => { deleteSave(m.slot as Slot); store.toast('info', `${m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} deleted.`); store.notify(); }} />
+                    <ConfirmDelete className="px-2" label={`Delete ${slotLabel(m.slot)}`}
+                      onConfirm={() => { deleteSave(m.slot as Slot); store.toast('info', `${slotLabel(m.slot)} deleted.`); store.notify(); }} />
                   </div>
                 ))}
               </div>

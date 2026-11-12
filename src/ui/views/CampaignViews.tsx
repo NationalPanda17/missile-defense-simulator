@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import {
-  DOMAINS, REGION_IDS, SLOTS, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
+  DOMAINS, REGION_IDS, SLOTS, autosaveSlot, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
   objectiveMet, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
@@ -75,10 +75,10 @@ export function CampaignView({ s }: { s: SimState }) {
               const m = saves.find((x) => x.slot === slot);
               return (
                 <div key={slot} className="flex items-center gap-1 rounded border border-ops-line p-1.5">
-                  <div className="min-w-0 flex-1"><div className="text-white">{slot === 'auto' ? 'Autosave' : slot.toUpperCase()}</div><div className="truncate text-[10px] text-ops-dim">{m ? `${m.name} · T+${m.hour}h · ${new Date(m.savedAt).toLocaleTimeString()}` : 'empty'}</div></div>
-                  {slot !== 'auto' && <button className="btn" onClick={() => { saveGame(s, slot); store.toast('ok', `Saved to ${slot}`); store.notify(); }}>Save</button>}
+                  <div className="min-w-0 flex-1"><div className="text-white">{slotLabel(slot)}</div><div className="truncate text-[10px] text-ops-dim">{m ? `${m.name} · T+${m.hour}h · ${new Date(m.savedAt).toLocaleTimeString()}` : 'empty'}</div></div>
+                  {!isAutosaveSlot(slot) && <button className="btn" onClick={() => { saveGame(s, slot); store.toast('ok', `Saved to ${slot}`); store.notify(); }}>Save</button>}
                   <button className="btn" disabled={!m} onClick={() => { const st = loadGame(slot as Slot); if (st) { store.load(st); store.toast('ok', `Loaded ${slot}`); } }}>Load</button>
-                  {m && <ConfirmDelete className="px-1.5" label={`Delete ${slot === 'auto' ? 'the autosave' : slot.toUpperCase()}`} onConfirm={() => { deleteSave(slot); store.toast('info', `${slot === 'auto' ? 'Autosave' : slot.toUpperCase()} deleted.`); store.notify(); }} />}
+                  {m && <ConfirmDelete className="px-1.5" label={`Delete ${slotLabel(slot)}`} onConfirm={() => { deleteSave(slot); store.toast('info', `${slotLabel(slot)} deleted.`); store.notify(); }} />}
                 </div>
               );
             })}
@@ -106,7 +106,7 @@ export function CampaignView({ s }: { s: SimState }) {
               </>
             )}
             <button className="btn" onClick={() => { store.newGame(defaultSettings(s.settings.mode === 'sandbox' ? 'campaign' : s.settings.mode)); ui.setView('global'); }}>New randomized run</button>
-            <button className="btn" onClick={() => { saveGame(s, 'auto'); store.quit(); }}>Main menu</button>
+            <button className="btn" onClick={() => { saveGame(s, autosaveSlot(s)); store.quit(); }}>Main menu</button>
           </div>
         </Panel>
         <Panel title="Achievements" right={<span>{s.achievements.length}/{Object.keys(ACH).length}</span>}>
@@ -119,7 +119,7 @@ export function CampaignView({ s }: { s: SimState }) {
 }
 
 export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunched?: () => void }) {
-  const [cfg, setCfg] = useState<ScenarioSettings>(() => ({ ...defaultSettings('sandbox'), seed: Math.floor(Math.random() * 1e6) }));
+  const [cfg, setCfg] = useState<ScenarioSettings>(() => ({ ...defaultSettings('sandbox'), seed: Math.floor(Math.random() * 1e6), waves: true }));
   const set = <K extends keyof ScenarioSettings>(k: K, v: ScenarioSettings[K]) => setCfg((c) => ({ ...c, [k]: v }));
   const num = (label: string, k: 'startCredits' | 'startPersonnel' | 'crews' | 'durationHours' | 'seed', min: number, max: number, step = 1) => (
     <label className="block">
@@ -136,10 +136,17 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
       <Panel title="Scenario Editor · Sandbox" className="xl:col-span-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="block flex-1"><div className="label mb-0.5">Scenario name</div><input className="input w-full" value={cfg.name} onChange={(e) => set('name', e.target.value)} /></label>
-          <button className="btn" onClick={() => setCfg({ ...defaultSettings('crisis'), mode: 'sandbox', name: 'Sandbox: Crisis Preset', seed: cfg.seed })}>Crisis preset</button>
-          <button className="btn" onClick={() => setCfg({ ...defaultSettings('sandbox'), seed: cfg.seed })}>Defaults</button>
+          <button className="btn" onClick={() => setCfg({ ...defaultSettings('crisis'), mode: 'sandbox', name: 'Sandbox: Crisis Preset', seed: cfg.seed, waves: true })} title="Crisis conditions, with threat waves">Crisis preset · waves on</button>
+          <button className="btn" onClick={() => setCfg({ ...defaultSettings('sandbox'), seed: cfg.seed, waves: true })} title="Default conditions, with threat waves">Defaults · waves on</button>
           <button className="btn btn-primary px-5 py-2" onClick={launch}>Launch simulation ▶</button>
         </div>
+        <label className="mt-2 flex items-center gap-2 text-[11px]">
+          <input type="checkbox" checked={cfg.waves === true} onChange={(e) => set('waves', e.target.checked)} />
+          <span className="text-white">Threat waves</span>
+          <span className="text-ops-dim">
+            {cfg.waves ? `On: the briefing has a Deploy defenses step, and about ${Math.max(1, Math.round(3 * cfg.durationHours / 72))} waves strike over ${cfg.durationHours}h.` : 'Off: network management only, no attacks and no defenses to place.'}
+          </span>
+        </label>
         {s && <p className="mt-2 text-[10px] text-ops-amber">Launching replaces the current scenario. Save first from Campaign Management if you want to keep it.</p>}
       </Panel>
       <Panel title="Resources & Tempo">

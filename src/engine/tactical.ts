@@ -25,7 +25,8 @@ const emptyStats = (): TacticalStats => ({ tracks: 0, stopped: 0, leaked: 0, dec
 /** Training lesson with scripted threat waves, if this is one. The only training scenarios with a tactical layer. */
 const tacticalLesson = (s: SimState) => (s.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined);
 const tacticalAllowed = (s: SimState) =>
-  (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length;
+  (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length
+  || ((s.settings.mode === 'sandbox' || s.settings.mode === 'crisis') && s.settings.waves === true);
 
 /** A fresh tactical state for a game. Sites are generated from the seed; waves are scheduled separately. */
 export function createTactical(s: SimState): TacticalState {
@@ -161,8 +162,12 @@ function makeTrack(t: TacticalState, region: RegionId, cls: ThreatClass, axis: T
 export function scheduleWaves(s: SimState, fromHour?: number) {
   const t = s.tactical;
   if (!t?.enabled) return;
-  const base = TACTICAL_CONFIG.waves[s.phaseIndex];
   const phase = s.phases[s.phaseIndex];
+  // Sandbox and crisis have one long phase: use the mid-campaign profile, with waves spread over its length.
+  const single = s.settings.mode === 'sandbox' || s.settings.mode === 'crisis';
+  const base = single && phase
+    ? { ...TACTICAL_CONFIG.waves[1], count: Math.max(1, Math.round(TACTICAL_CONFIG.waves[1].count * phase.hours / 72)) }
+    : TACTICAL_CONFIG.waves[s.phaseIndex];
   t.waves = t.waves.filter((w) => w.phaseIndex !== s.phaseIndex);
   t.forecast = [];
   const lesson = tacticalLesson(s);

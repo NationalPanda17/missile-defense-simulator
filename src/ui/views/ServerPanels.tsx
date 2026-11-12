@@ -1,6 +1,6 @@
 // UI for the PostgreSQL persistence service: status chip, server save slots, campaign service record.
 import { useState } from 'react';
-import { SLOTS, type Slot } from '../../engine';
+import { SLOTS, isAutosaveSlot, slotLabel, type Slot } from '../../engine';
 import type { CampaignDetail } from '../../shared/api';
 import { api } from '../../store/remote';
 import { BROWSER_ONLY, store, useStoreVersion } from '../../store/simStore';
@@ -94,10 +94,10 @@ export function ServerSavesPanel({ canSave }: { canSave: boolean }) {
             return (
               <div key={slot} className="flex items-center gap-1 rounded border border-ops-line p-1.5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-white">{slot === 'auto' ? 'Server autosave' : slot.toUpperCase()}</div>
+                  <div className="text-white">{isAutosaveSlot(slot) ? `Server ${slotLabel(slot).toLowerCase()}` : slot.toUpperCase()}</div>
                   <div className="truncate text-[10px] text-ops-dim">{m ? `${m.name} · T+${m.hour}h · ${m.phase} · ${(m.sizeBytes / 1024).toFixed(0)} KB · ${ago(m.savedAt)}` : 'empty'}</div>
                 </div>
-                {slot !== 'auto' && <button className="btn" disabled={!canSave || !!busy} onClick={() => run(`s${slot}`, () => store.serverSave(slot as Slot))}>{busy === `s${slot}` ? '…' : 'Save'}</button>}
+                {!isAutosaveSlot(slot) && <button className="btn" disabled={!canSave || !!busy} onClick={() => run(`s${slot}`, () => store.serverSave(slot as Slot))}>{busy === `s${slot}` ? '…' : 'Save'}</button>}
                 <button className="btn" disabled={!m || !!busy} onClick={() => run(`l${slot}`, () => store.serverLoad(slot as Slot))}>{busy === `l${slot}` ? '…' : 'Load'}</button>
                 <button className="btn px-1.5" disabled={!m || !!busy} onClick={() => run(`d${slot}`, () => store.serverDelete(slot as Slot))} aria-label={`Delete server ${slot}`}>✕</button>
               </div>

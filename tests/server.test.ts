@@ -422,3 +422,18 @@ describe('static client', () => {
     await rm(dir, { recursive: true, force: true });
   });
 });
+
+describe('autosave per mode', () => {
+  it('keeps a training autosave separate from the campaign autosave', async () => {
+    const origin = await listen();
+    const a = await signedUp(origin);
+    const camp = playedState(5);
+    const drill = createInitialState(defaultSettings('training', { seed: 4 }));
+    drill.campaignId = randomUUID();
+    expect((await a.call('PUT', '/saves/auto', { v: 1, state: camp })).status).toBe(200);
+    expect((await a.call('PUT', '/saves/autoacademy', { v: 1, state: drill })).status).toBe(200);
+    const slots = (await a.call('GET', '/saves')).body.map((x: { slot: string }) => x.slot).sort();
+    expect(slots).toEqual(['auto', 'autoacademy']);
+    expect((await a.call('GET', '/saves/auto')).body.state.settings.mode).toBe('campaign');
+  });
+});
