@@ -5,6 +5,8 @@ import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone } from '../compone
 import { store } from '../../store/simStore';
 import { useUI, type Layers, type OverlayMetric } from '../uiState';
 import { PROTECTION_TONE } from '../views/TheaterView';
+import { LiveThreatsGlobal } from './LiveThreatsGlobal';
+import { layoutLabels, textWidth, type Box } from '../views/theater/labels';
 import { CONTEXT_LAND, MAP_H, MAP_W, REGION_SHAPES, project, regionBounds, ringPath } from './geography';
 
 interface View { x: number; y: number; w: number }
@@ -370,7 +372,6 @@ export default function GlobalMap({ s }: { s: SimState }) {
               {sel && <circle r={8} fill="none" stroke="#fff" strokeWidth={0.8} />}
               {a.status === 'offline' && <circle r={6} fill="none" stroke={TONE_HEX.red} strokeWidth={0.8} className="blink" />}
               {shape}
-              {layers.labels && k < 0.5 && <text x={6} y={-4} fontSize={5} fill="#9fb4cf">{a.name}</text>}
             </g>
           );
         })}
@@ -411,6 +412,35 @@ export default function GlobalMap({ s }: { s: SimState }) {
             </g>
           );
         })}
+
+        {/* asset names when zoomed in: collision-free (never over another name, a region label, an icon or an event) */}
+        {layers.labels && k < 0.5 && (() => {
+          const sc = Math.max(0.35, Math.min(1, k * 1.15));
+          const fsRegion = Math.max(4.5, 9 * Math.min(1, k * 1.2));
+          const shown = s.assets.filter((a) => domainVisible(a) && a.domain !== 'space' && a.status !== 'transit');
+          const obstacles: Box[] = [
+            ...REGION_IDS.map((id) => {
+              const r = s.regions[id];
+              const [x, y] = project(r.center[0], r.center[1] - (id === 'POL' ? 0 : 6));
+              const w = textWidth(r.short, fsRegion) * 1.3;
+              return { x: x - w / 2, y: y - fsRegion * 2.4, w, h: fsRegion * 3.6 };
+            }),
+            ...s.assets.filter(domainVisible).map((a) => { const [x, y] = project(...a.pos); return { x: x - 5 * sc, y: y - 5 * sc, w: 10 * sc, h: 10 * sc }; }),
+            ...s.events.filter((e) => isActive(e) && isKnown(s, e)).map((e) => { const [x, y] = eventPoint(s, e); return { x: x - 6 * sc, y: y - 6 * sc, w: 12 * sc, h: 12 * sc }; }),
+          ];
+          const labels = layoutLabels(
+            shown.map((a) => { const [x, y] = project(...a.pos); return { id: a.id, text: a.name, x, y, fontSize: 5 * sc, priority: a.role === 'command' ? 3 : a.role === 'sensor' ? 2 : 1, iconRadius: 4.5 * sc }; }),
+            obstacles, { w: MAP_W, h: MAP_H },
+          );
+          return (
+            <g pointerEvents="none">
+              {labels.map((l) => <text key={l.id} x={l.x} y={l.y} textAnchor={l.anchor} fontSize={l.fontSize} fill="#9fb4cf" style={{ paintOrder: 'stroke' }} stroke="#040912" strokeWidth={1.2 * sc}>{l.text}</text>)}
+            </g>
+          );
+        })()}
+
+        {/* live threat waves: launch, flight, interception, impact */}
+        <LiveThreatsGlobal s={s} k={k} />
 
         {/* region labels */}
         {layers.labels && REGION_IDS.map((id) => {

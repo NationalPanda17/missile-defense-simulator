@@ -31,6 +31,14 @@ including the RNG state, so a save reproduces the run exactly. Key parts:
 | `counters` | Inputs for scoring and lessons learned (escalations, spurious responses, etc.) |
 | `phases[]`, `phaseIndex` | Campaign progression |
 
+## World map geometry
+
+Region outlines come from Natural Earth country borders (public domain, via the `world-atlas` dev dependency).
+`npm run build:geography` assigns each country to one of the seven regions, simplifies the shared border arcs once
+(`topojson-simplify`) so both sides of every border stay identical, dissolves countries by region, splits rings at
+the ±180° meridian, and writes `src/ui/map/regions.generated.ts`. `tests/geography.test.ts` checks that no point
+lies in two regions, that no edge jumps across the map, and that each region's centre is on its own land.
+
 ## The tick (`engine/engine.ts`)
 
 **Smooth display between ticks.** The simulation still advances in whole hours, but the UI shows continuous time:
@@ -161,7 +169,17 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
   schedules the phase's waves (`TACTICAL_CONFIG.waves`). Each forecast region gets one wave; each extra wave has a
   20% chance to strike outside the forecast. Assignments are shuffled across the phase. Each wave comes from one
   axis and holds tracks of generic threat classes aimed at sites, weighted by importance.
-- **Resolution** (`tickTactical`, the hour a wave arrives). Poor regional awareness adds decoy tracks. For each
+- **Timeline.** Each threat class has a flight time (`TACTICAL_CONFIG.flightHours`: drones 3h/1.5h, cruise 1.2h,
+  ballistic 0.6h, rockets 0.4h). A wave *launches* at `launchAt` (its impact hour minus its slowest flight) and its
+  outcome is decided then, with the defenses as they stand; each track gets its own `launchAt` so all arrive at
+  `atHour`, and stopped tracks record `stopAt` (where along the path). Damage lands at *impact* (`applied`).
+  Warnings count down to launch, then to impact; alerts must be raised before launch to count. Waves in older
+  saves (no `launchAt`) resolve and apply in one hour as before.
+- **Live threat display** (`ui/threatTimeline.ts`). `trackPhase` gives each track's state at any continuous time:
+  pending, in flight (fraction along its path), intercepted (lingering 2h) or impact (lingering 6h). The theater map
+  (`LiveThreats`) and world map (`LiveThreatsGlobal`) draw launch points, class icons heading along their paths with
+  trails, interception bursts and impact markers, re-rendering per frame on their own.
+- **Resolution** (`tickTactical`, at launch). Poor regional awareness adds decoy tracks. For each
   track, the path runs from its entry point to its site:
   1. Detection: any available deployment whose sensor reach (after horizon and terrain) touches the path sees it.
      Unseen tracks are engaged at reduced quality and twice the reaction time.

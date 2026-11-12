@@ -180,7 +180,7 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   }
 
   const start = s.status === 'running' ? s.phaseStartHour : s.hour; // in a briefing, the phase starts at s.hour
-  const first = Math.max(fromHour ?? 0, start + 6);
+  const first = Math.max((fromHour ?? 0) + 3, start + 6); // leaves room for the longest flight before impact
   const last = start + phase.hours - 2;
   if (last <= first) return;
   const hours = Array.from({ length: profile.count }, () => first + Math.floor(rand(t) * (last - first + 1))).sort((a, b) => a - b);
@@ -208,7 +208,8 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
       if (tr) tracks.push(tr);
     }
     t.waves.push({
-      id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, axis, forecast: !surprise, tracks, resolved: false,
+      id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis, forecast: !surprise, tracks,
+      resolved: false,
     });
   }
 }
@@ -248,17 +249,22 @@ const isPassive = (spec: EquipmentSpec) => spec.id === 'acoustic-net' || spec.id
  * horizon for low-flying threats unless cued from the air, and dropped if a massif hides the path from it.
  * `range` is the system's own reach (detection or engagement). Returns the chord length in km.
  */
-function reach(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, a: [number, number], b: [number, number], range: number, cued: boolean): number {
-  if (range <= 0) return 0;
+function reachSpan(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, a: [number, number], b: [number, number], range: number, cued: boolean): [number, number] | null {
+  if (range <= 0) return null;
   const low = isLowFlying(cls) && spec.domain !== 'air';
   const limited = low && !cued && !isPassive(spec) ? Math.min(range, lowHorizonKm(terrain, [d.x, d.y])) : range;
   const span = chordSpan(a, b, [d.x, d.y], limited);
-  if (!span) return 0;
+  if (!span) return null;
   if (low && !cued) {
     const mid = (span[0] + span[1]) / 2;
-    if (masked(terrain, [d.x, d.y], [a[0] + (b[0] - a[0]) * mid, a[1] + (b[1] - a[1]) * mid])) return 0;
+    if (masked(terrain, [d.x, d.y], [a[0] + (b[0] - a[0]) * mid, a[1] + (b[1] - a[1]) * mid])) return null;
   }
-  return (span[1] - span[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]);
+  return span;
+}
+
+function reach(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, a: [number, number], b: [number, number], range: number, cued: boolean): number {
+  const span = reachSpan(terrain, d, spec, cls, a, b, range, cued);
+  return span ? (span[1] - span[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
 }
 
 /** Can this system engage this class at all (kill rate and altitude ceiling)? */
@@ -370,6 +376,9 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       if (rand(t) < spec.killRate[tr.cls] * avail * detection * commsF) {
         stopped = true;
         tr.stoppedBy = d.id;
+        // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
+        const span = reachSpan(terrain, d, spec, tr.cls, tr.from, target, spec.rangeKm, cued);
+        if (span) tr.stopAt = Math.min(0.97, span[0] + (span[1] - span[0]) * (0.25 + 0.3 * i));
       }
     }
   }
@@ -387,13 +396,30 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   }
   tr.outcome = 'leaked';
   t.stats.leaked += 1;
-  const damage = Math.min(site.integrity, TACTICAL_CONFIG.threatDamage[tr.cls]);
-  tr.damage = damage;
-  site.integrity -= damage;
-  t.stats.siteDamage += damage;
-  const weight = damage * (site.importance / 3);
-  region.infrastructure = clamp(region.infrastructure - weight * TACTICAL_CONFIG.infraPerDamage);
-  region.stability = clamp(region.stability - weight * TACTICAL_CONFIG.stabilityPerDamage);
+}
+
+/** At impact: threats that got through damage their site and the region. */
+function applyImpacts(s: SimState, t: TacticalState, w: ThreatWave) {
+  const region = s.regions[w.region];
+  for (const tr of w.tracks) {
+    if (tr.decoy || tr.outcome !== 'leaked') continue;
+    const site = t.sites.find((x) => x.id === tr.siteId);
+    if (!site) continue;
+    const damage = Math.min(site.integrity, TACTICAL_CONFIG.threatDamage[tr.cls]);
+    tr.damage = damage;
+    site.integrity -= damage;
+    t.stats.siteDamage += damage;
+    const weight = damage * (site.importance / 3);
+    region.infrastructure = clamp(region.infrastructure - weight * TACTICAL_CONFIG.infraPerDamage);
+    region.stability = clamp(region.stability - weight * TACTICAL_CONFIG.stabilityPerDamage);
+  }
+  w.applied = true;
+  const real = w.tracks.filter((x) => !x.decoy);
+  if (!real.length) return;
+  const leaked = real.filter((x) => x.outcome === 'leaked').length;
+  const where = `${region.name}, from the ${w.axis}`;
+  if (leaked === 0) tlog(s, 'success', `Threat wave ${w.id} (${real.length} threats) defeated in ${where}.`, w.region);
+  else tlog(s, leaked * 3 >= real.length ? 'crit' : 'warn', `Threat wave ${w.id} in ${where}: ${real.length - leaked}/${real.length} stopped, ${leaked} got through.`, w.region);
 }
 
 function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
@@ -407,15 +433,14 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
     if (tr) w.tracks.push(tr);
   }
   const deps = t.deployments.filter((d) => d.region === w.region);
-  for (const tr of w.tracks) resolveTrack(s, t, w, tr, deps);
+  for (const tr of w.tracks) {
+    tr.launchAt = w.atHour - TACTICAL_CONFIG.flightHours[tr.cls];
+    resolveTrack(s, t, w, tr, deps);
+  }
   w.resolved = true;
-
-  const real = w.tracks.filter((x) => !x.decoy);
-  if (!real.length) return;
-  const leaked = real.filter((x) => x.outcome === 'leaked').length;
-  const where = `${region.name}, from the ${w.axis}`;
-  if (leaked === 0) tlog(s, 'success', `Threat wave ${w.id} (${real.length} threats) defeated in ${where}.`, w.region);
-  else tlog(s, leaked * 3 >= real.length ? 'crit' : 'warn', `Threat wave ${w.id} in ${where}: ${real.length - leaked}/${real.length} stopped, ${leaked} got through.`, w.region);
+  w.applied = false;
+  const real = w.tracks.filter((x) => !x.decoy).length;
+  if (real) tlog(s, 'crit', `LAUNCH: threat wave ${w.id} (${real} threats) inbound to ${region.name} from the ${w.axis}, impact T+${w.atHour}h.`, w.region);
 }
 
 /** Is a raised alert in force in this region now? */
@@ -488,8 +513,15 @@ export function tickTactical(s: SimState) {
     }
   }
   for (const w of t.waves) {
-    if (!w.resolved && w.atHour === s.hour) resolveWave(s, t, w);
+    // Launch: outcome decided with the defenses as they stand. Impact: damage lands.
+    if (!w.resolved && (w.launchAt ?? w.atHour) <= s.hour) resolveWave(s, t, w);
+    if (w.resolved && w.applied === false && w.atHour <= s.hour) applyImpacts(s, t, w);
   }
+}
+
+/** Hours from launch to impact for a wave: its slowest threat's flight time, in whole hours (ticks are hourly). */
+export function waveLeadHours(tracks: { cls: ThreatClass }[]): number {
+  return Math.ceil(Math.max(0, ...tracks.map((x) => TACTICAL_CONFIG.flightHours[x.cls])));
 }
 
 // ── Read-only helpers for the UI ─────────────────────────────────────────
@@ -532,12 +564,13 @@ export function warningHours(s: SimState, region: RegionId): number {
 }
 
 /** Unresolved waves of the current phase that are inside their region's warning window. */
-export function incomingWaves(s: SimState): { wave: ThreatWave; eta: number }[] {
+export function incomingWaves(s: SimState): { wave: ThreatWave; eta: number; launched: boolean; launchIn: number }[] {
   const t = s.tactical;
   if (!t?.enabled || s.status !== 'running') return [];
   return t.waves
-    .filter((w) => !w.resolved && w.phaseIndex === s.phaseIndex && w.atHour - s.hour <= warningHours(s, w.region))
-    .map((wave) => ({ wave, eta: wave.atHour - s.hour }))
+    .filter((w) => w.applied !== true && !(w.resolved && w.applied === undefined) && w.phaseIndex === s.phaseIndex
+      && (w.launchAt ?? w.atHour) - s.hour <= warningHours(s, w.region))
+    .map((wave) => ({ wave, eta: wave.atHour - s.hour, launched: wave.resolved, launchIn: (wave.launchAt ?? wave.atHour) - s.hour }))
     .sort((a, b) => a.eta - b.eta);
 }
 
