@@ -8,7 +8,8 @@ const KEY = 'mds.academy';
 const STEP_KEY = (campaignId: string) => `mds.lessonStep.${campaignId}`;
 
 export type { ExamRecord };
-export interface AcademyProgress { done: string[]; exam?: ExamRecord; bestExam?: ExamRecord }
+export interface DrillRecord { best: number; stars: number }
+export interface AcademyProgress { done: string[]; exam?: ExamRecord; bestExam?: ExamRecord; drills?: Record<string, DrillRecord> }
 
 export function loadProgress(): AcademyProgress {
   try {
@@ -47,9 +48,11 @@ export async function syncAcademy(): Promise<void> {
   syncing = true;
   try {
     const local = loadProgress();
-    const merged = await api.putAcademy({ done: local.done.filter((id) => LESSONS.some((l) => l.id === id)), bestExam: local.bestExam ?? null });
+    const merged = await api.putAcademy({ done: local.done.filter((id) => LESSONS.some((l) => l.id === id)), bestExam: local.bestExam ?? null, drills: local.drills ?? {} });
     const now = loadProgress();
-    const next: AcademyProgress = { ...now, done: [...new Set([...now.done, ...merged.done])], bestExam: better(now.bestExam, merged.bestExam) };
+    const next: AcademyProgress = {
+      ...now, done: [...new Set([...now.done, ...merged.done])], bestExam: better(now.bestExam, merged.bestExam), drills: mergeDrills(now.drills, merged.drills),
+    };
     if (JSON.stringify(next) !== JSON.stringify(now)) save(next, false);
   } catch { /* offline or signed out: try again next time */ } finally {
     syncing = false;
@@ -70,6 +73,20 @@ if (typeof window !== 'undefined') {
 export function markLessonDone(id: string) {
   const p = loadProgress();
   if (!p.done.includes(id)) save({ ...p, done: [...p.done, id] });
+}
+
+const mergeDrills = (a: Record<string, DrillRecord> = {}, b: Record<string, DrillRecord> = {}) => {
+  const out = { ...a };
+  for (const [id, r] of Object.entries(b)) {
+    const cur = out[id];
+    out[id] = cur ? { best: Math.max(cur.best, r.best), stars: Math.max(cur.stars, r.stars) } : r;
+  }
+  return out;
+};
+
+export function recordDrill(id: string, score: number, stars: number) {
+  const p = loadProgress();
+  save({ ...p, drills: mergeDrills(p.drills, { [id]: { best: score, stars } }) });
 }
 
 export function recordExam(r: ExamRecord) {

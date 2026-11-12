@@ -4,7 +4,7 @@
 // scripted threat waves) plus a list of steps. A step either waits for the player to do something, checked by a pure
 // predicate over the simulation state and what the UI is showing, or is a short read / quiz the player moves past.
 // Keeping the checks here, free of UI code, lets the tests prove every lesson can be completed.
-import { computeScore } from './scoring';
+import { computeScore, protectionScore } from './scoring';
 import { regionProtection } from './tactical';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
 import type { PhaseConfig, RegionId, ScenarioSettings, SimState, ThreatAxis, ThreatClass } from './types';
@@ -75,7 +75,19 @@ export interface TrainingLesson {
   steps: LessonStep[];
   /** The graded final exercise. */
   exam?: boolean;
+  /** A practice drill: a short scored challenge with stars, played after (or instead of) the course. */
+  drill?: DrillSpec;
 }
+
+export interface DrillSpec {
+  goal: string;
+  /** 0-100, live while the drill runs and final when it ends. */
+  score: (s: SimState) => number;
+  /** Scores needed for one, two and three stars. */
+  stars: [number, number, number];
+}
+
+export const starsFor = (d: DrillSpec, score: number) => d.stars.filter((x) => score >= x).length;
 
 // ── Check helpers ───────────────────────────────────────────────────────
 
@@ -475,7 +487,99 @@ export const LESSONS: TrainingLesson[] = [
   },
 ];
 
-export const LESSON_MAP = new Map(LESSONS.map((l) => [l.id, l]));
+// ── Practice drills ──────────────────────────────────────────────────────
+
+const drillSteps = (goal: string, setup: string): LessonStep[] => [
+  { id: 'brief', title: 'Your objective', text: `${goal} ${setup}` },
+  { id: 'begin', target: ['begin'], title: 'Begin', text: 'Assume command when ready. Your score updates live below.', check: running },
+  { id: 'finish', title: 'Play it out', text: 'Play until the drill ends. Use any speed you like.', check: (c) => c.s.status === 'complete' },
+  { id: 'result', title: 'Result', text: 'Your score and stars are below. Try again to beat your best.' },
+];
+
+/** Threat damage prevented, 0-100; 0 until the first threat has arrived. */
+const defenseScore = (s: SimState) => (s.tactical?.stats.tracks ? clampScore(protectionScore(s) ?? 0) : 0);
+
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+const clampScore = (x: number) => Math.max(0, Math.min(100, Math.round(x)));
+
+/** Share of the drill's reports handled well: real ones resolved, false ones exposed or dismissed without spending. */
+function triageScore(s: SimState): number {
+  const known = s.events.filter((e) => e.reportedAt <= s.hour);
+  if (!known.length) return 0;
+  const good = known.filter((e) => (e.isGenuine ? e.status === 'resolved' : (e.status === 'dismissed' || e.status === 'expired') && !e.responseId)).length;
+  return clampScore((good / known.length) * 100 - s.counters.escalations * 10 - s.counters.genuineDismissed * 15);
+}
+
+export const DRILLS: TrainingLesson[] = [
+  {
+    id: 'drill-swarm', title: 'Drone swarm', minutes: 8, skills: ['Counter-drone', 'Magazines', 'Resupply'],
+    summary: 'Three growing swarms hit Europe from different directions on a tight budget. Stop as much of the damage as you can.',
+    settings: { durationHours: 32, seed: 3101, startCredits: 900 },
+    phase: { ...QUIET, name: 'Drone Swarm', scripted: [], situation: 'Three drone swarms are expected against Europe, eight hours apart. You have 900 credits.' },
+    waves: [
+      { region: 'EUR', atHour: 8, axis: 'east', tracks: { slowDrone: 16, fastDrone: 6 }, forecast: true },
+      { region: 'EUR', atHour: 16, axis: 'north', tracks: { slowDrone: 18, fastDrone: 8, cruise: 2 }, forecast: true },
+      { region: 'EUR', atHour: 24, axis: 'south', tracks: { slowDrone: 20, fastDrone: 12, cruise: 3 }, forecast: true },
+    ],
+    drill: { goal: 'Prevent as much threat damage in Europe as possible.', score: defenseScore, stars: [75, 90, 98] },
+    steps: drillSteps('Prevent as much threat damage in Europe as possible.', 'Cheap counter-drone systems go further than big interceptors here, and magazines run dry: resupply between waves.'),
+  },
+  {
+    id: 'drill-triage', title: 'Report triage', minutes: 10, skills: ['Confirmation', 'Dismissal', 'Response'],
+    summary: 'Eight reports in quick succession, some false. Resolve the real ones and expose the false ones without wasting money.',
+    settings: { durationHours: 48, seed: 3202, startCredits: 1400 },
+    phase: { ...QUIET, name: 'Report Triage', situation: 'A busy watch: eight reports arrive over the first day. Not all of them are real.',
+      scripted: [
+        { atHour: 1, templateId: 'sensor_drift', region: 'EUR' }, { atHour: 2, templateId: 'false_contact', region: 'SAM' },
+        { atHour: 4, templateId: 'relay_degradation', region: 'AFR' }, { atHour: 6, templateId: 'false_contact', region: 'IPA' },
+        { atHour: 9, templateId: 'storm', region: 'IPA' }, { atHour: 12, templateId: 'power_fault', region: 'NAM' },
+        { atHour: 15, templateId: 'false_contact', region: 'MDE' }, { atHour: 18, templateId: 'airframe', region: 'EUR' },
+      ] },
+    drill: { goal: 'Handle every report correctly.', score: triageScore, stars: [60, 80, 95] },
+    steps: drillSteps('Handle every report correctly.', 'Real reports should end resolved; false ones exposed by confirmation or dismissed, with no response spent on them. Escalations and dismissing a real report cost points.'),
+  },
+  {
+    id: 'drill-budget', title: 'Thin budget', minutes: 12, skills: ['Prioritising', 'Maintenance', 'Reserves'],
+    summary: 'Three days with 700 credits and worn equipment. Keep global readiness as high as you can.',
+    settings: { durationHours: 72, seed: 3303, startCredits: 700, domainCondition: { air: 64, sea: 66, space: 70 } },
+    phase: { ...QUIET, name: 'Thin Budget', eventRate: 0.07, maxSeverity: 3, categories: ['sensor', 'comms', 'aircraft', 'maritime', 'ground', 'weather', 'logistics'],
+      scripted: [{ atHour: 6, templateId: 'parts_shortage', region: 'EUR' }],
+      situation: 'Money is short and equipment is worn. Every credit has to count.' },
+    drill: {
+      goal: 'Keep average global readiness high.',
+      score: (s) => clampScore(avg(s.history.map((h) => h.readiness)) - s.counters.escalations * 3),
+      stars: [52, 58, 64],
+    },
+    steps: drillSteps('Keep average global readiness high.', 'Your score is the average readiness over the drill, minus 3 per escalation. Maintenance on the right assets pays off; keep a reserve for incidents.'),
+  },
+  {
+    id: 'drill-higharc', title: 'High arc', minutes: 8, skills: ['Upper-tier defense', 'Placement'],
+    summary: 'Ballistic missiles and rockets against the Middle East. Only the right systems can reach them.',
+    settings: { durationHours: 30, seed: 3404, startCredits: 2800 },
+    phase: { ...QUIET, name: 'High Arc', scripted: [], situation: 'Ballistic missile and rocket salvos are expected against the Middle East.' },
+    waves: [
+      { region: 'MDE', atHour: 8, axis: 'south', tracks: { ballistic: 3, rocket: 6 }, forecast: true },
+      { region: 'MDE', atHour: 18, axis: 'east', tracks: { ballistic: 5, rocket: 6, cruise: 2 }, forecast: true },
+    ],
+    drill: { goal: 'Prevent as much threat damage in the Middle East as possible.', score: defenseScore, stars: [40, 60, 80] },
+    steps: drillSteps('Prevent as much threat damage in the Middle East as possible.', 'Check each system’s altitude ceiling: ballistic missiles fly far above most short-range systems.'),
+  },
+  {
+    id: 'drill-surprise', title: 'Surprise attack', minutes: 10, skills: ['Emergency redeploy', 'Alerts', 'Reading warnings'],
+    summary: 'The forecast says Europe. Not every wave will agree. Watch the warnings and move fast.',
+    settings: { durationHours: 40, seed: 3505, startCredits: 2600 },
+    phase: { ...QUIET, name: 'Surprise Attack', scripted: [], situation: 'Intelligence expects attacks on Europe. Be ready to move.' },
+    waves: [
+      { region: 'EUR', atHour: 8, axis: 'east', tracks: { slowDrone: 6, cruise: 3 }, forecast: true },
+      { region: 'AFR', atHour: 20, axis: 'north', tracks: { slowDrone: 8, fastDrone: 3 }, forecast: false },
+      { region: 'SAM', atHour: 34, axis: 'west', tracks: { slowDrone: 6, cruise: 3 }, forecast: false },
+    ],
+    drill: { goal: 'Prevent as much threat damage as possible, wherever it lands.', score: defenseScore, stars: [30, 50, 70] },
+    steps: drillSteps('Prevent as much threat damage as possible, wherever it lands.', 'Two waves will strike outside the forecast. Warnings appear a few hours ahead: emergency-redeploy systems in time.'),
+  },
+];
+
+export const LESSON_MAP = new Map([...LESSONS, ...DRILLS].map((l) => [l.id, l]));
 export const lessonOf = (s: SimState | null | undefined): TrainingLesson | undefined =>
   s?.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined;
 
@@ -485,7 +589,7 @@ export function lessonPhase(lesson: TrainingLesson, settings: ScenarioSettings):
     id: 1, hours: settings.durationHours, eventRate: 0, falseRate: settings.falseReportRate,
     maxSeverity: 2, delayedInfo: false, conflicting: false, chains: false,
     categories: ['sensor', 'aircraft', 'ground', 'weather', 'comms'],
-    grant: 0, special: ['Training Academy', lesson.exam ? 'Graded' : 'Guided'],
+    grant: 0, special: ['Training Academy', lesson.drill ? 'Practice drill' : lesson.exam ? 'Graded' : 'Guided'],
     objectives: [],
     ...lesson.phase,
   };

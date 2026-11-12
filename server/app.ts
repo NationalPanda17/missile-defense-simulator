@@ -4,8 +4,8 @@ import { stat } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import type pg from 'pg';
-import { LESSONS, LESSON_MAP, SAVE_VERSION, SLOTS, stateShapeError, type SimState } from '../src/engine';
-import type { ExamRecord } from '../src/shared/api';
+import { DRILLS, LESSONS, SAVE_VERSION, SLOTS, stateShapeError, type SimState } from '../src/engine';
+import type { DrillRecord, ExamRecord } from '../src/shared/api';
 import {
   RateLimiter, SESSION_COOKIE, Sessions, USERNAME_RE, UsernameTaken, Users, clearedCookie, dummyVerify, hashPassword,
   passwordProblem, readCookie, sessionCookie, verifyPassword, type AuthContext,
@@ -161,12 +161,16 @@ export function createApp(opts: AppOptions) {
   authed('PUT', /^\/api\/academy$/, async (ctx) => {
     const body = await ctx.body();
     const done = body.done;
-    if (!Array.isArray(done) || done.length > LESSONS.length || !done.every((x) => typeof x === 'string' && LESSON_MAP.has(x))) {
+    if (!Array.isArray(done) || done.length > LESSONS.length || !done.every((x) => typeof x === 'string' && LESSONS.some((l) => l.id === x))) {
       throw new HttpError(400, 'done must be a list of lesson ids');
     }
     const bestExam = body.bestExam ?? null;
     if (bestExam !== null && !isExamRecord(bestExam)) throw new HttpError(400, 'bestExam is invalid');
-    json(ctx.res, 200, await repo.mergeAcademy(ctx.auth.playerId, { done, bestExam }));
+    const drills = body.drills ?? {};
+    if (!drills || typeof drills !== 'object' || Array.isArray(drills) || !Object.entries(drills).every(([id, d]) => DRILLS.some((x) => x.id === id) && isDrillRecord(d))) {
+      throw new HttpError(400, 'drills is invalid');
+    }
+    json(ctx.res, 200, await repo.mergeAcademy(ctx.auth.playerId, { done, bestExam, drills: drills as Record<string, DrillRecord> }));
   });
 
   authed('PUT', /^\/api\/player$/, async (ctx) => {
@@ -342,4 +346,9 @@ function isExamRecord(x: unknown): x is ExamRecord {
     && Number.isInteger(e.met) && Number.isInteger(e.total) && e.met >= 0 && e.met <= e.total && e.total <= 20
     && Number.isFinite(e.score) && e.score >= 0 && e.score <= 100
     && typeof e.grade === 'string' && e.grade.length <= 4 && Number.isFinite(e.at);
+}
+
+function isDrillRecord(x: unknown): x is DrillRecord {
+  const d = x as DrillRecord;
+  return !!d && typeof d === 'object' && Number.isInteger(d.best) && d.best >= 0 && d.best <= 100 && Number.isInteger(d.stars) && d.stars >= 0 && d.stars <= 3;
 }

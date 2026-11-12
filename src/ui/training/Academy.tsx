@@ -1,6 +1,7 @@
 // Training Academy: the course outline, progress and certification record.
 import { useEffect, useState } from 'react';
-import { EXAM_PASS, LESSONS, defaultSettings } from '../../engine';
+import { DRILLS, EXAM_PASS, LESSONS, defaultSettings } from '../../engine';
+import { Stars } from './Stars';
 import { store, useStoreVersion } from '../../store/simStore';
 import { Modal } from '../components/ui';
 import { useUI } from '../uiState';
@@ -81,6 +82,34 @@ export function AcademyModal() {
             );
           })}
         </ol>
+        <div>
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <h3 className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Practice drills</h3>
+            <span className="text-[11px] text-ops-dim">
+              {Object.values(p.drills ?? {}).reduce((a, d) => a + d.stars, 0)}/{DRILLS.length * 3} stars
+            </span>
+          </div>
+          <p className="mb-2 text-[11px] text-ops-dim">Short scored challenges. Earn up to three stars on each and beat your personal best.</p>
+          <ul className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+            {DRILLS.map((d) => {
+              const rec = p.drills?.[d.id];
+              return (
+                <li key={d.id} className="flex flex-col rounded border border-ops-line p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="label">Drill · about {d.minutes} min</div>
+                      <div className="font-sans text-base font-semibold text-white">{d.title}</div>
+                    </div>
+                    <span className="shrink-0 text-base"><Stars n={rec?.stars ?? 0} /></span>
+                  </div>
+                  <p className="mt-1 flex-1 text-[11px] leading-relaxed text-ops-dim">{d.summary}</p>
+                  <div className="mt-1 text-[10px] text-ops-dim">Stars at {d.drill!.stars.join(' / ')}{rec ? ` · best ${rec.best}` : ''}</div>
+                  <button className="btn mt-2 self-start" onClick={() => go(d.id)}>{rec ? 'Play again' : 'Start'} ▸</button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
         {p.done.length > 0 && (
           <button className="btn text-[10px]" onClick={() => { if (window.confirm(user ? 'Clear your Training Academy progress in this browser? Progress saved with your account is kept and comes back the next time it syncs.' : 'Clear your Training Academy progress in this browser?')) { resetProgress(); setP(loadProgress()); } }}>Reset progress</button>
         )}
