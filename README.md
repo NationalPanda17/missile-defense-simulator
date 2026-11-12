@@ -84,7 +84,13 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
 4. Keep assets serviced: overdue maintenance makes decay 2.5x faster. Crews limit how much work
    can run at the same time.
 5. Invest for the long term: hardening, network resilience, crews, recruitment, modernization.
-6. At the end, the **After-Action Review** scores your command and explains what helped and
+6. **Tactical defense (campaign).** Each briefing forecasts the regions where threat waves will
+   strike. In the briefing's *Deploy defenses* step, place real air defense systems on each
+   region's 600 × 400 km theater map: long-range systems where their rings cover most sites,
+   point defense at the most important ones, and sensors to see threats early. During the phase,
+   watch waves play out in the **Tactical Theater** (X) and resupply systems that run low.
+   Threat protection is 15% of the campaign score.
+7. At the end, the **After-Action Review** scores your command and explains what helped and
    what hurt.
 
 ### Controls
@@ -95,11 +101,15 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
 | 1–4 | Speed 1x / 2x / 4x / 8x |
 | T | Advance one turn (6h). Turn mode stops the real-time clock |
 | G S A M D | Global · Space · Air · Maritime · Ground |
+| X | Tactical Theater (campaign) |
 | I C L F | Intelligence · Communications · Logistics · Infrastructure |
 | P E R | Campaign · Scenario editor · After-action review |
 | B | Toggle the bottom timeline/log panel |
 | Ctrl/⌘+S | Quick-save to slot 1 |
 | ? | Help |
+
+The tactical layer is on in campaigns. To play a campaign without it, open the game with
+`?tactical=0` (remembered in that browser; `?tactical=1` turns it back on).
 
 On the map, scroll to zoom, drag to pan and click a region to open its regional command panel.
 Click an asset to inspect, maintain or redeploy it. **Layers & Legend** toggles domain layers,

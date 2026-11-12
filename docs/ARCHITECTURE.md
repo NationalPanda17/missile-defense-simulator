@@ -126,9 +126,8 @@ network health.
 
 ## Tactical layer (`engine/tactical.ts`, `engine/equipment.ts`)
 
-Campaign only, behind the `TACTICAL_CONFIG.enabledInCampaign` feature flag (off until scoring rewards it). Open
-the game with `?tactical=1` to preview it in one browser (`src/preview.ts` remembers the choice; `?tactical=0` clears
-it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of the campaign briefing. All tuning lives in `TACTICAL_CONFIG` (`config.ts`); real equipment figures live in `EQUIPMENT`.
+Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser can opt out with `?tactical=0`
+(`src/preview.ts` remembers the choice; `?tactical=1` clears it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of the campaign briefing. All tuning lives in `TACTICAL_CONFIG` (`config.ts`); real equipment figures live in `EQUIPMENT`.
 
 - **Own RNG.** `tactical.rng` drives site generation, wave scheduling and resolution, so the management
   simulation draws the same random numbers whether the layer is on or off.
@@ -162,7 +161,10 @@ it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of th
 
 The weighted components (`SCORE_WEIGHTS`) are readiness, network, stability, event response,
 infrastructure preservation, resource efficiency, information quality and recovery, plus up
-to +8 for objectives met. Efficiency penalizes **waste**: credits spent on spurious reports,
+to +8 for objectives met. When the tactical layer is active, **protection** (share of incoming threat damage
+prevented, weighted by site importance) takes `PROTECTION_SCORE_WEIGHT` (15%) and the other components share the
+rest in their usual proportions; `computeScore` returns the effective `weights`. False tracks that drew fire cost
+efficiency. `tacticalReport` and the tactical lessons feed the AAR's Tactical Defense panel. Efficiency penalizes **waste**: credits spent on spurious reports,
 failed responses, and large idle reserves. Total spending is never rewarded.
 `lessonsLearned()` turns counters into the AAR narrative.
 

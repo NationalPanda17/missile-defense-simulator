@@ -1,7 +1,8 @@
 // Scoring, objective evaluation and after-action analysis.
-import { SCORE_WEIGHTS } from './config';
+import { DECOY_EFFICIENCY_PENALTY, PROTECTION_SCORE_WEIGHT, SCORE_WEIGHTS, TACTICAL_CONFIG } from './config';
 import { clamp } from './rng';
-import type { ObjectiveResult, PhaseConfig, SimState } from './types';
+import type { ObjectiveResult, PhaseConfig, RegionId, SimState } from './types';
+import { REGION_IDS } from './types';
 
 export function objectiveValue(s: SimState, metric: PhaseConfig['objectives'][number]['metric']): number {
   switch (metric) {
@@ -29,11 +30,37 @@ export function evaluateObjectives(s: SimState, phase: PhaseConfig): ObjectiveRe
   });
 }
 
+export type ScoreKey = keyof typeof SCORE_WEIGHTS | 'protection';
+
 export interface ScoreBreakdown {
-  components: Record<keyof typeof SCORE_WEIGHTS, number>;
+  components: Partial<Record<ScoreKey, number>> & Record<keyof typeof SCORE_WEIGHTS, number>;
+  /** Effective weight of each component in this run (protection only when the tactical layer is active). */
+  weights: Partial<Record<ScoreKey, number>>;
   objectiveBonus: number;
   total: number;
   grade: string;
+}
+
+/**
+ * Share (0-100) of incoming threat damage that was prevented, weighting each threat by its damage and its target's
+ * importance. Null when the tactical layer is off; 75 (neutral, like other components) before any threat arrives.
+ */
+export function protectionScore(s: SimState): number | null {
+  const t = s.tactical;
+  if (!t?.enabled) return null;
+  const sites = new Map(t.sites.map((x) => [x.id, x]));
+  let potential = 0;
+  let prevented = 0;
+  for (const w of t.waves) {
+    if (!w.resolved) continue;
+    for (const tr of w.tracks) {
+      if (tr.decoy) continue;
+      const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
+      potential += v;
+      if (tr.outcome === 'stopped') prevented += v;
+    }
+  }
+  return potential > 0 ? (prevented / potential) * 100 : 75;
 }
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -51,8 +78,8 @@ export function computeScore(s: SimState): ScoreBreakdown {
   if (c.responseTimes.length) response -= clamp((rt - 6) * 1.5, 0, 15);
   response = clamp(response);
 
-  const base = s.baseline.infrastructure || 70;
-  const infrastructure = clamp(100 * (s.metrics.infrastructure / base) - 0, 0, 100);
+  const infraBase = s.baseline.infrastructure || 70;
+  const infrastructure = clamp(100 * (s.metrics.infrastructure / infraBase) - 0, 0, 100);
 
   // Efficiency: penalize waste (spurious responses, failed responses) and idle hoarding — not spending per se.
   let efficiency = 65;
@@ -61,7 +88,8 @@ export function computeScore(s: SimState): ScoreBreakdown {
     efficiency = 100 - waste * 160 - c.failedResponses * 2;
   }
   const hoard = Math.max(0, s.credits - 2000) / 60;
-  efficiency = clamp(efficiency - hoard);
+  const decoyWaste = Math.min(DECOY_EFFICIENCY_PENALTY.max, (s.tactical?.stats.decoysEngaged ?? 0) * DECOY_EFFICIENCY_PENALTY.perShot);
+  efficiency = clamp(efficiency - hoard - decoyWaste);
 
   let information = 70;
   if (c.responsesTotal > 0 || c.falseDismissed + c.falseResponded > 0) {
@@ -77,15 +105,22 @@ export function computeScore(s: SimState): ScoreBreakdown {
   if (s.minReadiness >= startR - 3) recovery = clamp(80 + (endR - startR));
   else recovery = clamp(((endR - s.minReadiness) / Math.max(1, startR - s.minReadiness)) * 100);
 
-  const components = { readiness, network, stability, response, infrastructure, efficiency, information, recovery };
-  const weighted = (Object.keys(SCORE_WEIGHTS) as (keyof typeof SCORE_WEIGHTS)[]).reduce(
-    (x, k) => x + SCORE_WEIGHTS[k] * components[k], 0,
-  );
+  const base = { readiness, network, stability, response, infrastructure, efficiency, information, recovery };
+  const protection = protectionScore(s);
+  const share = protection === null ? 1 : 1 - PROTECTION_SCORE_WEIGHT;
+  const weights: ScoreBreakdown['weights'] = {};
+  for (const k of Object.keys(SCORE_WEIGHTS) as (keyof typeof SCORE_WEIGHTS)[]) weights[k] = SCORE_WEIGHTS[k] * share;
+  const components: ScoreBreakdown['components'] = { ...base };
+  if (protection !== null) {
+    components.protection = protection;
+    weights.protection = PROTECTION_SCORE_WEIGHT;
+  }
+  const weighted = (Object.keys(weights) as ScoreKey[]).reduce((x, k) => x + weights[k]! * components[k]!, 0);
   const met = s.objectiveResults.filter((r) => r.met).length;
   const objectiveBonus = Math.min(8, met * 1);
   const total = clamp(weighted + objectiveBonus);
   const grade = total >= 90 ? 'S' : total >= 80 ? 'A' : total >= 70 ? 'B' : total >= 60 ? 'C' : total >= 50 ? 'D' : 'F';
-  return { components, objectiveBonus, total, grade };
+  return { components, weights, objectiveBonus, total, grade };
 }
 
 export interface Lesson { tone: 'good' | 'poor' | 'neutral'; text: string }
@@ -118,8 +153,74 @@ export function lessonsLearned(s: SimState): Lesson[] {
   if (s.credits > 2000) out.push({ tone: 'neutral', text: `${Math.round(s.credits)} credits were left unspent. Idle reserves earn no score — invest in resilience or modernization.` });
   if (s.spendByCategory.investment === 0 && s.hour > 72)
     out.push({ tone: 'poor', text: 'No long-term investments were made. Infrastructure, resilience and modernization compound over a campaign.' });
+  out.push(...tacticalLessons(s));
   const worst = Object.values(s.regions).sort((a, b) => a.stability - b.stability)[0];
   if (worst.stability < 50) out.push({ tone: 'poor', text: `${worst.name} ended at stability ${Math.round(worst.stability)}. Regional recovery packages and resolving unrest early prevent cascading instability.` });
   if (!out.length) out.push({ tone: 'neutral', text: 'Not enough activity yet to draw conclusions.' });
+  return out;
+}
+
+// ── Tactical layer analysis (AAR) ────────────────────────────────────────
+
+export interface TacticalReport {
+  stopRate: number | null; // 0-1, null before any threat
+  byPhase: { phase: number; waves: number; tracks: number; stopped: number }[];
+  byRegion: { region: RegionId; deployments: number; waves: number; tracks: number; stopped: number; damage: number }[];
+  undefendedForecastWaves: number; // forecast waves that drew no fire: nothing deployed, out of rounds, or out of service
+  surpriseWaves: number;
+  kills: { equipmentId: string; kills: number }[]; // threats stopped, by system type
+  damagedSites: { name: string; region: string; integrity: number }[];
+}
+
+export function tacticalReport(s: SimState): TacticalReport | null {
+  const t = s.tactical;
+  if (!t?.enabled) return null;
+  const resolved = t.waves.filter((w) => w.resolved);
+  const real = (w: (typeof resolved)[number]) => w.tracks.filter((x) => !x.decoy);
+  const byPhase = s.phases.map((p, i) => {
+    const ws = resolved.filter((w) => w.phaseIndex === i);
+    return { phase: p.id, waves: ws.length, tracks: ws.reduce((a, w) => a + real(w).length, 0), stopped: ws.reduce((a, w) => a + real(w).filter((x) => x.outcome === 'stopped').length, 0) };
+  });
+  const byRegion = REGION_IDS.map((region) => {
+    const ws = resolved.filter((w) => w.region === region);
+    return {
+      region, deployments: t.deployments.filter((d) => d.region === region).length, waves: ws.length,
+      tracks: ws.reduce((a, w) => a + real(w).length, 0),
+      stopped: ws.reduce((a, w) => a + real(w).filter((x) => x.outcome === 'stopped').length, 0),
+      damage: ws.reduce((a, w) => a + real(w).reduce((b, x) => b + (x.damage ?? 0), 0), 0),
+    };
+  });
+  const depType = new Map(t.deployments.map((d) => [d.id, d.equipmentId]));
+  const killMap = new Map<string, number>();
+  for (const w of resolved) for (const tr of real(w)) {
+    const type = tr.stoppedBy && depType.get(tr.stoppedBy);
+    if (type) killMap.set(type, (killMap.get(type) ?? 0) + 1);
+  }
+  return {
+    stopRate: t.stats.tracks ? t.stats.stopped / t.stats.tracks : null,
+    byPhase,
+    byRegion,
+    undefendedForecastWaves: resolved.filter((w) => w.forecast && w.tracks.every((x) => x.shots === 0)).length,
+    surpriseWaves: resolved.filter((w) => !w.forecast).length,
+    kills: [...killMap].map(([equipmentId, kills]) => ({ equipmentId, kills })).sort((a, b) => b.kills - a.kills),
+    damagedSites: t.sites.filter((x) => x.integrity < 100).sort((a, b) => a.integrity - b.integrity)
+      .map((x) => ({ name: x.name, region: s.regions[x.region].name, integrity: x.integrity })),
+  };
+}
+
+function tacticalLessons(s: SimState): Lesson[] {
+  const r = tacticalReport(s);
+  if (!r || r.stopRate === null) return [];
+  const out: Lesson[] = [];
+  const pct = Math.round(r.stopRate * 100);
+  if (r.stopRate >= 0.7) out.push({ tone: 'good', text: `Tactical defenses stopped ${pct}% of incoming threats.` });
+  else out.push({ tone: r.stopRate >= 0.4 ? 'neutral' : 'poor', text: `Only ${pct}% of incoming threats were stopped. Place long-range systems where their rings cover most sites, and point defense at the most important ones.` });
+  if (r.undefendedForecastWaves > 0)
+    out.push({ tone: 'poor', text: `${r.undefendedForecastWaves} forecast wave(s) met no working defenses: nothing deployed, out of rounds, or out of service. Deploy in every forecast region, resupply before magazines run dry, and keep systems maintained.` });
+  const decoys = s.tactical!.stats.decoysEngaged;
+  if (decoys >= 5)
+    out.push({ tone: 'poor', text: `${decoys} false tracks drew fire. Poor regional awareness produces decoys; sensors and comms in threatened regions cut the waste.` });
+  const lost = r.damagedSites.filter((x) => x.integrity <= 50).length;
+  if (lost > 0) out.push({ tone: 'poor', text: `${lost} site(s) were left at half integrity or worse.` });
   return out;
 }
