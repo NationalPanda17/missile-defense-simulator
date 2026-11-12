@@ -106,9 +106,11 @@ jobs:
               if ($page.StatusCode -eq 200 -and $api.ok -and $api.db) { $ok = $true }
             } catch { }
           }
-          taskkill /PID $p.Id /T /F | Out-Null
+          # Stop everything it started; some children may already have exited, which taskkill reports as an error.
+          taskkill /PID $p.Id /T /F 2>&1 | Out-Null
           if (-not $ok) { throw 'The game or its save server did not come up' }
           Write-Host 'Game and save server are up.'
+          exit 0
 
       - name: Start file brings up the game and its save server (macOS)
         if: runner.os == 'macOS'
