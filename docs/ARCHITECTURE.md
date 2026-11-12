@@ -181,6 +181,12 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
   until it arrives. `raiseAlert` costs 20 + 4 per system in the region and, for 8h, adds 20% detection, raises the
   floor for unseen threats and cuts reaction times by 30%, while wearing those systems 0.4 condition/h. Tuning is in
   `TACTICAL_CONFIG.emergencyRedeploy` and `TACTICAL_CONFIG.alert`.
+- **Theater map** (`ui/views/theater/`). `TheaterMap.tsx` draws the map; `terrain.tsx` the topography (sea depth,
+  shallow band, contour-band massifs with hillshade, a road network as a minimum spanning tree over the sites, grid,
+  scale bar, north arrow); `icons.tsx` the system symbols (one glyph per kind of system, a rounds bar and a status
+  light) and site markers (integrity ring). `labels.ts` is a pure, tested layout pass: every label (sites, systems,
+  peak heights) tries spots around its icon in priority order and is kept only if it overlaps no other label, icon or
+  map furniture; `fanOut` spreads systems stacked on one spot around it, with a leader line to the true position.
 - **UI helpers.** `regionProtection` (share of live site value within range of a system that can engage:
   protected ≥ 70%, thin ≥ 30%, else exposed), `warningHours` (2h + up to 6h more with awareness) and
   `incomingWaves` (waves inside their warning window) feed the *Tactical Theater* view
