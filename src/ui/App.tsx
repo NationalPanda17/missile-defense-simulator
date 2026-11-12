@@ -5,6 +5,7 @@ import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
 import { sound } from './audio/sound';
+import { PausePrompt } from './PausePrompt';
 import { installA11y } from './a11y/settings';
 import { ChallengeInvite } from './Challenge';
 import { checkForUpdate, desktopVersion, dismissUpdate, type UpdateInfo } from './desktopUpdate';
@@ -190,6 +191,7 @@ function Root() {
       </div>
       <BottomPanel s={s} />
       {s.status === 'briefing' && <BriefingModal s={s} />}
+      <PausePrompt s={s} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <HelpModal />}

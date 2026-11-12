@@ -27,7 +27,15 @@ function PhaseProgress({ s }: { s: SimState }) {
 }
 
 /** Picking a speed also resumes a paused clock (outside turn mode): choosing a speed means "run at this speed". */
+let warned8 = false;
 export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
+  if (sp === 8 && !warned8 && s.speed !== 8) {
+    warned8 = true;
+    const p = store.autoPause();
+    store.toast('info', p && (p.launch || p.deadline)
+      ? '8× is fast: a day passes in seconds. Auto-pause will stop for launches and decisions.'
+      : '8× is fast: a day passes in seconds, and reports and launches can pass unnoticed. Turn on auto-pause under Aa.');
+  }
   dispatch({ type: 'setSpeed', speed: sp });
   if (s.status === 'running' && s.paused && !s.turnBased) dispatch({ type: 'setPaused', paused: false });
 }

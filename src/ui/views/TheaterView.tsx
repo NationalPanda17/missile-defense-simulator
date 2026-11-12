@@ -1,5 +1,6 @@
 // Tactical Theater: watch threat waves play out, track magazines and resupply during a phase.
 import { useEffect, useRef, useState } from 'react';
+import { WaveActions } from '../PausePrompt';
 import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
@@ -209,6 +210,12 @@ export function TheaterView({ s }: { s: SimState }) {
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Panel title={`Theater · ${s.regions[region].name}`} right={<Chip t={PROTECTION_TONE[prot.level]}>{prot.level} · {Math.round(prot.coverage * 100)}% covered</Chip>}>
+          {inbound.some((x) => x.wave.region === region) && (
+            <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+              <div className="label text-ops-red">Wave inbound · what you can do now</div>
+              <WaveActions s={s} region={region} compact />
+            </div>
+          )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
             {alertActive(s, region) ? (
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
