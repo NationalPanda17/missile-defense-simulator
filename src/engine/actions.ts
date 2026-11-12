@@ -8,6 +8,7 @@ import {
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
+import { rand } from './rng';
 import type { Domain, RegionId, SimState, SpendCategory } from './types';
 
 export type Command =
@@ -198,6 +199,9 @@ function run(s: SimState, cmd: Command): CommandResult {
       a.status = 'transit';
       a.transitTo = cmd.region;
       a.maintenanceRemaining = SIM_CONFIG.redeployHours[a.domain];
+      // Fix the destination now, so the map can move the asset along its route rather than teleporting it.
+      const c = s.regions[cmd.region].center;
+      a.transitRoute = { from: [...a.pos], to: [c[0] + (rand(s) - 0.5) * 14, c[1] + (rand(s) - 0.5) * 8], hours: a.maintenanceRemaining };
       record(s, 'redeploy', `${a.name} redeployed ${a.region} → ${cmd.region}.`, cost, 'redeploy');
       log(s, 'info', `${a.name} en route to ${s.regions[cmd.region].name} (${a.maintenanceRemaining}h).`, cmd.region);
       return { ok: true, message: 'Redeploying' };
@@ -306,7 +310,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (err) return fail(err);
       spend(s, cost, 0, 'redeploy');
       const hours = redeployHours(spec, d.region, cmd.region);
-      d.transit = { region: cmd.region, x: Math.round(cmd.x), y: Math.round(cmd.y), remaining: hours };
+      d.transit = { region: cmd.region, x: Math.round(cmd.x), y: Math.round(cmd.y), remaining: hours, hours };
       a.status = 'transit';
       a.maintenanceRemaining = hours;
       record(s, 'redeploy', `Emergency redeploy: ${a.name} to ${s.regions[cmd.region].name} (${hours}h out of action).`, cost, 'redeploy');

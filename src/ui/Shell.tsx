@@ -1,16 +1,30 @@
 // Top bar, left navigation, right sidebar and bottom panel.
 import { useState } from 'react';
 import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
-import { dispatch, store } from '../store/simStore';
+import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { ServerStatusChip } from './views/ServerPanels';
 
 const ALERT_TONE = { NORMAL: 'green', ELEVATED: 'cyan', HIGH: 'amber', SEVERE: 'red' } as const;
 
+/** Sim clock that runs continuously (minutes tick by) instead of jumping an hour at a time. */
+function SimClock({ s }: { s: SimState }) {
+  const t = useSimTime();
+  const clock = simClock(s.startDate, t);
+  return <div className="tabular-nums text-white">{clock.date} <span className="text-ops-cyan">{clock.time}</span> <span className="text-ops-dim">T+{s.hour}h</span></div>;
+}
+
+/** Thin bar showing how far through the phase we are, moving continuously. */
+function PhaseProgress({ s }: { s: SimState }) {
+  const t = useSimTime();
+  const phase = s.phases[s.phaseIndex];
+  const pct = s.status === 'running' ? Math.min(100, ((t - s.phaseStartHour) / phase.hours) * 100) : s.status === 'complete' ? 100 : 0;
+  return <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-ops-line/70"><div className="h-full bg-ops-cyan/70" style={{ width: `${pct}%` }} /></div>;
+}
+
 export function TopBar({ s }: { s: SimState }) {
   const ui = useUI();
-  const clock = simClock(s.startDate, s.hour);
   const m = s.metrics;
   const phase = s.phases[s.phaseIndex];
   const phaseHour = s.hour - s.phaseStartHour;
@@ -34,11 +48,12 @@ export function TopBar({ s }: { s: SimState }) {
       </div>
       <div className="leading-tight">
         <div className="label">Sim time</div>
-        <div className="tabular-nums text-white">{clock.date} <span className="text-ops-cyan">{clock.time}</span> <span className="text-ops-dim">T+{s.hour}h</span></div>
+        <SimClock s={s} />
       </div>
       <div className="hidden leading-tight md:block">
         <div className="label">Phase {phase.id}/{s.phases.length}</div>
         <div className="text-white">{phase.name} <span className="text-ops-dim">{Math.min(phaseHour, phase.hours)}/{phase.hours}h</span></div>
+        <PhaseProgress s={s} />
       </div>
 
       <div className="flex items-center gap-1" role="group" aria-label="Simulation controls">
@@ -293,10 +308,19 @@ export function BottomPanel({ s }: { s: SimState }) {
   );
 }
 
+/** Whole-hour grid lines on a fixed step, so they slide with the window instead of being re-spaced every hour. */
+function gridHours(start: number, end: number): number[] {
+  const step = [6, 12, 24].find((x) => (end - start) / x <= 9) ?? 24;
+  const out: number[] = [];
+  for (let h = Math.ceil(start / step) * step; h <= end; h += step) out.push(h);
+  return out;
+}
+
 function EventTimeline({ s }: { s: SimState }) {
   const ui = useUI();
-  const span = Math.max(48, s.hour + 6);
-  const start = Math.max(0, s.hour - 96);
+  const now = useSimTime(); // continuous, so the window, the now-line and open bars flow instead of stepping
+  const span = Math.max(48, now + 6);
+  const start = Math.max(0, now - 96);
   const evs = s.events.filter((e) => isKnown(s, e) && (e.resolvedAt ?? s.hour) >= start).slice(-40);
   const x = (h: number) => `${((h - start) / (span - start)) * 100}%`;
   const color = (e: (typeof evs)[number]) =>
@@ -304,12 +328,12 @@ function EventTimeline({ s }: { s: SimState }) {
   if (!evs.length) return <div className="text-ops-dim">No events yet. The timeline fills as reports arrive.</div>;
   return (
     <div className="relative min-w-[600px]" style={{ height: evs.length * 14 + 18 }}>
-      {Array.from({ length: 9 }, (_, i) => start + Math.round(((span - start) * i) / 8)).map((h) => (
+      {gridHours(start, span).map((h) => (
         <div key={h} className="absolute top-0 h-full border-l border-ops-line/60 text-[9px] text-ops-dim" style={{ left: x(h) }}><span className="ml-0.5">T+{h}</span></div>
       ))}
-      <div className="absolute top-0 h-full border-l border-ops-cyan" style={{ left: x(s.hour) }} />
+      <div className="absolute top-0 h-full border-l border-ops-cyan" style={{ left: x(now) }} />
       {evs.map((e, i) => {
-        const end = e.resolvedAt ?? Math.max(s.hour, e.reportedAt + 1);
+        const end = e.resolvedAt ?? Math.max(now, e.reportedAt + 1);
         return (
           <button key={e.id} onClick={() => ui.openEvent(e.id)} title={`${e.id} ${e.title} — ${e.status}`}
             className="absolute flex h-[11px] items-center overflow-hidden whitespace-nowrap rounded-sm px-1 text-[9px] text-black hover:brightness-125"

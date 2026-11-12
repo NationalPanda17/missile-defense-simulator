@@ -3,6 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Domain, Severity } from '../../engine';
 
+/** Meters move over one simulated hour at the current speed (--tick, set by the store), so values flow rather than jump. */
+export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
+
 export const tone = (v: number) => (v >= 75 ? 'green' : v >= 55 ? 'cyan' : v >= 35 ? 'amber' : 'red');
 export const TONE_HEX = { green: '#34d399', cyan: '#38d6f5', amber: '#f5b13d', red: '#f2545b', dim: '#5d7391', violet: '#a78bfa', blue: '#3b82f6' };
 export const TONE_TEXT = { green: 'text-ops-green', cyan: 'text-ops-cyan', amber: 'text-ops-amber', red: 'text-ops-red', dim: 'text-ops-dim' };
@@ -37,7 +40,7 @@ export function Bar({ value, max = 100, color, height = 6, showValue = false }: 
   return (
     <div className="flex items-center gap-2">
       <div className="relative w-full overflow-hidden rounded-sm bg-ops-line/60" style={{ height }}>
-        <div className="absolute inset-y-0 left-0 rounded-sm transition-[width] duration-500" style={{ width: `${pct}%`, background: c, boxShadow: `0 0 8px ${c}55` }} />
+        <div className="absolute inset-y-0 left-0 rounded-sm transition-[width]" style={{ width: `${pct}%`, background: c, boxShadow: `0 0 8px ${c}55`, ...GLIDE }} />
       </div>
       {showValue && <span className="w-8 shrink-0 text-right tabular-nums" style={{ color: c }}>{Math.round(value)}</span>}
     </div>
@@ -71,7 +74,7 @@ export function Gauge({ value, label, size = 96 }: { value: number; label: strin
       <svg width={size} height={size * 0.82} viewBox={`0 0 ${size} ${size * 0.82}`} role="img" aria-label={`${label} ${Math.round(value)}%`}>
         <g transform={`rotate(135 ${size / 2} ${size / 2})`}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1b2c47" strokeWidth={7} strokeDasharray={`${c} ${Math.PI * 2 * r}`} strokeLinecap="round" />
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={col} strokeWidth={7} strokeDasharray={`${c * pct} ${Math.PI * 2 * r}`} strokeLinecap="round" style={{ transition: 'stroke-dasharray .6s', filter: `drop-shadow(0 0 4px ${col}88)` }} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={col} strokeWidth={7} strokeDasharray={`${c * pct} ${Math.PI * 2 * r}`} strokeLinecap="round" style={{ transition: 'stroke-dasharray var(--tick, 400ms) linear', filter: `drop-shadow(0 0 4px ${col}88)` }} />
         </g>
         <text x="50%" y={size / 2 + 4} textAnchor="middle" fill="#fff" fontSize={size / 4.2} fontFamily="Rajdhani" fontWeight={700}>{Math.round(value)}</text>
       </svg>
@@ -186,7 +189,10 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
 
 export const fmtHour = (h: number) => `T+${h}h`;
 export function simClock(start: number, hour: number) {
-  const d = new Date(start + hour * 3600_000);
+  const d = new Date(start + Math.floor(hour * 60) * 60_000); // fractional hours give minutes
   const m = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getUTCMonth()];
-  return { date: `${String(d.getUTCDate()).padStart(2, '0')} ${m} ${d.getUTCFullYear()}`, time: `${String(d.getUTCHours()).padStart(2, '0')}:00Z` };
+  return {
+    date: `${String(d.getUTCDate()).padStart(2, '0')} ${m} ${d.getUTCFullYear()}`,
+    time: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}Z`,
+  };
 }

@@ -91,9 +91,13 @@ function tickAssets(s: SimState) {
       if (a.maintenanceRemaining <= 0 && a.transitTo) {
         a.region = a.transitTo;
         a.coverage = [a.transitTo];
-        const c = s.regions[a.transitTo].center;
-        a.pos = [c[0] + (rand(s) - 0.5) * 14, c[1] + (rand(s) - 0.5) * 8];
+        if (a.transitRoute) a.pos = [...a.transitRoute.to];
+        else {
+          const c = s.regions[a.transitTo].center;
+          a.pos = [c[0] + (rand(s) - 0.5) * 14, c[1] + (rand(s) - 0.5) * 8];
+        }
         a.transitTo = undefined;
+        a.transitRoute = undefined;
         a.status = 'operational';
         log(s, 'info', `${a.name} arrived on station in ${s.regions[a.region].name}.`, a.region);
       }
@@ -459,4 +463,13 @@ export function beginPhase(s: SimState) {
 
 export function advance(s: SimState, hours: number) {
   for (let i = 0; i < hours && s.status === 'running'; i++) tick(s);
+}
+
+/** Where an asset is at continuous sim time t (hours, may be fractional): moves along its transit route if any. */
+export function assetPosAt(a: Asset, t: number, hour: number): [number, number] {
+  const r = a.transitRoute;
+  if (a.status !== 'transit' || !r) return a.pos;
+  const remaining = Math.max(0, a.maintenanceRemaining - (t - hour));
+  const k = Math.min(1, Math.max(0, 1 - remaining / r.hours));
+  return [r.from[0] + (r.to[0] - r.from[0]) * k, r.from[1] + (r.to[1] - r.from[1]) * k];
 }

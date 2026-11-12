@@ -1,7 +1,8 @@
 // Interactive SVG operational map: zoom/pan, region selection, layered domain assets, network links and event markers.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPE, type ReactNode } from 'react';
-import { REGION_IDS, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
+import { REGION_IDS, assetPosAt, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
 import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone } from '../components/ui';
+import { store } from '../../store/simStore';
 import { useUI, type Layers, type OverlayMetric } from '../uiState';
 import { PROTECTION_TONE } from '../views/TheaterView';
 import { CONTEXT_LAND, MAP_H, MAP_W, REGION_SHAPES, project, regionBounds, ringPath } from './geography';
@@ -36,6 +37,11 @@ function satPosition(a: Asset, idx: number, hour: number): [number, number] {
   const lon = ((((a.pos[0] + hour * 15 + idx * 47) % 360) + 540) % 360) - 180;
   const lat = inc * Math.sin(((lon - a.pos[0]) * Math.PI) / 180 + idx);
   return [lon, lat];
+}
+
+/** Map position at continuous time t: orbiting satellites advance smoothly, transiting assets follow their route. */
+function moverPos(a: Asset, idx: number, t: number, hour: number): [number, number] {
+  return a.domain === 'space' ? satPosition(a, idx, t) : assetPosAt(a, t, hour);
 }
 
 function trackPath(a: Asset, idx: number) {
@@ -169,6 +175,24 @@ export default function GlobalMap({ s }: { s: SimState }) {
 
   const k = view.w / MAP_W; // icon scale factor
   const hour = s.hour;
+  // Satellites and assets in transit move continuously: positioned from continuous sim time on render, then nudged
+  // every animation frame by a light loop that only rewrites their transform (no React re-render of the map).
+  const simT = store.simTime();
+  const movers = useRef(new Map<string, { el: SVGGElement; a: Asset; idx: number; sc: number }>());
+  useEffect(() => {
+    let raf = 0;
+    const step = () => {
+      const t = store.simTime();
+      const h = store.state?.hour ?? 0;
+      for (const { el, a, idx, sc } of movers.current.values()) {
+        const [x, y] = project(...moverPos(a, idx, t, h));
+        el.setAttribute('transform', `translate(${x},${y}) scale(${sc})`);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
   const showTip = (e: React.MouseEvent, content: ReactNode) => {
     const host = svgRef.current!.parentElement!.getBoundingClientRect();
     setHover({ x: e.clientX - host.left, y: e.clientY - host.top, content });
@@ -319,9 +343,10 @@ export default function GlobalMap({ s }: { s: SimState }) {
         {/* assets */}
         {s.assets.filter(domainVisible).map((a) => {
           const spaceIdx = s.assets.filter((x) => x.domain === 'space').indexOf(a);
-          const [lon, lat] = a.domain === 'space' ? satPosition(a, spaceIdx, hour) : a.pos;
+          const [lon, lat] = moverPos(a, spaceIdx, simT, hour);
           const [x, y] = project(lon, lat);
           const sc = Math.max(0.35, Math.min(1, k * 1.15));
+          const moving = (a.domain === 'space' && a.role === 'sensor') || (a.status === 'transit' && !!a.transitRoute);
           const fill = statusColor(a, hour);
           const stroke = DOMAIN_COLOR[a.domain];
           const sel = ui.assetId === a.id;
@@ -334,6 +359,7 @@ export default function GlobalMap({ s }: { s: SimState }) {
           else shape = <g><circle r={4} fill="#040912" stroke={stroke} strokeWidth={0.8} /><path d="M0,-2.6 L2.4,1.8 L-2.4,1.8 Z" fill={fill} /></g>;
           return (
             <g key={a.id} transform={`translate(${x},${y}) scale(${sc})`} className="cursor-pointer"
+              ref={(el) => { if (el && moving) movers.current.set(a.id, { el, a, idx: spaceIdx, sc }); else movers.current.delete(a.id); }}
               onClick={clickGuard(() => ui.openAsset(a.id))}
               onMouseMove={(e) => showTip(e, (
                 <div><div className="font-semibold text-white">{a.name}</div><div className="text-[10px] text-ops-dim">{a.className} · {DOMAIN_LABEL[a.domain]}</div>
