@@ -95,6 +95,10 @@ class SimStore {
 
   /** Probe the API and refresh the save list and campaign history. */
   async refreshServer() {
+    if (BROWSER_ONLY) {
+      this.server = { ...this.server, status: 'offline', error: null };
+      return;
+    }
     try {
       const h = await api.health();
       if (!h.db) throw new ApiError(503, 'Database unavailable');
@@ -304,8 +308,14 @@ class SimStore {
   }
 }
 
+/**
+ * The GitHub Pages build has no save server, so it never asks for one (set VITE_BROWSER_ONLY=1 at build time).
+ * Saves stay in the browser; accounts need the desktop app, the start files or a hosted server.
+ */
+export const BROWSER_ONLY = import.meta.env.VITE_BROWSER_ONLY === '1';
+
 export const store = new SimStore();
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !BROWSER_ONLY) {
   void store.refreshServer();
   // Re-probe periodically so the game picks the server up if it starts later.
   window.setInterval(() => {

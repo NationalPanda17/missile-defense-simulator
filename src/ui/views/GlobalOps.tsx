@@ -11,15 +11,15 @@ export function GlobalOps({ s }: { s: SimState }) {
   return (
     <div className="flex h-full min-h-[520px] flex-col gap-2">
       <div className="panel grid grid-cols-3 gap-3 px-3 py-2 sm:grid-cols-6 xl:grid-cols-9">
-        <Stat label="Global readiness" value={Math.round(m.globalReadiness)} unit="%" t={tone(m.globalReadiness)} />
-        <Stat label="Network health" value={Math.round(m.network)} unit="%" t={tone(m.network)} />
-        <Stat label="Sensor availability" value={Math.round(m.sensorAvailability)} unit="%" t={tone(m.sensorAvailability)} />
-        <Stat label="Info quality" value={Math.round(m.infoQuality)} unit="%" t={tone(m.infoQuality)} />
-        <Stat label="Avg stability" value={Math.round(m.stability)} t={tone(m.stability)} />
-        <Stat label="Infrastructure" value={Math.round(m.infrastructure)} t={tone(m.infrastructure)} />
-        <Stat label="Active events" value={activeKnown.length} t={activeKnown.length > 5 ? 'red' : activeKnown.length > 2 ? 'amber' : 'green'} />
-        <Stat label="Maint. backlog" value={m.maintenanceBacklog} t={m.maintenanceBacklog > 4 ? 'red' : m.maintenanceBacklog > 1 ? 'amber' : 'green'} />
-        <Stat label="Personnel" value={Math.round(s.personnel)} sub={`crews ${s.crews - s.crewsBusy}/${s.crews} free`} />
+        <Stat label="Readiness" full="Global readiness" value={Math.round(m.globalReadiness)} unit="%" t={tone(m.globalReadiness)} />
+        <Stat label="Network" full="Network health" value={Math.round(m.network)} unit="%" t={tone(m.network)} />
+        <Stat label="Sensors" full="Sensor availability" value={Math.round(m.sensorAvailability)} unit="%" t={tone(m.sensorAvailability)} />
+        <Stat label="Info" full="Information quality" value={Math.round(m.infoQuality)} unit="%" t={tone(m.infoQuality)} />
+        <Stat label="Stability" full="Average stability" value={Math.round(m.stability)} t={tone(m.stability)} />
+        <Stat label="Infra" full="Infrastructure" value={Math.round(m.infrastructure)} t={tone(m.infrastructure)} />
+        <Stat label="Events" full="Active events" value={activeKnown.length} t={activeKnown.length > 5 ? 'red' : activeKnown.length > 2 ? 'amber' : 'green'} />
+        <Stat label="Backlog" full="Maintenance backlog" value={m.maintenanceBacklog} t={m.maintenanceBacklog > 4 ? 'red' : m.maintenanceBacklog > 1 ? 'amber' : 'green'} />
+        <Stat label="Staff" full="Personnel" value={Math.round(s.personnel)} sub={`crews ${s.crews - s.crewsBusy}/${s.crews} free`} />
       </div>
       <div className="relative flex min-h-0 flex-1 gap-2">
         <div className="min-h-[380px] min-w-0 flex-1" data-coach="map"><GlobalMap s={s} /></div>

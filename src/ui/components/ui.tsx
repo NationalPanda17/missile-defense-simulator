@@ -47,10 +47,11 @@ export function Bar({ value, max = 100, color, height = 6, showValue = false }: 
   );
 }
 
-export function Stat({ label, value, unit, t, sub }: { label: string; value: ReactNode; unit?: string; t?: keyof typeof TONE_TEXT; sub?: ReactNode }) {
+export function Stat({ label, value, unit, t, sub, full }: { label: string; value: ReactNode; unit?: string; t?: keyof typeof TONE_TEXT; sub?: ReactNode; full?: string }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" title={full}>
       <div className="label truncate">{label}</div>
+      {full && <span className="sr-only">{full}</span>}
       <div className={`font-sans text-xl font-semibold tabular-nums leading-tight ${t ? TONE_TEXT[t] : 'text-white'}`}>
         {value}
         {unit && <span className="ml-0.5 text-xs text-ops-dim">{unit}</span>}

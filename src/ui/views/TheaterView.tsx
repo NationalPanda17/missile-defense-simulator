@@ -181,8 +181,10 @@ export function TheaterView({ s }: { s: SimState }) {
 
   return (
     <div className="space-y-2">
-      {inbound.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" role="status">
+      {/* Always the same height, so the controls below don't jump when a warning appears or clears. */}
+      <div className="flex min-h-[30px] flex-wrap items-center gap-1.5" role="status" aria-live="polite">
+        {inbound.length === 0 && <span className="text-[11px] text-ops-dim">No waves inbound.</span>}
+        {inbound.length > 0 && (<>
           {inbound.map(({ wave, eta, launched, launchIn }) => (
             <button key={wave.id} className="chip blink border-ops-red/60 bg-ops-red/15 px-3 py-1 text-[11px] text-ops-red" onClick={() => setRegion(wave.region)}>
               {launched
@@ -190,8 +192,8 @@ export function TheaterView({ s }: { s: SimState }) {
                 : `⚠ Launch expected: ${s.regions[wave.region].name} from the ${wave.axis}, ${launchIn <= 0 ? 'now' : `~${launchIn}h`}`}
             </button>
           ))}
-        </div>
-      )}
+        </>)}
+      </div>
 
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => {

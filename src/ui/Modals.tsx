@@ -325,7 +325,7 @@ function LevelPicker({ value, onChange }: { value: CommandLevel; onChange: (l: C
       <div className="label" id="level-label">Difficulty</div>
       <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-labelledby="level-label">
         {COMMAND_LEVEL_IDS.map((l) => (
-          <button key={l} role="radio" aria-checked={value === l} className={`btn px-1 ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}>{COMMAND_LEVELS[l].label}</button>
+          <button key={l} role="radio" aria-checked={value === l} className={`btn min-w-0 px-0.5 text-[10px] tracking-normal ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}><span className="truncate">{COMMAND_LEVELS[l].label}</span></button>
         ))}
       </div>
       <p className="text-[10px] leading-relaxed text-ops-dim">{COMMAND_LEVELS[value].description}</p>
@@ -375,7 +375,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
         <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
-          <h1 className="mt-2 font-sans text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl">MISSILE DEFENSE SIMULATOR</h1>
+          <h1 className="mt-2 break-words font-sans text-[clamp(1.25rem,8vw,2.25rem)] font-bold leading-tight tracking-[0.08em] text-white sm:text-5xl sm:tracking-[0.2em]">MISSILE DEFENSE SIMULATOR</h1>
           <p className="mx-auto mt-3 max-w-2xl text-ops-dim">Command a fictional four-domain defense network — Space, Air, Sea and Ground — across seven strategic regions. Manage readiness, communications, uncertain intelligence and scarce resources through a dynamic campaign.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-4">

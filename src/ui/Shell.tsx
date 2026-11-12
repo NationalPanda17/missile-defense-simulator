@@ -26,6 +26,12 @@ function PhaseProgress({ s }: { s: SimState }) {
   return <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-ops-line/70"><div className="h-full bg-ops-cyan/70" style={{ width: `${pct}%` }} /></div>;
 }
 
+/** Picking a speed also resumes a paused clock (outside turn mode): choosing a speed means "run at this speed". */
+export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
+  dispatch({ type: 'setSpeed', speed: sp });
+  if (s.status === 'running' && s.paused && !s.turnBased) dispatch({ type: 'setPaused', paused: false });
+}
+
 export function TopBar({ s }: { s: SimState }) {
   const ui = useUI();
   const m = s.metrics;
@@ -65,7 +71,7 @@ export function TopBar({ s }: { s: SimState }) {
           {s.paused || s.turnBased ? '▶ Resume' : '❚❚ Pause'}
         </button>
         {([1, 2, 4, 8] as const).map((sp, i) => (
-          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setSpeed', speed: sp })} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
+          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}
         <button data-coach="turn" className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })} title="Toggle turn-based mode">Turn</button>
         <button data-coach="advance" className="btn" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn — 6 hours (T)">+{SIM_CONFIG.turnHours}h ⏭</button>
