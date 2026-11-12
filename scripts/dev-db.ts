@@ -12,10 +12,16 @@ export const DIR = path.resolve(process.env.PGDATA_DIR ?? '.pgdata');
 
 export async function startEmbedded(opts: { dir: string; port: number; quiet?: boolean }) {
   hydrateNativeSymlinks();
+  // Keep the last lines PostgreSQL printed, so a failed start can say why.
+  const recent: string[] = [];
+  const keep = (m: unknown) => {
+    for (const line of String(m instanceof Error ? m.message : m ?? '').split(/\r?\n/)) if (line.trim()) recent.push(line.trim());
+    if (recent.length > 12) recent.splice(0, recent.length - 12);
+  };
   const db = new EmbeddedPostgres({
     databaseDir: opts.dir, port: opts.port, user: 'mds', password: 'mds', persistent: true,
-    onLog: opts.quiet ? () => {} : (m) => process.stdout.write(`[postgres] ${m}`),
-    onError: (m) => console.error('[postgres]', m),
+    onLog: (m) => { keep(m); if (!opts.quiet) process.stdout.write(`[postgres] ${m}`); },
+    onError: (m) => { keep(m); console.error('[postgres]', m); },
   });
   try {
     if (!existsSync(path.join(opts.dir, 'PG_VERSION'))) await db.initialise();
@@ -25,7 +31,8 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
     throw new Error(
       busy
         ? `PostgreSQL data dir ${opts.dir} is already in use — is another \`npm run db:start\` / \`dev:full\` running? Stop it, or set PGDATA_DIR and PGPORT.`
-        : `Could not start embedded PostgreSQL on port ${opts.port} (${e instanceof Error ? e.message : String(e ?? 'unknown error')}). Is the port taken? Set PGPORT.`,
+        : `Could not start embedded PostgreSQL on port ${opts.port} (${e instanceof Error ? e.message : String(e ?? 'unknown error')}). Is the port taken? Set PGPORT.`
+          + (recent.length ? `\nPostgreSQL said:\n  ${recent.join('\n  ')}` : ''),
     );
   }
   const client = new pg.Client({ connectionString: `postgres://mds:mds@localhost:${opts.port}/postgres` });
