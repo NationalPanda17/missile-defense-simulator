@@ -1,5 +1,6 @@
 // Top bar, left navigation, right sidebar and bottom panel.
 import { useState } from 'react';
+import { SoundControl } from './audio/SoundControl';
 import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
@@ -80,6 +81,7 @@ export function TopBar({ s }: { s: SimState }) {
           <Chip t={ALERT_TONE[m.alert]}><span className={m.alert === 'SEVERE' ? 'blink' : ''}>{m.alert}</span></Chip>
         </div>
         <ServerStatusChip />
+        <SoundControl />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Help & shortcuts (?)">?</button>
         <button className="btn" onClick={() => ui.setTutorial(!ui.tutorial)} title="Training guide">Guide</button>
       </div>

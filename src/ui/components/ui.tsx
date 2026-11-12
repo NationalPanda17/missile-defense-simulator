@@ -118,7 +118,7 @@ export function LineChart({ series, height = 140, xLabels, yMax = 100, startHour
             </g>
           );
         })}
-        {[0, Math.floor((n - 1) / 2), n - 1].map((i) => (
+        {[...new Set([0, Math.floor((n - 1) / 2), n - 1])].map((i) => (
           <text key={i} x={x(i)} y={height - 4} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={9} fill="#5d7391">{label(i)}</text>
         ))}
         {series.map((s) => (

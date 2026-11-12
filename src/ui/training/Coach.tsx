@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { LESSONS, examResult, examStandards, type SimState, type TrainingLesson } from '../../engine';
 import { dispatch, store } from '../../store/simStore';
 import { useUI, type ViewId } from '../uiState';
+import { sound } from '../audio/sound';
 import { loadStep, markLessonDone, recordExam, saveStep, startLesson } from './progress';
 
 export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
@@ -47,6 +48,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   useEffect(() => {
     if (!passed || last) return;
     setJustDone(step.title);
+    sound.cue('success');
     go(i + 1);
     const t = window.setTimeout(() => setJustDone(null), 2500);
     return () => window.clearTimeout(t);

@@ -11,6 +11,7 @@ import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { DeployPanel } from './views/TacticalDeploy';
 import { loadProgress } from './training/progress';
+import { SoundControl } from './audio/SoundControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -360,8 +361,9 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     { id: 'training' as const, title: 'Training Academy', desc: `${LESSONS.length - 1} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.`, cta: 'Open the Academy' },
   ];
   return (
-    <div className="flex min-h-full items-center justify-center p-4">
+    <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
+        <div className="-mb-3 flex justify-end sm:absolute sm:right-3 sm:top-3 sm:mb-0"><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
           <h1 className="mt-2 font-sans text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl">MISSILE DEFENSE SIMULATOR</h1>
@@ -423,7 +425,7 @@ export function HelpModal() {
   const keys: [string, string][] = [
     ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', 'Advance one turn (6h)'], ['G S A M D', 'Global · Space · Air · Maritime · Ground'], ['X', 'Tactical Theater (campaign)'],
     ['I C L F', 'Intelligence · Comms · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-action review'],
-    ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Toggle bottom panel'], ['Esc', 'Close window / deselect region'], ['?', 'This help'],
+    ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Toggle bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close window / deselect region'], ['?', 'This help'],
   ];
   return (
     <Modal title="COMMAND REFERENCE" onClose={() => ui.setHelp(false)}>
