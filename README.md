@@ -15,7 +15,16 @@ is used.
 
 ## Quick start
 
-**Not a developer?** Follow the step-by-step [guide to running the simulator on your own computer](docs/LOCAL_SERVER_GUIDE.md).
+**Ways to play**
+
+| | Saves | Install |
+| --- | --- | --- |
+| [Online (GitHub Pages)](https://nationalpanda17.github.io/missile-defense-simulator/) | In the browser. Installable as an app and plays offline. | Nothing |
+| [Desktop app](docs/DESKTOP_APP.md) | Accounts and server saves, on your computer | Download from Releases |
+| [Start files](docs/LOCAL_SERVER_GUIDE.md) | Accounts and server saves, on your computer | Node.js, then double-click |
+| [Hosted server](docs/HOSTING.md) | Accounts for everyone, online | Your own host (Docker or Render) |
+
+**Not a developer?** Use the desktop app, or follow the step-by-step [guide to running the simulator on your own computer](docs/LOCAL_SERVER_GUIDE.md).
 It uses double-click start files (`Start Simulator (Mac).command`, `Start Simulator (Windows).bat`), so no typing
 is needed after installing Node.js.
 

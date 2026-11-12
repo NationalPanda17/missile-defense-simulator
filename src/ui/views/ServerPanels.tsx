@@ -7,6 +7,9 @@ import { store, useStoreVersion } from '../../store/simStore';
 import { Chip, Panel, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
+/** The hosted version with accounts (docs/HOSTING.md), if this build was told about one. */
+const ONLINE_URL = (import.meta.env.VITE_ONLINE_URL as string | undefined) || null;
+
 const ago = (iso: string | number) => {
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${Math.max(0, s)}s ago`;
@@ -58,6 +61,11 @@ export function ServerSavesPanel({ canSave }: { canSave: boolean }) {
       {sv.status !== 'online' ? (
         <div className="space-y-1 text-[11px] text-ops-dim">
           <p>The persistence server is not reachable{sv.error ? ` (${sv.error})` : ''}. Browser saves still work.</p>
+          {ONLINE_URL && (
+            <p>
+              <a className="text-ops-cyan underline" href={ONLINE_URL}>Play the online version</a> to keep your campaigns in an account, from any device.
+            </p>
+          )}
           <p>
             Server saves need the simulator running on your own computer.{' '}
             <a className="text-ops-cyan underline" href="https://github.com/NationalPanda17/missile-defense-simulator/blob/main/docs/LOCAL_SERVER_GUIDE.md" target="_blank" rel="noreferrer">Step-by-step setup guide</a>

@@ -1,11 +1,12 @@
 // The in-game coach for Training Academy lessons: one step at a time, ticked off automatically as the player acts.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LESSONS, examResult, examStandards, type SimState, type TrainingLesson } from '../../engine';
+import { LESSONS, examResult, examStandards, starsFor, type SimState, type TrainingLesson } from '../../engine';
 import { dispatch, store } from '../../store/simStore';
 import { useUI, type ViewId } from '../uiState';
 import { sound } from '../audio/sound';
-import { loadStep, markLessonDone, recordExam, saveStep, startLesson } from './progress';
+import { Stars } from './Stars';
+import { loadProgress, loadStep, markLessonDone, recordDrill, recordExam, saveStep, startLesson } from './progress';
 
 export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();
@@ -57,7 +58,11 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   // Record completion once the last step is reached.
   useEffect(() => {
     if (!last) return;
-    if (lesson.exam) {
+    if (lesson.drill) {
+      if (s.status !== 'complete') return;
+      const score = lesson.drill.score(s);
+      recordDrill(lesson.id, score, starsFor(lesson.drill, score));
+    } else if (lesson.exam) {
       if (s.status !== 'complete') return;
       const r = examResult(s);
       recordExam({ ...r, at: Date.now() });
@@ -101,7 +106,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     <div ref={ref} className="panel fadein fixed bottom-2 left-2 right-2 z-[55] max-h-[45vh] overflow-y-auto border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[70vh]" role="complementary" aria-label="Training coach">
       {spot}
       <div className="panel-title sticky top-0 z-10 bg-ops-panel">
-        <span className="truncate">{lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
+        <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
           <button className="btn px-2" onClick={academy} title="Training Academy">Academy</button>
           <button className="btn px-2" onClick={() => setOpen(false)} aria-label="Minimise coach">▾</button>
@@ -144,6 +149,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
         )}
 
         {lesson.exam && <ExamStandards s={s} />}
+        {lesson.drill && <DrillScore s={s} lesson={lesson} />}
 
         {timeUp && (
           <div className="rounded border border-ops-amber/50 bg-ops-amber/10 p-2 text-[11px] text-ops-amber">
@@ -168,7 +174,8 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
           {step.view && <button className="btn" onClick={() => ui.setView(step.view as ViewId)}>Show me</button>}
           {timeUp ? <button className="btn btn-primary" onClick={restart}>Restart lesson</button>
             : last ? (
-              lesson.exam ? <button className="btn btn-primary" onClick={academy}>Training Academy</button>
+              lesson.drill ? <><button className="btn" onClick={() => startLesson(lesson.id)}>Try again</button><button className="btn btn-primary" onClick={academy}>Training Academy</button></>
+              : lesson.exam ? <button className="btn btn-primary" onClick={academy}>Training Academy</button>
                 : nextLesson ? <button className="btn btn-primary" onClick={() => { startLesson(nextLesson.id); ui.setView('global'); }}>Next: {nextLesson.title} ▸</button>
                   : <button className="btn btn-primary" onClick={academy}>Training Academy</button>
             )
@@ -176,7 +183,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
                 : q ? <button className="btn btn-primary" disabled={picked !== q.answer} onClick={() => go(i + 1)}>Next ▸</button>
                   : <button className="btn" onClick={() => go(i + 1)} title="Skip this step">Skip ▸</button>}
         </div>
-        {last && !lesson.exam && <p className="text-[11px] text-ops-green">Lesson complete. It is ticked off in the Training Academy.</p>}
+        {last && !lesson.exam && !lesson.drill && <p className="text-[11px] text-ops-green">Lesson complete. It is ticked off in the Training Academy.</p>}
       </div>
     </div>
   );
@@ -253,5 +260,24 @@ function Spotlight({ names }: { names: string[] }) {
       ))}
     </>,
     document.body,
+  );
+}
+
+function DrillScore({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
+  const d = lesson.drill!;
+  const score = d.score(s);
+  const stars = starsFor(d, score);
+  const final = s.status === 'complete';
+  const best = loadProgress().drills?.[lesson.id];
+  return (
+    <div className="rounded border border-ops-amber/40 p-2 text-[11px]">
+      <div className="label mb-1 flex justify-between"><span>Score {final ? '(final)' : '(live)'}</span><span>{d.goal}</span></div>
+      <div className="flex items-baseline gap-3">
+        <span className="font-sans text-3xl font-bold text-white">{score}</span>
+        <span className="text-lg"><Stars n={stars} /></span>
+      </div>
+      <div className="mt-1 text-ops-dim">★ {d.stars[0]} · ★★ {d.stars[1]} · ★★★ {d.stars[2]}{best ? ` · your best ${best.best}` : ''}</div>
+      {final && <div className={`mt-1 font-semibold ${stars ? 'text-ops-green' : 'text-ops-amber'}`}>{best && score >= best.best ? 'New personal best!' : stars ? 'Drill complete.' : 'No stars this time. Try again?'}</div>}
+    </div>
   );
 }

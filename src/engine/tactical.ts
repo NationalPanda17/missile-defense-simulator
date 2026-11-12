@@ -214,13 +214,32 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     for (let i = 0; i < n; i++) {
       const cls = weighted(t, CLASSES.map((c) => ({ item: c, w: profile.mix[c] })));
       const tr = makeTrack(t, region, cls, axis, false);
-      if (tr) tracks.push(tr);
+      if (!tr) continue;
+      const turnChance = TACTICAL_CONFIG.turning.chanceByPhase[s.phaseIndex] ?? 0;
+      if (turnChance > 0 && TACTICAL_CONFIG.turning.classes.includes(cls) && rand(t) < turnChance) tr.via = turnPoint(t, tr);
+      tracks.push(tr);
     }
     t.waves.push({
       id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis, forecast: !surprise, tracks,
       resolved: false,
     });
   }
+}
+
+/** A turn point off to one side of the straight path, so the threat comes in from an unexpected angle. */
+function turnPoint(t: TacticalState, tr: Track): [number, number] {
+  const { width, height } = TACTICAL_CONFIG.theaterKm;
+  const site = t.sites.find((x) => x.id === tr.siteId)!;
+  const [fx, fy] = tr.from;
+  const dx = site.x - fx;
+  const dy = site.y - fy;
+  const len = Math.hypot(dx, dy) || 1;
+  const k = 0.35 + rand(t) * 0.25;
+  const [lo, hi] = TACTICAL_CONFIG.turning.offsetKm;
+  const off = (lo + rand(t) * (hi - lo)) * (rand(t) < 0.5 ? -1 : 1);
+  const x = fx + dx * k + (-dy / len) * off;
+  const y = fy + dy * k + (dx / len) * off;
+  return [Math.round(Math.max(10, Math.min(width - 10, x))), Math.round(Math.max(10, Math.min(height - 10, y)))];
 }
 
 /** A training lesson's waves are written out in full, so every player meets the same attacks. */
@@ -296,6 +315,48 @@ function reach(terrain: TheaterTerrain | undefined, d: Deployment, spec: Equipme
   return span ? (span[1] - span[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
 }
 
+/** A track's flight path: straight in, or bent at its turn point. */
+export function trackPath(tr: { from: [number, number]; via?: [number, number] }, target: [number, number]): [number, number][] {
+  return tr.via ? [tr.from, tr.via, target] : [tr.from, target];
+}
+
+/** The point a fraction f (0-1) of the way along a path, and the heading (degrees) there. */
+export function pointAlong(path: [number, number][], f: number): { p: [number, number]; heading: number } {
+  const lens = path.slice(1).map((q, i) => Math.hypot(q[0] - path[i][0], q[1] - path[i][1]));
+  const total = lens.reduce((a, b) => a + b, 0) || 1;
+  let d = Math.max(0, Math.min(1, f)) * total;
+  for (let i = 0; i < lens.length; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (d <= lens[i] || i === lens.length - 1) {
+      const k = lens[i] ? Math.min(1, d / lens[i]) : 0;
+      return { p: [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k], heading: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI };
+    }
+    d -= lens[i];
+  }
+  return { p: path[path.length - 1], heading: 0 };
+}
+
+/** Length of path inside a system's reach, summed over the path's legs. */
+function reachPath(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, path: [number, number][], range: number, cued: boolean): number {
+  let sum = 0;
+  for (let i = 0; i + 1 < path.length; i++) sum += reach(terrain, d, spec, cls, path[i], path[i + 1], range, cued);
+  return sum;
+}
+
+/** Where (0-1 along the whole path) a system's reach starts and ends, on the first leg it covers. */
+function reachSpanPath(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, path: [number, number][], range: number, cued: boolean): [number, number] | null {
+  const lens = path.slice(1).map((q, i) => Math.hypot(q[0] - path[i][0], q[1] - path[i][1]));
+  const total = lens.reduce((a, b) => a + b, 0) || 1;
+  let before = 0;
+  for (let i = 0; i < lens.length; i++) {
+    const sp = reachSpan(terrain, d, spec, cls, path[i], path[i + 1], range, cued);
+    if (sp) return [(before + sp[0] * lens[i]) / total, (before + sp[1] * lens[i]) / total];
+    before += lens[i];
+  }
+  return null;
+}
+
 /** Can this system engage this class at all (kill rate and altitude ceiling)? */
 export const canEngageClass = (spec: EquipmentSpec, cls: ThreatClass) =>
   spec.killRate[cls] > 0 && spec.altitudeKm >= TACTICAL_CONFIG.threatAltitudeKm[cls];
@@ -358,6 +419,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   if (!site) return;
   const region = s.regions[w.region];
   const target: [number, number] = [site.x, site.y];
+  const path = trackPath(tr, target);
   const assetOf = (d: Deployment) => s.assets.find((a) => a.id === d.assetId);
   const terrain = t.terrain?.[w.region];
   const working = deps.filter((d) => { const a = assetOf(d); return !!a && availability(s, a) > 0; });
@@ -365,11 +427,11 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   // Airborne early warning sees low threats beyond the horizon and over terrain, and cues surface systems.
   const cued = isLowFlying(tr.cls) && working.some((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return spec.domain === 'air' && reach(terrain, d, spec, tr.cls, tr.from, target, detectionRange(spec, tr.cls), true) > 0;
+    return spec.domain === 'air' && reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls), true) > 0;
   });
   const seen = cued || working.some((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return reach(terrain, d, spec, tr.cls, tr.from, target, detectionRange(spec, tr.cls), false) > 0;
+    return reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls), false) > 0;
   });
   const alert = alertActive(s, w.region);
   const A = TACTICAL_CONFIG.alert;
@@ -382,7 +444,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const shooters = deps
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)!, asset: assetOf(d) }))
     .filter((x) => x.asset && isEffector(x.spec) && canEngageClass(x.spec, tr.cls))
-    .map((x) => ({ ...x, chord: reach(terrain, x.d, x.spec, tr.cls, tr.from, target, x.spec.rangeKm, cued) }))
+    .map((x) => ({ ...x, chord: reachPath(terrain, x.d, x.spec, tr.cls, path, x.spec.rangeKm, cued) }))
     .filter((x) => x.chord > 0)
     .sort((a, b) => b.spec.rangeKm - a.spec.rangeKm);
 
@@ -406,7 +468,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
         stopped = true;
         tr.stoppedBy = d.id;
         // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
-        const span = reachSpan(terrain, d, spec, tr.cls, tr.from, target, spec.rangeKm, cued);
+        const span = reachSpanPath(terrain, d, spec, tr.cls, path, spec.rangeKm, cued);
         if (span) tr.stopAt = Math.min(0.97, span[0] + (span[1] - span[0]) * (0.25 + 0.3 * i));
       }
     }

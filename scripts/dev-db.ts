@@ -1,7 +1,7 @@
 // Runs a real PostgreSQL server from node_modules (embedded-postgres) for local development.
 // Data persists in ./.pgdata. Ctrl+C stops it. Not needed if you already have PostgreSQL — set DATABASE_URL instead.
-import { existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
@@ -12,20 +12,29 @@ export const DIR = path.resolve(process.env.PGDATA_DIR ?? '.pgdata');
 
 export async function startEmbedded(opts: { dir: string; port: number; quiet?: boolean }) {
   hydrateNativeSymlinks();
+  // Keep the last lines PostgreSQL printed, so a failed start can say why.
+  const recent: string[] = [];
+  const keep = (m: unknown) => {
+    for (const line of String(m instanceof Error ? m.message : m ?? '').split(/\r?\n/)) if (line.trim()) recent.push(line.trim());
+    if (recent.length > 12) recent.splice(0, recent.length - 12);
+  };
   const db = new EmbeddedPostgres({
     databaseDir: opts.dir, port: opts.port, user: 'mds', password: 'mds', persistent: true,
-    onLog: opts.quiet ? () => {} : (m) => process.stdout.write(`[postgres] ${m}`),
-    onError: (m) => console.error('[postgres]', m),
+    onLog: (m) => { keep(m); if (!opts.quiet) process.stdout.write(`[postgres] ${m}`); },
+    onError: (m) => { keep(m); console.error('[postgres]', m); },
   });
+  let handle: { stop: () => Promise<void> } = db;
   try {
     if (!existsSync(path.join(opts.dir, 'PG_VERSION'))) await db.initialise();
-    await db.start();
+    if (process.platform === 'win32') handle = startWithPgCtl(opts.dir, opts.port, keep);
+    else await db.start();
   } catch (e) {
     const busy = existsSync(path.join(opts.dir, 'postmaster.pid'));
     throw new Error(
       busy
         ? `PostgreSQL data dir ${opts.dir} is already in use — is another \`npm run db:start\` / \`dev:full\` running? Stop it, or set PGDATA_DIR and PGPORT.`
-        : `Could not start embedded PostgreSQL on port ${opts.port} (${e instanceof Error ? e.message : String(e ?? 'unknown error')}). Is the port taken? Set PGPORT.`,
+        : `Could not start embedded PostgreSQL on port ${opts.port} (${e instanceof Error ? e.message : String(e ?? 'unknown error')}). Is the port taken? Set PGPORT.`
+          + (recent.length ? `\nPostgreSQL said:\n  ${recent.join('\n  ')}` : ''),
     );
   }
   const client = new pg.Client({ connectionString: `postgres://mds:mds@localhost:${opts.port}/postgres` });
@@ -33,15 +42,34 @@ export async function startEmbedded(opts: { dir: string; port: number; quiet?: b
   const exists = await client.query("SELECT 1 FROM pg_database WHERE datname = 'mds'");
   if (!exists.rowCount) await client.query('CREATE DATABASE mds');
   await client.end();
-  return db;
+  return handle;
+}
+
+/**
+ * Windows: start through pg_ctl, which drops administrator rights before running the server. PostgreSQL refuses to
+ * run as an administrator, and some players (and CI machines) run elevated; starting postgres directly then fails.
+ */
+function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): { stop: () => Promise<void> } {
+  const bin = path.join(nativePackageDir(createRequire(import.meta.url)), 'native', 'bin', 'pg_ctl.exe');
+  const logFile = path.join(dir, 'server.log');
+  // stdio must not be piped: the server pg_ctl starts inherits the pipes and would hold them open forever.
+  const run = (args: string[]) => spawnSync(bin, args, { stdio: 'ignore', windowsHide: true, timeout: 90_000 });
+  const r = run(['start', '-D', dir, '-o', `-p ${port}`, '-l', logFile, '-w', '-t', '60']);
+  if (r.status !== 0) {
+    keep(`pg_ctl start exited with ${r.status ?? r.error?.message ?? 'a timeout'}`);
+    try { keep(readFileSync(logFile, 'utf8').split(/\r?\n/).slice(-15).join('\n')); } catch { /* no log yet */ }
+    throw new Error('pg_ctl failed');
+  }
+  return { stop: async () => { run(['stop', '-D', dir, '-m', 'fast', '-w', '-t', '30']); } };
 }
 
 /** The binary package ships its dylib symlinks as a JSON manifest; recreate them if npm skipped its postinstall. */
 function hydrateNativeSymlinks() {
   try {
     const require = createRequire(import.meta.url);
-    const pkg = path.dirname(require.resolve(`@embedded-postgres/${process.platform}-${process.arch}/package.json`));
-    execFileSync(process.execPath, ['scripts/hydrate-symlinks.js'], { cwd: pkg, stdio: 'ignore' });
+    const pkg = nativePackageDir(require);
+    // ELECTRON_RUN_AS_NODE: inside the desktop app, process.execPath is the app itself, not Node.
+    execFileSync(process.execPath, ['scripts/hydrate-symlinks.js'], { cwd: pkg, stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
   } catch { /* other platforms or already hydrated */ }
 }
 
@@ -57,4 +85,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+}
+
+/** Folder of this platform's PostgreSQL binary package. It only exports dist/index.js, so resolve that and go up. */
+function nativePackageDir(require: NodeRequire): string {
+  const os = process.platform === 'win32' ? 'windows' : process.platform; // the packages are named windows-x64, darwin-arm64, …
+  return path.resolve(path.dirname(require.resolve(`@embedded-postgres/${os}-${process.arch}`)), '..');
 }

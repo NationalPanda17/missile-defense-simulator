@@ -1,14 +1,15 @@
 // Data access for players, campaigns and save slots. All SQL lives here.
 import type pg from 'pg';
 import { SAVE_VERSION, computeScore, type SimState } from '../src/engine';
-import type { AcademyProgress, CampaignDetail, CampaignSummary, ExamRecord, SaveSummary } from '../src/shared/api';
+import type { AcademyProgress, CampaignDetail, CampaignSummary, DrillRecord, ExamRecord, SaveSummary } from '../src/shared/api';
 
 export class Repo {
   constructor(private pool: pg.Pool) {}
 
   async getAcademy(playerId: string): Promise<AcademyProgress> {
-    const r = await this.pool.query<{ done: string[]; best_exam: ExamRecord | null }>('SELECT done, best_exam FROM academy_progress WHERE player_id = $1', [playerId]);
-    return r.rows[0] ? { done: r.rows[0].done, bestExam: r.rows[0].best_exam } : { done: [], bestExam: null };
+    const r = await this.pool.query<{ done: string[]; best_exam: ExamRecord | null; drills: Record<string, DrillRecord> }>(
+      'SELECT done, best_exam, drills FROM academy_progress WHERE player_id = $1', [playerId]);
+    return r.rows[0] ? { done: r.rows[0].done, bestExam: r.rows[0].best_exam, drills: r.rows[0].drills } : { done: [], bestExam: null, drills: {} };
   }
 
   /** Merges progress from a browser into the stored progress: lessons are never un-done, and the better exam wins. */
@@ -16,16 +17,23 @@ export class Repo {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const r = await client.query<{ done: string[]; best_exam: ExamRecord | null }>('SELECT done, best_exam FROM academy_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
-      const cur = r.rows[0] ?? { done: [], best_exam: null };
+      const r = await client.query<{ done: string[]; best_exam: ExamRecord | null; drills: Record<string, DrillRecord> }>(
+        'SELECT done, best_exam, drills FROM academy_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+      const cur = r.rows[0] ?? { done: [], best_exam: null, drills: {} };
+      const drills = { ...cur.drills };
+      for (const [id, d] of Object.entries(incoming.drills ?? {})) {
+        const c = drills[id];
+        drills[id] = c ? { best: Math.max(c.best, d.best), stars: Math.max(c.stars, d.stars) } : d;
+      }
       const merged: AcademyProgress = {
         done: [...new Set([...cur.done, ...incoming.done])].sort(),
         bestExam: betterExam(cur.best_exam, incoming.bestExam),
+        drills,
       };
       await client.query(
-        `INSERT INTO academy_progress (player_id, done, best_exam, updated_at) VALUES ($1, $2, $3, now())
-         ON CONFLICT (player_id) DO UPDATE SET done = EXCLUDED.done, best_exam = EXCLUDED.best_exam, updated_at = now()`,
-        [playerId, merged.done, merged.bestExam ? JSON.stringify(merged.bestExam) : null],
+        `INSERT INTO academy_progress (player_id, done, best_exam, drills, updated_at) VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (player_id) DO UPDATE SET done = EXCLUDED.done, best_exam = EXCLUDED.best_exam, drills = EXCLUDED.drills, updated_at = now()`,
+        [playerId, merged.done, merged.bestExam ? JSON.stringify(merged.bestExam) : null, JSON.stringify(drills)],
       );
       await client.query('COMMIT');
       return merged;

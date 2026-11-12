@@ -1,5 +1,6 @@
 // Tactical Theater: watch threat waves play out, track magazines and resupply during a phase.
 import { useEffect, useRef, useState } from 'react';
+import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
@@ -73,7 +74,7 @@ function WaveReplay({ s, wave }: { s: SimState; wave: ThreatWave }) {
         const y = tr.from[1] + (target[1] - tr.from[1]) * f;
         const done = local >= 1;
         const hit = tr.outcome === 'leaked';
-        const col = tr.decoy ? '#5d7391' : hit ? '#f2545b' : '#f5b13d';
+        const col = tr.decoy ? '#7088a8' : hit ? '#f2545b' : '#f5b13d';
         return (
           <g key={tr.id}>
             <line x1={tr.from[0]} y1={tr.from[1]} x2={x} y2={y} stroke={col} strokeOpacity={0.35} strokeDasharray={tr.decoy ? '2 4' : undefined} />
@@ -130,10 +131,18 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
 }
 
 export function TheaterView({ s }: { s: SimState }) {
+  const ui = useUI();
   const t = s.tactical;
   const inbound = incomingWaves(s);
   const lastResolved = t ? [...t.waves].filter((w) => w.resolved).sort((a, b) => b.atHour - a.atHour)[0] : undefined;
   const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  // Another screen (the adjutant) can ask for a region.
+  useEffect(() => {
+    if (ui.theaterFocus) {
+      setRegion(ui.theaterFocus);
+      ui.setTheaterFocus(null);
+    }
+  }, [ui.theaterFocus]);
   const [replayId, setReplayId] = useState<string | null>(lastResolved?.id ?? null); // wave shown in the summary
   const [playing, setPlaying] = useState<string | null>(null); // wave being replayed on demand
   const [selected, setSelected] = useState<string | null>(null);

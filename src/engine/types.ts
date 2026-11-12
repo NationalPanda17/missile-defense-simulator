@@ -291,6 +291,7 @@ export interface ScenarioSettings {
   tactical?: TacticalSettings; // campaign only; absent means the standard scenario
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
   level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
+  challenge?: { score: number; grade: string }; // played from a challenge link: the challenger's score (-1 if none)
 }
 
 export type CommandLevel = 'recruit' | 'officer' | 'commander';
@@ -343,6 +344,7 @@ export interface Track {
   damage?: number; // integrity lost by the target site
   launchAt?: number; // sim hour (fractional) it launches; it impacts at the wave's atHour
   stopAt?: number; // 0-1 along its path where it was stopped (for drawing the interception)
+  via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
 }
 
 export interface ThreatWave {

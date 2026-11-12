@@ -3,8 +3,7 @@ import {
   REGION_IDS, SIM_CONFIG, availability, crewsFree, isActive, maintenanceCost, type Asset, type Domain, type SimState,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import { statusColor } from '../map/GlobalMap';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, Sparkline, Stat, TONE_TEXT, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 const FOCUS: Record<Domain, { title: string; blurb: string }> = {
@@ -108,7 +107,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
       <Panel className="xl:col-span-2" title="Historical Performance">
         <LineChart series={[
           { name: 'Effective', color, data: s.history.map((h) => h.domains[domain]) },
-          { name: 'Global readiness', color: '#5d7391', data: s.history.map((h) => h.readiness) },
+          { name: 'Global readiness', color: '#7088a8', data: s.history.map((h) => h.readiness) },
           { name: 'Network', color: '#38d6f5', data: s.history.map((h) => h.network) },
         ]} />
       </Panel>

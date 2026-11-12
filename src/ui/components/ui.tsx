@@ -1,13 +1,13 @@
 // Reusable presentational primitives.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Domain, Severity } from '../../engine';
+import type { Asset, Domain, Severity } from '../../engine';
 
 /** Meters move over one simulated hour at the current speed (--tick, set by the store), so values flow rather than jump. */
 export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
 
 export const tone = (v: number) => (v >= 75 ? 'green' : v >= 55 ? 'cyan' : v >= 35 ? 'amber' : 'red');
-export const TONE_HEX = { green: '#34d399', cyan: '#38d6f5', amber: '#f5b13d', red: '#f2545b', dim: '#5d7391', violet: '#a78bfa', blue: '#3b82f6' };
+export const TONE_HEX = { green: '#34d399', cyan: '#38d6f5', amber: '#f5b13d', red: '#f2545b', dim: '#7088a8', violet: '#a78bfa', blue: '#3b82f6' };
 export const TONE_TEXT = { green: 'text-ops-green', cyan: 'text-ops-cyan', amber: 'text-ops-amber', red: 'text-ops-red', dim: 'text-ops-dim' };
 export const TONE_CHIP = {
   green: 'border-ops-green/50 text-ops-green bg-ops-green/10',
@@ -114,12 +114,12 @@ export function LineChart({ series, height = 140, xLabels, yMax = 100, startHour
           return (
             <g key={g}>
               <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} stroke="#1b2c47" strokeDasharray="2 4" />
-              <text x={pad.l - 4} y={y(v) + 3} textAnchor="end" fontSize={9} fill="#5d7391">{Math.round(v)}</text>
+              <text x={pad.l - 4} y={y(v) + 3} textAnchor="end" fontSize={9} fill="#7088a8">{Math.round(v)}</text>
             </g>
           );
         })}
         {[...new Set([0, Math.floor((n - 1) / 2), n - 1])].map((i) => (
-          <text key={i} x={x(i)} y={height - 4} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={9} fill="#5d7391">{label(i)}</text>
+          <text key={i} x={x(i)} y={height - 4} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={9} fill="#7088a8">{label(i)}</text>
         ))}
         {series.map((s) => (
           <polyline key={s.name} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" points={s.data.map((v, i) => `${x(i)},${y(v)}`).join(' ')} style={{ filter: `drop-shadow(0 0 3px ${s.color}66)` }} />
@@ -195,4 +195,34 @@ export function simClock(start: number, hour: number) {
     date: `${String(d.getUTCDate()).padStart(2, '0')} ${m} ${d.getUTCFullYear()}`,
     time: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}Z`,
   };
+}
+
+/** Map/list colour for an asset's status. */
+export function statusColor(a: Asset, hour: number) {
+  if (a.status === 'maintenance') return '#7088a8';
+  if (a.status === 'transit') return '#a78bfa';
+  if (a.restoredAt !== undefined && hour - a.restoredAt < 12) return '#e0f7ff';
+  if (a.status === 'offline') return TONE_HEX.red;
+  if (a.status === 'degraded') return TONE_HEX.amber;
+  return TONE_HEX.green;
+}
+
+/**
+ * A delete button that asks first: the first click turns it into "Delete?", a second click within a few seconds
+ * deletes. Moving away or waiting six seconds cancels.
+ */
+export function ConfirmDelete({ onConfirm, label, text = '✕', confirmText = 'Delete?', className = '' }: { onConfirm: () => void; label: string; text?: string; confirmText?: string; className?: string }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), 6000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  return (
+    <button type="button" className={`btn ${armed ? 'btn-danger' : ''} ${className}`} aria-label={armed ? `Confirm: ${label}` : label} title={label}
+      onClick={(e) => { e.stopPropagation(); if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}
+      onBlur={() => setArmed(false)}>
+      {armed ? confirmText : text}
+    </button>
+  );
 }

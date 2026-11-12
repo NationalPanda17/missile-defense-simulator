@@ -34,6 +34,9 @@ jobs:
         run: npm ci
 
       - name: Build the client for the Pages subpath
+        # ONLINE_URL (a repository variable) points players at the hosted version with accounts, once there is one.
+        env:
+          VITE_ONLINE_URL: ${{ vars.ONLINE_URL }}
         run: npx vite build --base=/missile-defense-simulator/
 
       - uses: actions/upload-pages-artifact@v3

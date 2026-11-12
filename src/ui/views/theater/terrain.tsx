@@ -118,7 +118,7 @@ export function MapFurniture({ w, h, title }: { w: number; h: number; title: str
       <g transform={`translate(${w - 118},${h - 14})`}>
         <rect x={-4} y={-11} width={114} height={18} rx={3} fill="#06111f" fillOpacity={0.7} />
         <rect x={0} y={0} width={50} height={3} fill="#c9d8ec" />
-        <rect x={50} y={0} width={50} height={3} fill="#5d7391" />
+        <rect x={50} y={0} width={50} height={3} fill="#7088a8" />
         <text x={0} y={-3} {...label}>0</text>
         <text x={50} y={-3} textAnchor="middle" {...label}>50</text>
         <text x={100} y={-3} textAnchor="end" {...label}>100 km</text>

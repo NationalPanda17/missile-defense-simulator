@@ -3,7 +3,7 @@
 # First run: installs what the game needs (a few minutes). Leave this window open while you play;
 # close it (or press Control+C) to stop.
 cd "$(dirname "$0")" || exit 1
-clear
+[ -t 1 ] && clear
 echo "=================================================="
 echo "  Missile Defense Simulator - local server"
 echo "=================================================="
@@ -42,5 +42,6 @@ echo "Starting the game and its save server..."
 echo "Your browser will open at http://localhost:5173 in a few seconds."
 echo "Keep this window open while you play. Close it to stop."
 echo
-( sleep 8; open "http://localhost:5173" ) &
+# MDS_NO_BROWSER=1 skips opening the browser (used by automated checks).
+[ "$MDS_NO_BROWSER" = "1" ] || ( sleep 8; open "http://localhost:5173" ) &
 npm run dev:full

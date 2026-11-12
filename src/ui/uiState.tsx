@@ -24,6 +24,7 @@ interface UIState {
   bottomOpen: boolean; setBottomOpen: (b: boolean) => void;
   accountOpen: boolean; setAccountOpen: (b: boolean) => void;
   academyOpen: boolean; setAcademyOpen: (b: boolean) => void;
+  theaterFocus: RegionId | null; setTheaterFocus: (r: RegionId | null) => void; // region the Tactical Theater should show next
 }
 
 const Ctx = createContext<UIState | null>(null);
@@ -50,6 +51,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [bottomOpen, setBottomOpen] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
   const [academyOpen, setAcademyOpen] = useState(false);
+  const [theaterFocus, setTheaterFocus] = useState<RegionId | null>(null);
   const toggleLayer = (k: keyof Layers) =>
     setLayers((l) => {
       const n = { ...l, [k]: !l[k] };
@@ -57,7 +59,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       return n;
     });
   return (
-    <Ctx.Provider value={{ view, setView, region, setRegion, eventId, openEvent, assetId, openAsset, layers, toggleLayer, overlay, setOverlay, tutorial, setTutorial, help, setHelp, bottomOpen, setBottomOpen, accountOpen, setAccountOpen, academyOpen, setAcademyOpen }}>
+    <Ctx.Provider value={{ view, setView, region, setRegion, eventId, openEvent, assetId, openAsset, layers, toggleLayer, overlay, setOverlay, tutorial, setTutorial, help, setHelp, bottomOpen, setBottomOpen, accountOpen, setAccountOpen, academyOpen, setAcademyOpen, theaterFocus, setTheaterFocus }}>
       {children}
     </Ctx.Provider>
   );

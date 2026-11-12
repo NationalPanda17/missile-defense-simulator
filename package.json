@@ -14,7 +14,10 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "user:reset-password": "tsx scripts/reset-password.ts",
-    "build:geography": "tsx scripts/build-geography.ts"
+    "build:geography": "tsx scripts/build-geography.ts",
+    "desktop:build": "tsx scripts/build-desktop.ts",
+    "desktop:dir": "tsx scripts/build-desktop.ts && electron-builder --dir",
+    "desktop:dist": "tsx scripts/build-desktop.ts && electron-builder"
   },
   "dependencies": {
     "pg": "^8.13.1",
@@ -31,7 +34,10 @@
     "@types/topojson-simplify": "3.0.3",
     "@vitejs/plugin-react": "4.3.4",
     "autoprefixer": "10.4.20",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "embedded-postgres": "^18.4.0-beta.17",
+    "esbuild": "0.21.5",
     "postcss": "8.4.49",
     "tailwindcss": "3.4.17",
     "topojson-client": "3.1.0",

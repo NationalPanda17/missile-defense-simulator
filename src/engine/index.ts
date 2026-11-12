@@ -14,3 +14,5 @@ export * from './scenarios';
 export * from './terrain';
 export * from './training';
 export { clamp } from './rng';
+export * from './advisor';
+export * from './challenge';

@@ -4,7 +4,7 @@ import {
   objectiveMet, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
-import { Bar, Chip, DOMAIN_LABEL, Panel, Stat } from '../components/ui';
+import { Bar, Chip, DOMAIN_LABEL, Panel, Stat, ConfirmDelete } from '../components/ui';
 import { useUI } from '../uiState';
 import { ServerSavesPanel, ServiceRecord } from './ServerPanels';
 
@@ -78,7 +78,7 @@ export function CampaignView({ s }: { s: SimState }) {
                   <div className="min-w-0 flex-1"><div className="text-white">{slot === 'auto' ? 'Autosave' : slot.toUpperCase()}</div><div className="truncate text-[10px] text-ops-dim">{m ? `${m.name} · T+${m.hour}h · ${new Date(m.savedAt).toLocaleTimeString()}` : 'empty'}</div></div>
                   {slot !== 'auto' && <button className="btn" onClick={() => { saveGame(s, slot); store.toast('ok', `Saved to ${slot}`); store.notify(); }}>Save</button>}
                   <button className="btn" disabled={!m} onClick={() => { const st = loadGame(slot as Slot); if (st) { store.load(st); store.toast('ok', `Loaded ${slot}`); } }}>Load</button>
-                  {slot !== 'auto' && <button className="btn px-1.5" disabled={!m} onClick={() => { deleteSave(slot); store.notify(); }} aria-label={`Delete ${slot}`}>✕</button>}
+                  {m && <ConfirmDelete className="px-1.5" label={`Delete ${slot === 'auto' ? 'the autosave' : slot.toUpperCase()}`} onConfirm={() => { deleteSave(slot); store.toast('info', `${slot === 'auto' ? 'Autosave' : slot.toUpperCase()} deleted.`); store.notify(); }} />}
                 </div>
               );
             })}

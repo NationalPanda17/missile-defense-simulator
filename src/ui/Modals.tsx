@@ -1,17 +1,17 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
-import { useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, tone } from './components/ui';
+import { Bar, Chip, ConfirmDelete, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, statusColor, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
-import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
-import { DeployPanel } from './views/TacticalDeploy';
 import { loadProgress } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
+import { AdviceList, useAdvice } from './Adjutant';
+import { DisplayControl, DisplaySettings } from './a11y/DisplayControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -222,6 +222,8 @@ export function AssetModal({ s }: { s: SimState }) {
   );
 }
 
+const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
+
 export function BriefingModal({ s }: { s: SimState }) {
   const phase = s.phases[s.phaseIndex];
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
@@ -229,12 +231,19 @@ export function BriefingModal({ s }: { s: SimState }) {
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const [step, setStep] = useState<'brief' | 'deploy'>('brief');
+  const advice = useAdvice(s).filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'));
   return (
     <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
       </>}>
+      {advice.length > 0 && (
+        <div className="mb-3">
+          <div className="label mb-1">Adjutant</div>
+          <AdviceList s={s} items={advice} compact onDeploy={tactical ? () => setStep('deploy') : undefined} />
+        </div>
+      )}
       {tactical && (
         <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">
           <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>1 · Briefing</button>
@@ -243,7 +252,7 @@ export function BriefingModal({ s }: { s: SimState }) {
           </button>
         </div>
       )}
-      {tactical && step === 'deploy' ? <DeployPanel s={s} /> : (
+      {tactical && step === 'deploy' ? <Suspense fallback={<div className="p-6 text-center text-ops-dim">Loading…</div>}><DeployPanel s={s} /></Suspense> : (
       <div className="space-y-4">
         <div>
           <div className="label">{s.settings.name}</div>
@@ -363,7 +372,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   return (
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
-        <div className="-mb-3 flex justify-end sm:absolute sm:right-3 sm:top-3 sm:mb-0"><SoundControl /></div>
+        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
           <h1 className="mt-2 font-sans text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl">MISSILE DEFENSE SIMULATOR</h1>
@@ -400,14 +409,27 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             }} />
           </div>
           {saves.length === 0 ? <div className="text-ops-dim">No saved operations in this browser.</div> : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {saves.map((m) => (
-                <button key={m.slot} className="rounded border border-ops-line p-2 text-left hover:border-ops-cyan/50" onClick={() => { const st = loadGame(m.slot as Slot); if (st) store.load(st); }}>
-                  <div className="flex justify-between"><span className="text-white">{m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} · {m.name}</span><span className="text-ops-dim">T+{m.hour}h</span></div>
-                  <div className="text-[10px] text-ops-dim">{m.mode} · {m.phase} · {new Date(m.savedAt).toLocaleString()}</div>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {saves.map((m) => (
+                  <div key={m.slot} className="flex items-stretch gap-1">
+                    <button className="min-w-0 flex-1 rounded border border-ops-line p-2 text-left hover:border-ops-cyan/50" onClick={() => { const st = loadGame(m.slot as Slot); if (st) store.load(st); }}>
+                      <div className="flex justify-between gap-2"><span className="truncate text-white">{m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} · {m.name}</span><span className="shrink-0 text-ops-dim">T+{m.hour}h</span></div>
+                      <div className="text-[10px] text-ops-dim">{m.mode} · {m.phase} · {new Date(m.savedAt).toLocaleString()}</div>
+                    </button>
+                    <ConfirmDelete className="px-2" label={`Delete ${m.slot === 'auto' ? 'the autosave' : m.slot.toUpperCase()}`}
+                      onConfirm={() => { deleteSave(m.slot as Slot); store.toast('info', `${m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} deleted.`); store.notify(); }} />
+                  </div>
+                ))}
+              </div>
+              {saves.length > 1 && (
+                <div className="mt-2 flex justify-end">
+                  <ConfirmDelete label="Delete all browser saves" text="Delete all saves" confirmText={`Delete all ${saves.length}?`}
+                    onConfirm={() => { for (const m of saves) deleteSave(m.slot as Slot); store.toast('info', 'All browser saves deleted.'); store.notify(); }} />
+                </div>
+              )}
+              <p className="mt-1 text-[10px] text-ops-dim">Deleting can’t be undone. Server saves and exported files are not affected.</p>
+            </>
           )}
         </div>
         <div className="grid gap-3 lg:grid-cols-[1fr_2fr]">
@@ -431,6 +453,10 @@ export function HelpModal() {
     <Modal title="COMMAND REFERENCE" onClose={() => ui.setHelp(false)}>
       <div className="space-y-4">
         <table className="table-ops w-full"><tbody>{keys.map(([k, d]) => <tr key={k}><td className="w-36"><kbd className="rounded border border-ops-line px-1.5 text-ops-cyan">{k}</kbd></td><td>{d}</td></tr>)}</tbody></table>
+        <div className="rounded border border-ops-line p-3">
+          <div className="label mb-2">Display & accessibility</div>
+          <DisplaySettings />
+        </div>
         <div className="space-y-2 text-[11px] leading-relaxed text-ops-dim">
           <p><b className="text-white">How the network works.</b> Each domain's raw readiness comes from its assets' condition. Effective readiness is then reduced by weaknesses in the domains it depends on (e.g. Air and Maritime depend on Space relays) and by global network health. Regional awareness comes from sensor coverage and comms; it controls how reliable incoming reports are.</p>
           <p><b className="text-white">Events.</b> Each report has a confidence level and a decision window. Some reports are spurious. Task a confirmation when unsure, respond when confident, or dismiss — but dismissed genuine events keep developing out of sight. Unresolved events escalate, causing lasting damage and sometimes follow-on events.</p>
