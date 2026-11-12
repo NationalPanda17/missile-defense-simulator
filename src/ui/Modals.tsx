@@ -10,6 +10,7 @@ import { useUI, type ViewId } from './uiState';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { loadProgress } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
+import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl, DisplaySettings } from './a11y/DisplayControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
@@ -230,12 +231,19 @@ export function BriefingModal({ s }: { s: SimState }) {
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const [step, setStep] = useState<'brief' | 'deploy'>('brief');
+  const advice = useAdvice(s).filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'));
   return (
     <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
       </>}>
+      {advice.length > 0 && (
+        <div className="mb-3">
+          <div className="label mb-1">Adjutant</div>
+          <AdviceList s={s} items={advice} compact onDeploy={tactical ? () => setStep('deploy') : undefined} />
+        </div>
+      )}
       {tactical && (
         <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">
           <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>1 · Briefing</button>

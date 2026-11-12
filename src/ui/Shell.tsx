@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
+import { AdjutantSection } from './Adjutant';
 import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
@@ -173,6 +174,7 @@ export function RightSidebar({ s }: { s: SimState }) {
   const regionAlerts = Object.values(s.regions).filter((r) => r.stability < 55 || r.comms < 50 || r.awareness < 45);
   return (
     <aside className="flex flex-col overflow-y-auto border-t border-ops-line bg-ops-panel/70 lg:w-80 lg:border-l lg:border-t-0" aria-label="Situation sidebar">
+      <AdjutantSection s={s} />
       <Section title="Active Events" count={active.length} coach="events">
         {active.length === 0 && <div className="text-ops-dim">No active events. Network nominal.</div>}
         <ul className="space-y-1.5">

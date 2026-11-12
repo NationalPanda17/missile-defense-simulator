@@ -1,0 +1,136 @@
+// The adjutant: an optional advisor that points out things a commander might miss. Pure: it only reads the state,
+// and it only uses what the player could know (forecasts and warnings, never hidden ground truth).
+import { SIM_CONFIG } from './config';
+import { EQUIPMENT_MAP, isEffector } from './equipment';
+import { isActive } from './metrics';
+import { incomingWaves, isUnlimited } from './tactical';
+import type { Domain, RegionId, SimState } from './types';
+
+export type AdviceLevel = 'urgent' | 'warn' | 'info';
+
+export interface Advice {
+  /** Stable while the situation lasts, so a dismissed piece of advice stays dismissed until it changes. */
+  id: string;
+  level: AdviceLevel;
+  text: string;
+  /** Where to go to act on it. */
+  action?: { label: string; view: string; region?: RegionId; eventId?: string; assetId?: string; deploy?: boolean };
+}
+
+const DOMAIN_VIEW: Record<Domain, string> = { space: 'space', air: 'air', sea: 'sea', ground: 'ground' };
+const ORDER: Record<AdviceLevel, number> = { urgent: 0, warn: 1, info: 2 };
+
+/** Should the adjutant be available for this scenario? Training lessons have the coach instead. */
+export const adjutantApplies = (s: SimState) => s.settings.mode !== 'training';
+
+export function advise(s: SimState): Advice[] {
+  if (s.status === 'complete') return [];
+  const out: Advice[] = [];
+  const t = s.tactical?.enabled ? s.tactical : null;
+  const name = (r: RegionId) => s.regions[r].name;
+
+  if (t) {
+    const upcoming = t.waves.filter((w) => w.phaseIndex === s.phaseIndex && !w.resolved);
+    const incoming = incomingWaves(s);
+    // Regions the player has been told to expect attacks in: the forecast, plus any wave already in the warning window.
+    const threatened = new Set<RegionId>([
+      ...t.forecast.filter((r) => upcoming.some((w) => w.region === r)),
+      ...incoming.map((x) => x.wave.region),
+    ]);
+
+    // Forecast regions with nothing that can shoot.
+    for (const r of threatened) {
+      const armed = t.deployments.some((d) => (d.region === r || d.transit?.region === r) && isEffector(EQUIPMENT_MAP.get(d.equipmentId)!));
+      if (armed) continue;
+      const surprise = incoming.some((x) => x.wave.region === r && !x.wave.forecast);
+      out.push({
+        id: `undefended:${r}:${s.phaseIndex}`,
+        level: 'urgent',
+        text: surprise
+          ? `A wave is heading for ${name(r)}, outside the forecast, and nothing there can engage it. Emergency-redeploy a system now.`
+          : `${name(r)} is expected to be attacked but has no system that can engage threats.`,
+        action: s.status === 'briefing' ? { label: 'Deploy', view: 'theater', region: r, deploy: true } : { label: 'Theater', view: 'theater', region: r },
+      });
+    }
+
+    // Low magazines where an attack is expected.
+    for (const d of t.deployments) {
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      if (!isEffector(spec) || isUnlimited(spec) || d.reloadRemaining !== undefined || d.transit || !threatened.has(d.region)) continue;
+      if (d.stock > Math.max(2, Math.floor(spec.magazine * 0.25))) continue;
+      out.push({
+        id: `ammo:${d.id}:${d.stock}`,
+        level: d.stock === 0 ? 'urgent' : 'warn',
+        text: `${name(d.region)}’s ${spec.name} is ${d.stock === 0 ? 'out of rounds' : `down to ${d.stock} round${d.stock === 1 ? '' : 's'}`} and a wave is expected. Resupply it.`,
+        action: { label: 'Theater', view: 'theater', region: d.region },
+      });
+    }
+
+    // A wave inside the warning window, defended, with no alert raised.
+    if (s.status === 'running') {
+      for (const x of incoming) {
+        const r = x.wave.region;
+        if (x.launched || x.launchIn > 3 || (t.alerts ?? []).some((a) => a.region === r && a.until > s.hour)) continue;
+        if (!t.deployments.some((d) => d.region === r)) continue;
+        out.push({
+          id: `alert:${x.wave.id}`,
+          level: 'info',
+          text: `A wave is due to launch at ${name(r)} in about ${Math.max(1, Math.round(x.launchIn))}h. Raising an alert now improves detection and reaction.`,
+          action: { label: 'Theater', view: 'theater', region: r },
+        });
+      }
+    }
+  }
+
+  // Assets overdue for service.
+  const overdue = s.assets.filter((a) => a.role !== 'defense' && a.hoursToService < 0 && a.status !== 'maintenance' && a.status !== 'transit');
+  if (overdue.length) {
+    const byDomain = new Map<Domain, number>();
+    for (const a of overdue) byDomain.set(a.domain, (byDomain.get(a.domain) ?? 0) + 1);
+    const top = [...byDomain.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const crewsFree = s.crews - s.crewsBusy;
+    out.push({
+      id: `overdue:${overdue.length}`,
+      level: overdue.length >= 3 ? 'warn' : 'info',
+      text: `${overdue.length === 1 ? `${overdue[0].name} is` : `${overdue.length} assets are`} overdue for service and wearing ${SIM_CONFIG.overdueDecayMult}x faster.${crewsFree > 0 ? ` ${crewsFree} crew${crewsFree === 1 ? ' is' : 's are'} free.` : ' All crews are busy.'}`,
+      action: overdue.length === 1 ? { label: 'Open', view: DOMAIN_VIEW[overdue[0].domain], assetId: overdue[0].id } : { label: 'Show', view: DOMAIN_VIEW[top] },
+    });
+  }
+
+  if (s.status === 'running') {
+    const known = s.events.filter((e) => isActive(e) && e.reportedAt <= s.hour);
+    // Reports about to escalate with nothing done.
+    for (const e of known) {
+      const left = e.deadline - s.hour;
+      if (e.status === 'reported' && left <= 4 && left >= 0) {
+        out.push({
+          id: `deadline:${e.id}`,
+          level: e.severity >= 3 ? 'urgent' : 'warn',
+          text: `${e.title} (${name(e.region)}) escalates in ${Math.max(1, Math.round(left))}h and nothing has been ordered.`,
+          action: { label: 'Open', view: 'global', eventId: e.id },
+        });
+      }
+    }
+    // Uncertain reports left sitting.
+    const stale = known.filter((e) => e.status === 'reported' && e.confidence < 55 && s.hour - e.reportedAt >= 6 && e.deadline - s.hour > 4);
+    if (stale.length) {
+      out.push({
+        id: `stale:${stale.map((e) => e.id).join(',')}`,
+        level: 'info',
+        text: `${stale.length === 1 ? 'A low-confidence report has' : `${stale.length} low-confidence reports have`} waited 6h or more. A confirmation (${SIM_CONFIG.confirmCost} cr) would settle ${stale.length === 1 ? 'it' : 'them'}.`,
+        action: { label: 'Open', view: 'intel', eventId: stale[0].id },
+      });
+    }
+    // Running out of money with work still open.
+    if (s.credits < 150 && known.length) {
+      out.push({
+        id: `credits:${Math.floor(s.hour / 24)}`,
+        level: 'warn',
+        text: `Only ${Math.round(s.credits)} credits left with ${known.length} event${known.length === 1 ? '' : 's'} open. Hold back on new investments.`,
+        action: { label: 'Logistics', view: 'logistics' },
+      });
+    }
+  }
+
+  return out.sort((a, b) => ORDER[a.level] - ORDER[b.level]);
+}

@@ -292,7 +292,7 @@ export const COMMAND_LEVELS: Record<CommandLevel, {
     credits: 0, eventFrequency: 1, falseMult: 1, waveSize: 1, surpriseMult: 1, decoyMult: 1,
   },
   commander: {
-    label: 'Commander', description: 'A tighter budget, more incidents and false reports, and bigger attacks that strike outside the forecast more often.',
+    label: 'Commander', description: 'A tighter budget, more incidents and false reports, and bigger attacks that strike outside the forecast more often. The adjutant starts off.',
     credits: -250, eventFrequency: 1.3, falseMult: 1.3, waveSize: 1.3, surpriseMult: 1.6, decoyMult: 1.4,
   },
 };

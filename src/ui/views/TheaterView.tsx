@@ -1,5 +1,6 @@
 // Tactical Theater: watch threat waves play out, track magazines and resupply during a phase.
 import { useEffect, useRef, useState } from 'react';
+import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
@@ -130,10 +131,18 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
 }
 
 export function TheaterView({ s }: { s: SimState }) {
+  const ui = useUI();
   const t = s.tactical;
   const inbound = incomingWaves(s);
   const lastResolved = t ? [...t.waves].filter((w) => w.resolved).sort((a, b) => b.atHour - a.atHour)[0] : undefined;
   const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  // Another screen (the adjutant) can ask for a region.
+  useEffect(() => {
+    if (ui.theaterFocus) {
+      setRegion(ui.theaterFocus);
+      ui.setTheaterFocus(null);
+    }
+  }, [ui.theaterFocus]);
   const [replayId, setReplayId] = useState<string | null>(lastResolved?.id ?? null); // wave shown in the summary
   const [playing, setPlaying] = useState<string | null>(null); // wave being replayed on demand
   const [selected, setSelected] = useState<string | null>(null);
