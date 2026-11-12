@@ -1,5 +1,6 @@
 // Button with display and accessibility settings: high contrast, reduced motion, screen-reader announcements.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { a11y, setA11y, subscribeA11y } from './settings';
 import { PacingSettings } from '../PausePrompt';
 
@@ -36,6 +37,8 @@ export function DisplayControl() {
       <button className="btn px-2" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog" title="Display & accessibility" aria-label="Display and accessibility settings">
         <span aria-hidden className="font-sans text-[13px] font-bold normal-case leading-none">Aa</span>
       </button>
+      {/* Dim the page behind the popover, and close it on a click outside. */}
+      {open && createPortal(<div className="fixed inset-0 z-[35] bg-black/40" aria-hidden onMouseDown={() => setOpen(false)} />, document.body)}
       {open && (
         <div role="dialog" aria-label="Display and accessibility" className="panel fadein absolute right-0 top-full z-[60] mt-1 max-h-[80vh] w-72 overflow-y-auto border-ops-cyan/40 bg-ops-panel p-3">
           <div className="label mb-2">Display & accessibility</div>

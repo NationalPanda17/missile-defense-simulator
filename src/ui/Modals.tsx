@@ -192,7 +192,11 @@ export function AssetModal({ s }: { s: SimState }) {
         </div>
         <div>
           <div className="label mb-1">Condition history (6h samples)</div>
-          <Sparkline data={a.history} w={420} h={40} color={DOMAIN_COLOR[a.domain]} />
+          {a.history.length >= 2 ? (
+            <div className="max-w-full overflow-hidden"><Sparkline data={[...a.history, a.condition]} w={420} h={40} color={DOMAIN_COLOR[a.domain]} /></div>
+          ) : (
+            <p className="text-[11px] text-ops-dim">No history yet: condition is sampled every 6 hours once the phase is running. Now {Math.round(a.condition)}%.</p>
+          )}
         </div>
         {events.length > 0 && (
           <div><div className="label mb-1">Linked events</div>{events.map((e) => <button key={e.id} className="mr-2 text-ops-amber hover:underline" onClick={() => { ui.openAsset(null); ui.openEvent(e.id); }}>{e.id} {e.title}</button>)}</div>

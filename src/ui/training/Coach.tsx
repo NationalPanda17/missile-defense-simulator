@@ -46,13 +46,21 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     if (st?.view && !st.check) ui.setView(st.view as ViewId);
   };
 
-  // Hold the clock while the player reads or answers.
+  // Hold the clock whenever a new step opens, so the lesson never runs on while the player reads. Steps that wait for
+  // time to pass are the exception. This is the coach's pause, not the player's: it is not written to the log.
   useEffect(() => {
-    if ((isRead || step.quiz) && s.status === 'running' && !s.paused) dispatch({ type: 'setPaused', paused: true });
+    if (!step.wait && s.status === 'running' && !s.paused) {
+      s.paused = true;
+      store.notify();
+    }
   }, [i]);
 
   // Tick a step off as soon as its check passes.
-  const passed = !!step.check?.({ s, view: ui.view, region: ui.region, eventId: ui.eventId, assetId: ui.assetId, since });
+  const passed = !!step.check?.({
+    s, view: ui.view, region: ui.region, eventId: ui.eventId, assetId: ui.assetId,
+    // Work done before the step opened counts too (players run ahead), except for steps that must happen now.
+    since: step.fresh ? since : { cmd: 0, hour: 0 },
+  });
   useEffect(() => {
     if (!passed || last) return;
     setJustDone(step.title);
@@ -110,16 +118,16 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   }
 
   return (
-    <div ref={ref} className={`panel fadein fixed bottom-2 left-2 right-2 z-[55] max-h-[45vh] overflow-y-auto border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[60vh] ${DOCK} ${DOCK_OPEN}`} role="complementary" aria-label="Training coach">
+    <div ref={ref} className={`panel fadein fixed bottom-2 left-2 right-2 z-[55] flex max-h-[45vh] flex-col border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[60vh] ${DOCK} ${DOCK_OPEN}`} role="complementary" aria-label="Training coach">
       {spot}
-      <div className="panel-title sticky top-0 z-10 bg-ops-panel">
+      <div className="panel-title shrink-0">
         <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
           <button className="btn px-2" onClick={academy} title="Training Academy">Academy</button>
           <button className="btn px-2" onClick={() => setOpen(false)} aria-label="Minimise coach">▾</button>
         </span>
       </div>
-      <div className="space-y-2 p-3">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         <div className="flex gap-0.5" aria-label={`Step ${i + 1} of ${lesson.steps.length}`}>
           {lesson.steps.map((x, k) => (
             <span key={x.id} title={x.title} className={`h-1.5 flex-1 rounded ${k < i ? 'bg-ops-green' : k === i ? 'bg-ops-cyan' : 'bg-ops-line'}`} />
@@ -167,16 +175,18 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
         {step.check && !timeUp && (
           <div className="flex items-center gap-2 text-[11px] text-ops-dim">
             <span className="blink inline-block h-2 w-2 rounded-full bg-ops-cyan" />
-            Waiting for you…
+            {step.wait ? 'Let time run…' : 'Waiting for you… (the clock is paused while you read)'}
             {s.status === 'running' && s.paused && !s.turnBased && (
-              <button className="btn ml-auto" onClick={() => dispatch({ type: 'setPaused', paused: false })}>▶ Resume time</button>
+              <button className={`btn ml-auto ${step.wait ? 'btn-primary' : ''}`} onClick={() => dispatch({ type: 'setPaused', paused: false })}>▶ Resume time</button>
             )}
           </div>
         )}
         {step.hint && !hint && <button className="btn text-[11px]" onClick={() => setHint(true)}>Show hint</button>}
         {step.hint && hint && <p className="rounded border border-ops-line p-2 text-[11px] leading-relaxed text-ops-dim"><b className="text-white">Hint: </b>{step.hint}</p>}
-
-        <div className="flex flex-wrap justify-between gap-2 pt-1">
+      </div>
+      {/* Always visible: never scrolled away or clipped by the screen edge. */}
+      <div className="shrink-0 border-t border-ops-line px-3 py-2">
+        <div className="flex flex-wrap justify-between gap-2">
           <button className="btn" disabled={i === 0} onClick={() => go(i - 1)}>◂ Back</button>
           {step.view && <button className="btn" onClick={() => ui.setView(step.view as ViewId)}>Show me</button>}
           {timeUp ? <button className="btn btn-primary" onClick={restart}>Restart lesson</button>

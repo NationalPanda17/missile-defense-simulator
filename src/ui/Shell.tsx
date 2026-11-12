@@ -47,7 +47,7 @@ export function TopBar({ s }: { s: SimState }) {
   const phaseHour = s.hour - s.phaseStartHour;
   const running = s.status === 'running';
   return (
-    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ops-line bg-ops-panel/90 px-3 py-2 backdrop-blur">
+    <header className="relative z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ops-line bg-ops-panel/90 px-3 py-2 backdrop-blur">
       <div className="flex items-center gap-2">
         <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
           <circle cx="13" cy="13" r="11" fill="none" stroke="#38d6f5" strokeOpacity=".5" />
