@@ -6,6 +6,7 @@ import { SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
+import { normalizeTactical } from './scenarios';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, ThreatAxis, ThreatClass, ThreatWave, Track,
 } from './types';
@@ -137,15 +138,23 @@ function makeTrack(t: TacticalState, region: RegionId, cls: ThreatClass, axis: T
 export function scheduleWaves(s: SimState, fromHour?: number) {
   const t = s.tactical;
   if (!t?.enabled) return;
-  const profile = TACTICAL_CONFIG.waves[s.phaseIndex];
+  const base = TACTICAL_CONFIG.waves[s.phaseIndex];
   const phase = s.phases[s.phaseIndex];
   t.waves = t.waves.filter((w) => w.phaseIndex !== s.phaseIndex);
   t.forecast = [];
-  if (!profile || !phase) return;
+  if (!base || !phase) return;
+  // Apply the scenario's multipliers. The standard scenario (all 1s) reproduces the base profile exactly.
+  const sc = normalizeTactical(s.settings.tactical);
+  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c]])) as Record<ThreatClass, number>;
+  const profile = {
+    count: Math.max(1, Math.round(base.count * sc.waveCount)),
+    tracks: [Math.max(1, Math.round(base.tracks[0] * sc.waveSize)), Math.max(1, Math.round(base.tracks[1] * sc.waveSize))] as const,
+    mix: CLASSES.some((c) => scaledMix[c] > 0) ? scaledMix : base.mix, // never leave a phase with no possible threat
+  };
 
   // Forecast: regions under the most strain are the likeliest targets.
   const pool = [...REGION_IDS];
-  for (let i = 0; i < TACTICAL_CONFIG.forecastRegions && pool.length; i++) {
+  for (let i = 0; i < sc.forecastRegions && pool.length; i++) {
     const id = weighted(t, pool.map((r) => ({ item: r, w: 20 + (100 - s.regions[r].stability) })));
     t.forecast.push(id);
     pool.splice(pool.indexOf(id), 1);
@@ -162,7 +171,7 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const targets: { region: RegionId; surprise: boolean }[] = [];
   for (let i = 0; i < hours.length; i++) {
     if (i < t.forecast.length) targets.push({ region: t.forecast[i], surprise: false });
-    else if (others.length && rand(t) < TACTICAL_CONFIG.surpriseRate) targets.push({ region: others[Math.floor(rand(t) * others.length)], surprise: true });
+    else if (others.length && rand(t) < sc.surpriseRate) targets.push({ region: others[Math.floor(rand(t) * others.length)], surprise: true });
     else targets.push({ region: t.forecast[Math.floor(rand(t) * t.forecast.length)], surprise: false });
   }
   for (let i = targets.length - 1; i > 0; i--) {
@@ -297,7 +306,8 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   const region = s.regions[w.region];
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
-  const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * 0.6);
+  const decoyScale = normalizeTactical(s.settings.tactical).decoys;
+  const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * 0.6 * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);
     if (tr) w.tracks.push(tr);

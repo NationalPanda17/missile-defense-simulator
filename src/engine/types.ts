@@ -262,6 +262,18 @@ export interface Counters {
   responseTimes: number[]; // hours between report and response
 }
 
+/** Campaign tactical-layer scenario. Multipliers apply on top of each phase's profile in TACTICAL_CONFIG.waves. */
+export interface TacticalSettings {
+  preset: string; // preset id, or 'custom'
+  waveCount: number; // × waves per phase
+  waveSize: number; // × threats per wave
+  mix: Record<ThreatClass, number>; // × weight of each threat class
+  surpriseRate: number; // chance each extra wave strikes outside the forecast
+  forecastRegions: number; // regions named in each forecast
+  decoys: number; // × false tracks
+  budget: number; // extra starting credits (negative = less)
+}
+
 export interface ScenarioSettings {
   name: string;
   mode: GameMode;
@@ -275,6 +287,7 @@ export interface ScenarioSettings {
   regionStability: Partial<Record<RegionId, number>>;
   regionInfrastructure: Partial<Record<RegionId, number>>;
   domainCondition: Partial<Record<Domain, number>>;
+  tactical?: TacticalSettings; // campaign only; absent means the standard scenario
 }
 
 // ── Tactical layer ─────────────────────────────────────────────────────

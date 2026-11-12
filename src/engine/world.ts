@@ -2,6 +2,7 @@
 import { CAMPAIGN_PHASES, REGION_DEFS, SIM_CONFIG } from './config';
 import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
+import { normalizeTactical } from './scenarios';
 import { createTactical, scheduleWaves } from './tactical';
 import type {
   Asset, AssetRole, Domain, GameMode, PhaseConfig, Region, RegionId, ScenarioSettings, SimState,
@@ -247,6 +248,10 @@ export function createInitialState(settings: ScenarioSettings): SimState {
   // Settle derived regional values so the opening briefing shows a coherent picture.
   recomputeMetrics(state);
   state.tactical = createTactical(state);
+  if (state.tactical.enabled && settings.tactical) {
+    state.settings.tactical = normalizeTactical(settings.tactical);
+    state.credits = Math.max(0, state.credits + state.settings.tactical.budget);
+  }
   scheduleWaves(state); // the first briefing forecasts phase 1's waves
   return state;
 }

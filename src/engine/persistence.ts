@@ -98,6 +98,7 @@ export function stateShapeError(x: unknown): string | null {
   if (!Number.isInteger(s.hour) || s.hour < 0) return 'state.hour must be a non-negative integer';
   if (!s.settings || typeof s.settings.name !== 'string' || !MODES.includes(s.settings.mode)) return 'state.settings is invalid';
   if (!Number.isFinite(s.settings.seed)) return 'state.settings.seed is invalid';
+  if (s.settings.tactical !== undefined && (typeof s.settings.tactical !== 'object' || s.settings.tactical === null)) return 'state.settings.tactical is invalid';
   if (!STATUSES.includes(s.status)) return 'state.status is invalid';
   if (!Array.isArray(s.phases) || !s.phases.length || !Number.isInteger(s.phaseIndex) || !s.phases[s.phaseIndex]) return 'state.phases is invalid';
   if (!s.regions || typeof s.regions !== 'object' || Object.keys(s.regions).length !== 7) return 'state.regions is invalid';

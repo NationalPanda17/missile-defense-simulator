@@ -10,4 +10,5 @@ export * from './scoring';
 export * from './persistence';
 export * from './equipment';
 export * from './tactical';
+export * from './scenarios';
 export { clamp } from './rng';

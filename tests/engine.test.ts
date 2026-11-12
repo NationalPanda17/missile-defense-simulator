@@ -3,7 +3,8 @@ import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
   TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
-  tacticalReport, lessonsLearned,
+  tacticalReport, lessonsLearned, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
+  exportTacticalScenario, importTacticalScenario,
 } from '../src/engine';
 import type { SimState } from '../src/engine';
 
@@ -409,5 +410,79 @@ describe('tactical layer: engine', () => {
     expect(chordInside([0, 0], [100, 0], [50, 0], 10)).toBeCloseTo(20, 6);
     expect(chordInside([0, 0], [100, 0], [50, 30], 10)).toBe(0);
     expect(chordInside([0, 0], [100, 0], [100, 0], 10)).toBeCloseTo(10, 6); // target inside the circle
+  });
+});
+
+describe('tactical layer: scenarios', () => {
+  const waves = (s: SimState) => s.tactical!.waves.map((w) => [w.region, w.atHour, w.tracks.map((x) => x.cls).join(',')]);
+
+  it('the standard preset plays exactly like no scenario', () => {
+    const plain = createInitialState(defaultSettings('campaign', { seed: 21 }));
+    const std = createInitialState(defaultSettings('campaign', { seed: 21, tactical: standardTactical() }));
+    expect(waves(std)).toEqual(waves(plain));
+    expect(std.credits).toBe(plain.credits);
+  });
+
+  it('presets are valid, fictional setups that change the threat picture', () => {
+    for (const p of TACTICAL_PRESETS) {
+      expect(normalizeTactical(p.settings), p.id).toEqual(p.settings);
+      expect(p.description.length, p.id).toBeGreaterThan(20);
+    }
+    const count = (id: string) => {
+      const p = TACTICAL_PRESETS.find((x) => x.id === id)!;
+      let total = 0;
+      let ballistic = 0;
+      for (const seed of [1, 2, 3]) {
+        const s = createInitialState(defaultSettings('campaign', { seed, tactical: p.settings }));
+        for (const w of s.tactical!.waves) for (const tr of w.tracks) { total++; if (tr.cls === 'ballistic') ballistic++; }
+      }
+      return { total, ballistic, waves: createInitialState(defaultSettings('campaign', { seed: 1, tactical: p.settings })).tactical!.waves.length };
+    };
+    const std = count('standard');
+    expect(count('long-night').waves).toBeGreaterThan(std.waves);
+    expect(count('coastal-saturation').total).toBeGreaterThan(std.total);
+    expect(count('high-arc').ballistic).toBeGreaterThanOrEqual(std.ballistic);
+    const thin = createInitialState(defaultSettings('campaign', { seed: 1, tactical: TACTICAL_PRESETS.find((x) => x.id === 'thin-budget')!.settings }));
+    expect(thin.tactical!.forecast.length).toBe(1);
+    expect(thin.credits).toBe(1200 - 400);
+  });
+
+  it('applies the defense budget only when the tactical layer is on', () => {
+    const tactical = { ...standardTactical(), budget: 500 };
+    expect(createInitialState(defaultSettings('campaign', { seed: 2, tactical })).credits).toBe(1700);
+    expect(createInitialState(defaultSettings('crisis', { seed: 2, tactical })).credits).toBe(defaultSettings('crisis').startCredits);
+  });
+
+  it('exports and imports scenarios, rejecting other files and clamping values', () => {
+    const coastal = TACTICAL_PRESETS.find((x) => x.id === 'coastal-saturation')!.settings;
+    const back = importTacticalScenario(exportTacticalScenario('My drills', coastal))!;
+    expect(back.name).toBe('My drills');
+    expect(back.tactical).toEqual({ ...coastal, preset: 'custom' });
+
+    expect(importTacticalScenario('not json')).toBeNull();
+    expect(importTacticalScenario(JSON.stringify({ kind: 'something-else', v: 1, tactical: {} }))).toBeNull();
+    expect(importTacticalScenario(JSON.stringify({ kind: 'mds-tactical-scenario', v: 99, tactical: {} }))).toBeNull();
+    // A save file is not a scenario file.
+    expect(importTacticalScenario(exportJSON(createInitialState(defaultSettings('campaign', { seed: 1 }))))).toBeNull();
+
+    const wild = importTacticalScenario(JSON.stringify({
+      kind: 'mds-tactical-scenario', v: 1, name: '',
+      tactical: { waveCount: 50, waveSize: -3, mix: { ballistic: 99, rocket: 'x' }, surpriseRate: 2, forecastRegions: 9, decoys: NaN, budget: 1e9 },
+    }))!;
+    expect(wild.name).toBe('Imported scenario');
+    expect(wild.tactical.waveCount).toBe(TACTICAL_LIMITS.waveCount[1]);
+    expect(wild.tactical.waveSize).toBe(TACTICAL_LIMITS.waveSize[0]);
+    expect(wild.tactical.mix.ballistic).toBe(TACTICAL_LIMITS.mix[1]);
+    expect(wild.tactical.mix.rocket).toBe(1);
+    expect(wild.tactical.surpriseRate).toBe(TACTICAL_LIMITS.surpriseRate[1]);
+    expect(wild.tactical.forecastRegions).toBe(TACTICAL_LIMITS.forecastRegions[1]);
+    expect(wild.tactical.decoys).toBe(1);
+    expect(wild.tactical.budget).toBe(TACTICAL_LIMITS.budget[1]);
+  });
+
+  it('never leaves a phase without possible threats', () => {
+    const only = { ...standardTactical(), mix: { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 3 } };
+    const s = createInitialState(defaultSettings('campaign', { seed: 5, tactical: only })); // phase 1 has no ballistic weight
+    expect(s.tactical!.waves.every((w) => w.tracks.length > 0)).toBe(true);
   });
 });
