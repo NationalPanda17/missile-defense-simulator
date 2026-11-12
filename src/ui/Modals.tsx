@@ -1,11 +1,11 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, statusColor, tone } from './components/ui';
+import { Bar, Chip, ConfirmDelete, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE_TEXT, statusColor, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { loadProgress } from './training/progress';
@@ -409,14 +409,27 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             }} />
           </div>
           {saves.length === 0 ? <div className="text-ops-dim">No saved operations in this browser.</div> : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {saves.map((m) => (
-                <button key={m.slot} className="rounded border border-ops-line p-2 text-left hover:border-ops-cyan/50" onClick={() => { const st = loadGame(m.slot as Slot); if (st) store.load(st); }}>
-                  <div className="flex justify-between"><span className="text-white">{m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} · {m.name}</span><span className="text-ops-dim">T+{m.hour}h</span></div>
-                  <div className="text-[10px] text-ops-dim">{m.mode} · {m.phase} · {new Date(m.savedAt).toLocaleString()}</div>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {saves.map((m) => (
+                  <div key={m.slot} className="flex items-stretch gap-1">
+                    <button className="min-w-0 flex-1 rounded border border-ops-line p-2 text-left hover:border-ops-cyan/50" onClick={() => { const st = loadGame(m.slot as Slot); if (st) store.load(st); }}>
+                      <div className="flex justify-between gap-2"><span className="truncate text-white">{m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} · {m.name}</span><span className="shrink-0 text-ops-dim">T+{m.hour}h</span></div>
+                      <div className="text-[10px] text-ops-dim">{m.mode} · {m.phase} · {new Date(m.savedAt).toLocaleString()}</div>
+                    </button>
+                    <ConfirmDelete className="px-2" label={`Delete ${m.slot === 'auto' ? 'the autosave' : m.slot.toUpperCase()}`}
+                      onConfirm={() => { deleteSave(m.slot as Slot); store.toast('info', `${m.slot === 'auto' ? 'Autosave' : m.slot.toUpperCase()} deleted.`); store.notify(); }} />
+                  </div>
+                ))}
+              </div>
+              {saves.length > 1 && (
+                <div className="mt-2 flex justify-end">
+                  <ConfirmDelete label="Delete all browser saves" text="Delete all saves" confirmText={`Delete all ${saves.length}?`}
+                    onConfirm={() => { for (const m of saves) deleteSave(m.slot as Slot); store.toast('info', 'All browser saves deleted.'); store.notify(); }} />
+                </div>
+              )}
+              <p className="mt-1 text-[10px] text-ops-dim">Deleting can’t be undone. Server saves and exported files are not affected.</p>
+            </>
           )}
         </div>
         <div className="grid gap-3 lg:grid-cols-[1fr_2fr]">

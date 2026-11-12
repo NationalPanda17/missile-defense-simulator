@@ -206,3 +206,23 @@ export function statusColor(a: Asset, hour: number) {
   if (a.status === 'degraded') return TONE_HEX.amber;
   return TONE_HEX.green;
 }
+
+/**
+ * A delete button that asks first: the first click turns it into "Delete?", a second click within a few seconds
+ * deletes. Moving away or waiting cancels.
+ */
+export function ConfirmDelete({ onConfirm, label, text = '✕', confirmText = 'Delete?', className = '' }: { onConfirm: () => void; label: string; text?: string; confirmText?: string; className?: string }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  return (
+    <button type="button" className={`btn ${armed ? 'btn-danger' : ''} ${className}`} aria-label={armed ? `Confirm: ${label}` : label} title={label}
+      onClick={(e) => { e.stopPropagation(); if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}
+      onBlur={() => setArmed(false)}>
+      {armed ? confirmText : text}
+    </button>
+  );
+}
