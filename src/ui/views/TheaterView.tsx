@@ -235,7 +235,7 @@ export function TheaterView({ s }: { s: SimState }) {
 
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Panel title={<span className="flex flex-wrap items-center gap-2">Theater · {s.regions[region].name} <ConditionChips s={s} region={region} /></span>} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
+        <Panel className="min-w-0" title={<span className="flex flex-wrap items-center gap-2">Theater · {s.regions[region].name} <ConditionChips s={s} region={region} /></span>} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
           {inbound.some((x) => x.wave.region === region) && (
             <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
               <div className="label text-ops-red">Wave inbound · what you can do now</div>
@@ -243,7 +243,7 @@ export function TheaterView({ s }: { s: SimState }) {
             </div>
           )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            {alertActive(s, region) ? (
+            {inbound.some((x) => x.wave.region === region) ? null : alertActive(s, region) ? (
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
             ) : (
               <button data-coach="alert" className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
@@ -260,11 +260,16 @@ export function TheaterView({ s }: { s: SimState }) {
               </span>
             )}
           </div>
-          <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
-            onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
-            onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
-            {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} />}
-          </TheaterMap>
+          {/* Phones: full-size map that scrolls sideways, so systems and threats stay readable and taps land. */}
+          <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0">
+            <div className="min-w-[560px] sm:min-w-0">
+              <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
+                onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
+                onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
+                {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} />}
+              </TheaterMap>
+            </div>
+          </div>
           <div className="mt-1.5"><MapLegend region={region} /></div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
             {replay && replay.applied === false ? (

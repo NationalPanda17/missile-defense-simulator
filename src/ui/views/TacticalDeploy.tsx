@@ -217,6 +217,7 @@ export function DeployPanel({ s }: { s: SimState }) {
   const [equipment, setEquipment] = useState<string | null>(null);
   const [selectedDep, setSelectedDep] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const [pane, setPane] = useState<'map' | 'systems'>('map'); // phones only
   const spec = equipment ? EQUIPMENT_MAP.get(equipment)! : null;
   const dep = t.deployments.find((d) => d.id === selectedDep && d.region === region) ?? null;
   const depSpec = dep ? EQUIPMENT_MAP.get(dep.equipmentId)! : null;
@@ -279,22 +280,33 @@ export function DeployPanel({ s }: { s: SimState }) {
         ))}
       </div>
 
-      {/* Phones: map, catalog, then coverage. Wider screens: map and coverage on the left, catalog on the right. */}
+      {/* Phones: one pane at a time (Map or Systems); picking a system jumps back to the map. */}
+      <div className="order-3 flex gap-1 md:hidden" role="tablist" aria-label="Deploy view">
+        <button role="tab" aria-selected={pane === 'map'} className={`btn flex-1 ${pane === 'map' ? 'btn-active' : ''}`} onClick={() => setPane('map')}>Map{spec ? ` · placing ${spec.name}` : ''}</button>
+        <button role="tab" aria-selected={pane === 'systems'} className={`btn flex-1 ${pane === 'systems' ? 'btn-active' : ''}`} onClick={() => setPane('systems')}>Systems</button>
+      </div>
+      {/* Wider screens: map and coverage on the left, catalog on the right. */}
       <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
         {/* The map stays put while the catalog scrolls, so a click after picking a system lands where it looks. */}
-        <div className="min-w-0 space-y-2 md:sticky md:top-0 md:col-start-1 md:row-start-1 md:self-start" data-coach="deploy-map">
+        <div className={`min-w-0 space-y-2 md:sticky md:top-0 md:col-start-1 md:row-start-1 md:block md:self-start ${pane === 'map' ? '' : 'hidden'}`} data-coach="deploy-map">
           {/* Always the same height, so picking a system never moves the map under the pointer. */}
           <div className={`flex min-h-[30px] items-center justify-between gap-2 rounded border px-2 py-1 text-[11px] ${spec || (moving && depSpec) ? 'border-ops-cyan/60 bg-ops-cyan/10' : 'border-ops-line'}`} role="status">
             <span className={spec || (moving && depSpec) ? 'text-white' : 'text-ops-dim'}>
               {moving && depSpec ? <>Moving <b>{depSpec.name}</b>: click its new spot on the map. Esc cancels.</>
                 : spec ? <>Placing <b>{spec.name}</b> ({equipmentCost(spec)} cr): click a spot{spec.domain === 'sea' ? ' at sea' : spec.domain === 'air' ? '' : ' on land'}. The outline follows your pointer. Esc cancels.</>
-                : 'Pick a system from the catalog, then click the map to place it.'}
+                : <><span className="md:hidden">Open Systems, pick one, then tap the map to place it.</span><span className="hidden md:inline">Pick a system from the catalog, then click the map to place it.</span></>}
             </span>
             {(spec || moving) && <button className="btn px-2 py-0" onClick={() => { setEquipment(null); setMoving(false); }}>Cancel</button>}
           </div>
-          <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
-            highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
-            onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
+          {/* Phones: the map is drawn at full size and scrolls sideways, so taps land precisely. */}
+          <div className="-mx-1 overflow-x-auto px-1 md:mx-0 md:overflow-visible md:px-0">
+            <div className="min-w-[560px] md:min-w-0">
+              <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
+                highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
+                onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
+            </div>
+          </div>
+          <p className="text-[10px] text-ops-dim md:hidden">Swipe the map sideways to see the whole theater.</p>
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
@@ -321,14 +333,14 @@ export function DeployPanel({ s }: { s: SimState }) {
             </div>
           )}
         </div>
-        <div className="min-w-0 md:col-start-2 md:row-span-2 md:row-start-1">
+        <div className={`min-w-0 md:col-start-2 md:row-span-2 md:row-start-1 md:block ${pane === 'systems' ? '' : 'hidden'}`}>
           <div className="label mb-1 flex items-center justify-between">
             <span>Equipment</span>
             <span className="flex gap-1">{THREAT_CLASSES.map((c) => <Chip key={c} title={THREAT_LABELS[c]}>{CLASS_SHORT[c]}</Chip>)}</span>
           </div>
-          <Catalog s={s} selected={equipment} onSelect={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} />
+          <Catalog s={s} selected={equipment} onSelect={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); if (id) setPane('map'); }} />
         </div>
-        <div className="min-w-0 md:col-start-1 md:row-start-2">
+        <div className={`min-w-0 md:col-start-1 md:row-start-2 md:block ${pane === 'map' ? '' : 'hidden'}`}>
           <div className="label mb-1 flex items-center justify-between">
             <span>Site coverage · {s.regions[region].name}</span>
             <span className="normal-case tracking-normal">best kill rate per threat</span>
