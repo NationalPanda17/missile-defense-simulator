@@ -150,6 +150,12 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
   3. Chance per shot = kill rate × availability (condition, maintenance) × detection × regional comms factor.
   4. A track that gets through lowers its site's integrity, plus the region's infrastructure and stability.
 - **Stats.** `tactical.stats` counts tracks, stopped, leaked, decoys engaged, shots and site damage, for the AAR.
+- **Scenarios** (`engine/scenarios.ts`). `ScenarioSettings.tactical` (optional; absent = Standard) multiplies each
+  phase's wave count, wave size and threat-class weights, and sets forecast regions, surprise chance, false-track
+  scale and an extra starting budget. `normalizeTactical` clamps every value to `TACTICAL_LIMITS`, so untrusted
+  files and old saves are safe. The Standard preset reproduces the base profile exactly (same random draws).
+  Files are `{ kind: 'mds-tactical-scenario', v: 1, name, tactical }`; `importTacticalScenario` rejects other kinds
+  and versions. Presets are fictional and never named after real events.
 - **UI helpers.** `regionProtection` (share of live site value within range of a system that can engage:
   protected ≥ 70%, thin ≥ 30%, else exposed), `warningHours` (2h + up to 6h more with awareness) and
   `incomingWaves` (waves inside their warning window) feed the *Tactical Theater* view

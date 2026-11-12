@@ -90,6 +90,12 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    point defense at the most important ones, and sensors to see threats early. During the phase,
    watch waves play out in the **Tactical Theater** (X) and resupply systems that run low.
    Threat protection is 15% of the campaign score.
+
+   Pick a **tactical scenario** on the campaign card: *Standard*, *Coastal Saturation* (drone
+   swarms), *Long Night* (many cruise-missile waves), *High Arc* (ballistic-heavy) or *Thin
+   Budget*. **Customize…** opens a builder for wave count and size, threat mix, forecast regions,
+   surprise chance, false tracks and defense budget, with a per-phase preview. Scenarios export
+   and import as versioned JSON files.
 7. At the end, the **After-Action Review** scores your command and explains what helped and
    what hurt.
 
@@ -186,7 +192,8 @@ missile-defense-simulator/
     │   ├── scoring.ts            Objectives, score breakdown, lessons learned
     │   ├── persistence.ts        Save/load/export
     │   ├── equipment.ts          Tactical layer: real air defense equipment catalog
-    │   ├── tactical.ts           Tactical layer: state defaults and validation
+    │   ├── tactical.ts           Tactical layer: theaters, waves, resolution, helpers
+    │   ├── scenarios.ts          Tactical scenario presets, limits, export/import
     │   └── index.ts
     ├── shared/api.ts             Types shared by the API and its client
     ├── store/simStore.ts         Real-time loop, autosave + server sync, toasts; React binding

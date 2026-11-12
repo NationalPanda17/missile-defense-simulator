@@ -1,5 +1,6 @@
 // Reusable presentational primitives.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { Domain, Severity } from '../../engine';
 
 export const tone = (v: number) => (v >= 75 ? 'green' : v >= 55 ? 'cyan' : v >= 35 ? 'amber' : 'red');
@@ -156,7 +157,9 @@ export function Modal({ title, onClose, children, wide = false, footer }: { titl
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
-  return (
+  // Portalled to <body>: a `fixed` element inside a panel with backdrop-filter would be positioned relative to
+  // that panel instead of the viewport.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div className={`panel fadein flex max-h-full w-full flex-col ${wide ? 'max-w-5xl' : 'max-w-2xl'} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
         <header className="panel-title">
@@ -166,7 +169,8 @@ export function Modal({ title, onClose, children, wide = false, footer }: { titl
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
         {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-ops-line px-4 py-3">{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

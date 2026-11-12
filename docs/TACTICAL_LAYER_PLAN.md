@@ -1,6 +1,6 @@
 # Plan: Tactical Defense Layer
 
-Status: stages 1–5 built; stage 6 (scenario builder) to come. Inspired by the deployment-and-waves style of airdefense.dev. No code, data or art
+Status: all six stages built. Inspired by the deployment-and-waves style of airdefense.dev. No code, data or art
 is copied from it; only general game ideas are borrowed.
 
 ## Goal

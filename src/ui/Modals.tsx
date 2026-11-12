@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { useRef, useState } from 'react';
 import {
-  REGION_IDS, SIM_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
+  REGION_IDS, SIM_CONFIG, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -10,6 +10,7 @@ import { useUI, type ViewId } from './uiState';
 import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { DeployPanel } from './views/TacticalDeploy';
+import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
   const v = Math.abs(f.value).toFixed(f.value % 1 ? 1 : 0);
@@ -303,6 +304,14 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   useStoreVersion();
   const fileRef = useRef<HTMLInputElement>(null);
   const saves = listSaves();
+  const [scenario, setScenario] = useState<ChosenScenario>(loadChosenScenario);
+  const tacticalOn = TACTICAL_CONFIG.enabledInCampaign;
+  const start = (mode: 'campaign' | 'crisis' | 'training') => {
+    if (mode !== 'campaign' || !tacticalOn) return store.newGame(defaultSettings(mode));
+    const base = defaultSettings('campaign');
+    const std = scenario.tactical.preset === 'standard';
+    store.newGame({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical });
+  };
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
     { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours.', cta: 'Enter crisis' },
@@ -321,7 +330,10 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             <div key={m.id} className="panel flex flex-col p-4">
               <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{m.title}</div>
               <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{m.desc}</p>
-              <button className="btn btn-primary mt-3" onClick={() => store.newGame(defaultSettings(m.id))}>{m.cta}</button>
+              {m.id === 'campaign' && tacticalOn && (
+                <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
+              )}
+              <button className="btn btn-primary mt-3" onClick={() => start(m.id)}>{m.cta}</button>
             </div>
           ))}
           <div className="panel flex flex-col p-4">
@@ -356,7 +368,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
           <ServerSavesPanel canSave={false} />
           <ServiceRecord limit={6} />
         </div>
-        <p className="text-center text-[10px] text-ops-dim">All countries, equipment, names and figures are fictional. Mechanics are abstract strategic management — not a model of real systems.</p>
+        <p className="text-center text-[10px] text-ops-dim">The world, its countries, sites and scenarios are fictional, and no scenario recreates a real attack. The campaign's tactical layer uses real air defense systems with figures from official public statements, or made up where none exist.</p>
       </div>
     </div>
   );
