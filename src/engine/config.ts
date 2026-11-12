@@ -188,12 +188,19 @@ export const DECOY_EFFICIENCY_PENALTY = { perShot: 0.5, max: 10 };
 export const TACTICAL_CONFIG = {
   /** Turns the tactical layer on for new and loaded campaigns. A browser can opt out with ?tactical=0. */
   enabledInCampaign: true,
-  /** Credits = creditsScale × (unit cost in $M) ^ costExponent, at least minCost. Compresses a 0.1–2200 $M spread. */
-  creditsScale: 4,
+  /**
+   * Credits = creditsScale × (unit cost in $M) ^ costExponent × range factor, at least minCost. The power curve
+   * compresses a 0.1–2200 $M spread; the range factor, (1 + min(range, rangeCostCapKm) / rangeCostKm) ^ exponent,
+   * makes reach cost money so a long-range system isn't a bargain just because its real price was compressed.
+   */
+  creditsScale: 2.5,
   costExponent: 0.5,
   minCost: 4,
+  rangeCostKm: 100,
+  rangeCostCapKm: 500,
+  rangeCostExponent: { effector: 0.5, sensor: 0.25 },
   /** Hourly upkeep as a fraction of deployment cost. */
-  upkeepRate: 0.0015,
+  upkeepRate: 0.001,
   /** Size of each region's theater map, in km. */
   theaterKm: { width: 600, height: 400 },
 
@@ -217,12 +224,23 @@ export const TACTICAL_CONFIG = {
   siteMarginKm: 80,
 
   // ── Threats ──
+  /**
+   * Low-flying threats hide below the radar horizon: surface radars see and engage them only within `horizonKm`
+   * (doubled on a massif), and massifs block line of sight. Airborne early warning removes both limits by cueing.
+   */
+  lowAltitude: {
+    classes: ['slowDrone', 'fastDrone', 'cruise'] as ThreatClass[],
+    horizonKm: 40,
+    massifHorizonMult: 2,
+  },
+  /** Altitude (km) at which each class is engaged; a system whose ceiling is lower can't engage it. */
+  threatAltitudeKm: { slowDrone: 0.1, fastDrone: 0.3, cruise: 0.05, rocket: 3, ballistic: 12 } as Record<ThreatClass, number>,
   /** Threat speed in km per second (game values). Sets how long a threat stays in each system's range. */
   threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2 } as Record<ThreatClass, number>,
   /** Site integrity lost when a threat of each class gets through. */
   threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15 } as Record<ThreatClass, number>,
   /** Regional infrastructure and stability lost per point of site damage, scaled by site importance / 3. */
-  infraPerDamage: 0.08,
+  infraPerDamage: 0.12,
   stabilityPerDamage: 0.06,
   /** Most engagements one system makes against one threat (shoot-look-shoot). */
   maxShotsPerSystem: 2,

@@ -137,15 +137,25 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
   capability 0. That gives it condition, maintenance and upkeep for free, without moving readiness metrics.
   `relocate` (briefing only), `withdraw` (50% refund) and `resupply` (refills the magazine after `reloadHours`,
   needs logistics) complete the set.
+- **Terrain** (`engine/terrain.ts`). Each region has a profile (`TERRAIN_PROFILES`): a coastline with a sea polygon on
+  one side, mountain massifs along a band, and a number of city clusters. Sites sit on land (ports on the coast).
+  Ships must be placed at sea and ground systems on land (`placementError`). Saves from before terrain get maps from
+  a separate seeded stream, and their sites stay where they were.
+- **Altitude and the radar horizon.** Low-flying classes (`TACTICAL_CONFIG.lowAltitude.classes`: drones and cruise
+  missiles) are seen and engaged by surface systems only within the radar horizon (40 km, doubled on a massif), and
+  a massif between system and threat blocks the line of sight. Passive sensors (acoustic, RF) aren't horizon-limited.
+  An airborne early-warning aircraft that sees the track *cues* surface systems, lifting both limits. A system also
+  can't engage a class above its altitude ceiling (`threatAltitudeKm`). `coverageAt` applies the same rules for the UI.
+- **Cost of reach.** `equipmentCost` multiplies the compressed real price by a range factor, so long reach costs more.
 - **Waves.** When a briefing opens, `scheduleWaves` picks forecast regions (weighted toward low stability) and
   schedules the phase's waves (`TACTICAL_CONFIG.waves`). Each forecast region gets one wave; each extra wave has a
   20% chance to strike outside the forecast. Assignments are shuffled across the phase. Each wave comes from one
   axis and holds tracks of generic threat classes aimed at sites, weighted by importance.
 - **Resolution** (`tickTactical`, the hour a wave arrives). Poor regional awareness adds decoy tracks. For each
   track, the path runs from its entry point to its site:
-  1. Detection: any available deployment whose sensor range touches the path sees it. Unseen tracks are engaged
-     at reduced quality and twice the reaction time.
-  2. Systems whose range the path crosses engage, outermost first. Time in range ÷ threat speed, minus reaction
+  1. Detection: any available deployment whose sensor reach (after horizon and terrain) touches the path sees it.
+     Unseen tracks are engaged at reduced quality and twice the reaction time.
+  2. Systems whose reach the path crosses, and whose ceiling is high enough, engage, outermost first. Time in range ÷ threat speed, minus reaction
      time, sets up to 2 shots. Each shot uses stock (jammers, lasers and microwave are unlimited).
   3. Chance per shot = kill rate × availability (condition, maintenance) × detection × regional comms factor.
   4. A track that gets through lowers its site's integrity, plus the region's infrastructure and stability.

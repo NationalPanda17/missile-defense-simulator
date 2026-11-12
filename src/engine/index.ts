@@ -11,4 +11,5 @@ export * from './persistence';
 export * from './equipment';
 export * from './tactical';
 export * from './scenarios';
+export * from './terrain';
 export { clamp } from './rng';
