@@ -1,5 +1,5 @@
 // Fictional starting world: regions and asset inventory. All names and figures are invented and abstract.
-import { CAMPAIGN_PHASES, REGION_DEFS, SIM_CONFIG } from './config';
+import { CAMPAIGN_PHASES, COMMAND_LEVELS, REGION_DEFS, SIM_CONFIG, levelOf } from './config';
 import { LESSON_MAP, lessonPhase } from './training';
 import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
@@ -7,6 +7,7 @@ import { normalizeTactical } from './scenarios';
 import { createTactical, scheduleWaves } from './tactical';
 import type {
   Asset, AssetRole, Domain, GameMode, PhaseConfig, Region, RegionId, ScenarioSettings, SimState,
+  CommandLevel,
 } from './types';
 import { DOMAINS, REGION_IDS } from './types';
 
@@ -102,8 +103,21 @@ export function defaultSettings(mode: GameMode, overrides: Partial<ScenarioSetti
   return { ...base, ...overrides };
 }
 
+/** Campaign settings at a difficulty level. Officer leaves the defaults untouched. */
+export function withLevel(settings: ScenarioSettings, level: CommandLevel): ScenarioSettings {
+  const lv = COMMAND_LEVELS[level];
+  if (settings.mode !== 'campaign' || level === 'officer') return { ...settings, level: settings.mode === 'campaign' ? level : undefined };
+  return {
+    ...settings, level, name: `${settings.name} · ${lv.label}`,
+    startCredits: Math.max(200, settings.startCredits + lv.credits), eventFrequency: settings.eventFrequency * lv.eventFrequency,
+  };
+}
+
 export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
-  if (settings.mode === 'campaign') return CAMPAIGN_PHASES.map((p) => ({ ...p }));
+  if (settings.mode === 'campaign') {
+    const lv = levelOf(settings);
+    return CAMPAIGN_PHASES.map((p) => ({ ...p, falseRate: lv.falseMult === 1 ? p.falseRate : Math.min(0.6, p.falseRate * lv.falseMult) }));
+  }
   if (settings.mode === 'crisis') {
     const p3 = CAMPAIGN_PHASES[2];
     return [{

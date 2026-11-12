@@ -24,8 +24,9 @@ export function ThreatGlyph({ cls, color, decoy }: { cls: ThreatClass; color: st
 
 const EDGE_LAUNCH: Record<ThreatWave['axis'], [number, number]> = { north: [W / 2, 6], south: [W / 2, H - 6], west: [6, H / 2], east: [W - 6, H / 2] };
 
-export function LiveThreats({ s, region, only }: { s: SimState; region: RegionId; only?: string | null }) {
-  const t = useSimTime();
+export function LiveThreats({ s, region, only, at }: { s: SimState; region: RegionId; only?: string | null; at?: number }) {
+  const live = useSimTime();
+  const t = at ?? live; // `at` replays a past moment (after-action review)
   const tac = s.tactical;
   if (!tac) return null;
   const sites = new Map(tac.sites.map((x) => [x.id, x]));

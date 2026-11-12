@@ -57,15 +57,15 @@ export function TopBar({ s }: { s: SimState }) {
       </div>
 
       <div className="flex items-center gap-1" role="group" aria-label="Simulation controls">
-        <button className={`btn w-20 ${running && !s.paused && !s.turnBased ? '' : 'btn-primary'}`} disabled={!running || s.turnBased}
+        <button data-coach="pause" className={`btn w-20 ${running && !s.paused && !s.turnBased ? '' : 'btn-primary'}`} disabled={!running || s.turnBased}
           onClick={() => dispatch({ type: 'setPaused', paused: !s.paused })} title="Pause / resume (Space)">
           {s.paused || s.turnBased ? '▶ Resume' : '❚❚ Pause'}
         </button>
         {([1, 2, 4, 8] as const).map((sp, i) => (
-          <button key={sp} className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setSpeed', speed: sp })} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
+          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setSpeed', speed: sp })} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}
-        <button className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })} title="Toggle turn-based mode">Turn</button>
-        <button className="btn" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn — 6 hours (T)">+{SIM_CONFIG.turnHours}h ⏭</button>
+        <button data-coach="turn" className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })} title="Toggle turn-based mode">Turn</button>
+        <button data-coach="advance" className="btn" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn — 6 hours (T)">+{SIM_CONFIG.turnHours}h ⏭</button>
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-4">
@@ -125,7 +125,7 @@ export function LeftNav({ s }: { s: SimState }) {
         return (
           <div key={n.id} className="contents">
             {n.group && <div className="label mt-2 hidden px-2 pb-1 lg:block">{n.group}</div>}
-            <button onClick={() => ui.setView(n.id)} aria-current={act ? 'page' : undefined}
+            <button data-coach={`nav-${n.id}`} onClick={() => ui.setView(n.id)} aria-current={act ? 'page' : undefined}
               className={`group flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] uppercase tracking-wider transition-colors ${act ? 'border-ops-cyan/50 bg-ops-cyan/10 text-white' : 'border-transparent text-ops-text/80 hover:border-ops-line hover:bg-ops-panel2 hover:text-white'}`}>
               <span className="w-4 text-center text-ops-cyan" style={v !== null ? { color: DOMAIN_COLOR[n.id as keyof typeof DOMAIN_COLOR] } : undefined}>{n.icon}</span>
               <span className="flex-1 whitespace-nowrap">{n.label}</span>
@@ -147,10 +147,10 @@ export function LeftNav({ s }: { s: SimState }) {
   );
 }
 
-function Section({ title, count, children, defaultOpen = true }: { title: string; count?: number; children: React.ReactNode; defaultOpen?: boolean }) {
+function Section({ title, count, children, defaultOpen = true, coach }: { title: string; count?: number; children: React.ReactNode; defaultOpen?: boolean; coach?: string }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-ops-line">
+    <div className="border-b border-ops-line" data-coach={coach}>
       <button className="flex w-full items-center justify-between px-3 py-2 font-sans text-[12px] font-semibold uppercase tracking-[0.14em] text-ops-cyan hover:bg-ops-panel2" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span>{title}{count !== undefined && <span className="ml-1.5 text-ops-dim">({count})</span>}</span><span className="text-ops-dim">{open ? '▾' : '▸'}</span>
       </button>
@@ -169,7 +169,7 @@ export function RightSidebar({ s }: { s: SimState }) {
   const regionAlerts = Object.values(s.regions).filter((r) => r.stability < 55 || r.comms < 50 || r.awareness < 45);
   return (
     <aside className="flex flex-col overflow-y-auto border-t border-ops-line bg-ops-panel/70 lg:w-80 lg:border-l lg:border-t-0" aria-label="Situation sidebar">
-      <Section title="Active Events" count={active.length}>
+      <Section title="Active Events" count={active.length} coach="events">
         {active.length === 0 && <div className="text-ops-dim">No active events. Network nominal.</div>}
         <ul className="space-y-1.5">
           {active.map((e) => {

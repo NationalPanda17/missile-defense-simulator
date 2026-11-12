@@ -80,8 +80,10 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    Editor). New players should start with the Academy: nine short guided lessons (command basics,
    reading the situation, information quality, event response, maintenance, resources, two
    tactical lessons and the debrief) and a graded certification exercise. Each lesson is its own
-   small scenario. A coach gives one task at a time, waits until you have done it, explains why
-   it matters and checks your understanding with a short question. Progress is kept in the browser.
+   small scenario. A coach gives one task at a time, makes the control to use glow, waits until you
+   have done it, explains why it matters and checks your understanding with a short question.
+   Progress is kept in the browser, and with your account when you are signed in to the save server.
+   The campaign has three difficulty levels: **Recruit**, **Officer** (as designed) and **Commander**.
 2. Read the **briefing**, then choose *Assume command*. The clock starts.
 3. Watch the **Active Events** list (right). Open an event to see its confidence, impact,
    decision window and management responses (cost, duration and success chance).
@@ -99,7 +101,9 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    watch waves play out in the **Tactical Theater** (X), resupply systems that run low, **raise
    an alert** in a region when a wave is inbound, or **redeploy** a system (it's out of action
    while it moves).
-   Threat protection is 15% of the campaign score.
+   Threat protection is 15% of the campaign score. Afterwards, the after-action review's
+   **Mission Replay** plays the run back on each region's map, with every wave and decision on a
+   timeline you can scrub.
 
    New to it? Phase 1's Deploy step has a short **first deployment guide** that points at the
    city to defend first and ticks steps off as you go. Everything on the theater map can also be

@@ -1,10 +1,41 @@
 // Data access for players, campaigns and save slots. All SQL lives here.
 import type pg from 'pg';
 import { SAVE_VERSION, computeScore, type SimState } from '../src/engine';
-import type { CampaignDetail, CampaignSummary, SaveSummary } from '../src/shared/api';
+import type { AcademyProgress, CampaignDetail, CampaignSummary, ExamRecord, SaveSummary } from '../src/shared/api';
 
 export class Repo {
   constructor(private pool: pg.Pool) {}
+
+  async getAcademy(playerId: string): Promise<AcademyProgress> {
+    const r = await this.pool.query<{ done: string[]; best_exam: ExamRecord | null }>('SELECT done, best_exam FROM academy_progress WHERE player_id = $1', [playerId]);
+    return r.rows[0] ? { done: r.rows[0].done, bestExam: r.rows[0].best_exam } : { done: [], bestExam: null };
+  }
+
+  /** Merges progress from a browser into the stored progress: lessons are never un-done, and the better exam wins. */
+  async mergeAcademy(playerId: string, incoming: AcademyProgress): Promise<AcademyProgress> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query<{ done: string[]; best_exam: ExamRecord | null }>('SELECT done, best_exam FROM academy_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+      const cur = r.rows[0] ?? { done: [], best_exam: null };
+      const merged: AcademyProgress = {
+        done: [...new Set([...cur.done, ...incoming.done])].sort(),
+        bestExam: betterExam(cur.best_exam, incoming.bestExam),
+      };
+      await client.query(
+        `INSERT INTO academy_progress (player_id, done, best_exam, updated_at) VALUES ($1, $2, $3, now())
+         ON CONFLICT (player_id) DO UPDATE SET done = EXCLUDED.done, best_exam = EXCLUDED.best_exam, updated_at = now()`,
+        [playerId, merged.done, merged.bestExam ? JSON.stringify(merged.bestExam) : null],
+      );
+      await client.query('COMMIT');
+      return merged;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
 
   async setCallsign(playerId: string, callsign: string) {
     await this.pool.query('UPDATE players SET callsign = $2, last_seen_at = now() WHERE id = $1', [playerId, callsign]);
@@ -131,4 +162,12 @@ export class HttpError extends Error {
   constructor(public status: number, message: string, public headers: Record<string, string> = {}) {
     super(message);
   }
+}
+
+/** The better of two exam results: a pass beats a fail, then the higher score. */
+export function betterExam(a: ExamRecord | null, b: ExamRecord | null): ExamRecord | null {
+  if (!a) return b;
+  if (!b) return a;
+  if (a.passed !== b.passed) return a.passed ? a : b;
+  return b.score > a.score ? b : a;
 }

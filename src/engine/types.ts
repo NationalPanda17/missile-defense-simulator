@@ -290,7 +290,10 @@ export interface ScenarioSettings {
   domainCondition: Partial<Record<Domain, number>>;
   tactical?: TacticalSettings; // campaign only; absent means the standard scenario
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
+  level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
 }
+
+export type CommandLevel = 'recruit' | 'officer' | 'commander';
 
 // ── Tactical layer ─────────────────────────────────────────────────────
 // Each region has a theater map (TACTICAL_CONFIG.theaterKm). Positions are km from the theater's top-left corner.

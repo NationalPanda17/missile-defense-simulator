@@ -1,5 +1,5 @@
 // All tunable simulation rules live here so they can be adjusted without touching engine logic.
-import type { Domain, Investment, PhaseConfig, RegionId, SiteType, ThreatClass } from './types';
+import type { CommandLevel, Domain, Investment, PhaseConfig, RegionId, SiteType, ThreatClass } from './types';
 
 export const SIM_CONFIG = {
   /** Real milliseconds per simulated hour at 1x speed. */
@@ -275,3 +275,29 @@ export const TACTICAL_CONFIG = {
   /** Share of a region's site value that must be covered to count as protected, or thin. */
   protection: { protected: 0.7, thin: 0.3 },
 };
+
+/**
+ * Campaign difficulty. Officer is the campaign as designed (every multiplier 1). Credits are added to the starting
+ * budget; the rest scale event frequency, the chance a report is false, wave size, surprise attacks and decoys.
+ */
+export const COMMAND_LEVELS: Record<CommandLevel, {
+  label: string; description: string; credits: number; eventFrequency: number; falseMult: number; waveSize: number; surpriseMult: number; decoyMult: number;
+}> = {
+  recruit: {
+    label: 'Recruit', description: 'More money, fewer and clearer reports, smaller attacks that rarely surprise you. For learning the campaign.',
+    credits: 400, eventFrequency: 0.75, falseMult: 0.6, waveSize: 0.75, surpriseMult: 0.5, decoyMult: 0.6,
+  },
+  officer: {
+    label: 'Officer', description: 'The campaign as designed.',
+    credits: 0, eventFrequency: 1, falseMult: 1, waveSize: 1, surpriseMult: 1, decoyMult: 1,
+  },
+  commander: {
+    label: 'Commander', description: 'A tighter budget, more incidents and false reports, and bigger attacks that strike outside the forecast more often.',
+    credits: -250, eventFrequency: 1.3, falseMult: 1.3, waveSize: 1.3, surpriseMult: 1.6, decoyMult: 1.4,
+  },
+};
+export const COMMAND_LEVEL_IDS: CommandLevel[] = ['recruit', 'officer', 'commander'];
+
+/** The difficulty settings for a scenario (Officer unless it is a campaign with another level). */
+export const levelOf = (settings: { mode: string; level?: CommandLevel }) =>
+  COMMAND_LEVELS[settings.mode === 'campaign' && settings.level && settings.level in COMMAND_LEVELS ? settings.level : 'officer'];

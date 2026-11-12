@@ -109,7 +109,7 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
       {isEffector(spec) && !unlimited && (
         <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
           <span className="text-ops-dim">{d.reloadRemaining !== undefined ? `Resupplying, ${d.reloadRemaining}h left` : `${d.stock}/${spec.magazine} rounds`}</span>
-          <button className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || s.credits < cost}
+          <button data-coach="resupply" className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || s.credits < cost}
             onClick={() => dispatch({ type: 'resupply', deploymentId: d.id })}>
             Resupply{cost ? ` (${cost} cr)` : ''}
           </button>
@@ -120,7 +120,7 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
         <span className={d.transit ? 'text-ops-amber' : 'text-ops-dim'}>
           {d.transit ? `En route to ${s.regions[d.transit.region].short}, ${d.transit.remaining}h` : 'In position'}
         </span>
-        <button className={`btn px-2 py-0.5 ${moving ? 'btn-active' : ''}`} disabled={!!d.transit || s.status !== 'running' || asset?.status === 'maintenance'}
+        <button data-coach="emergency" className={`btn px-2 py-0.5 ${moving ? 'btn-active' : ''}`} disabled={!!d.transit || s.status !== 'running' || asset?.status === 'maintenance'}
           title="Move during the phase: out of action while it travels" onClick={onRedeploy}>
           {moving ? 'Choose position…' : 'Redeploy'}
         </button>
@@ -202,7 +202,7 @@ export function TheaterView({ s }: { s: SimState }) {
             {alertActive(s, region) ? (
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
             ) : (
-              <button className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
+              <button data-coach="alert" className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
                 title={`Better detection and ${Math.round((1 - TACTICAL_CONFIG.alert.reactionMult) * 100)}% faster reactions for ${TACTICAL_CONFIG.alert.hours}h; equipment wears faster`}
                 onClick={() => dispatch({ type: 'raiseAlert', region })}>
                 Raise alert ({alertCost(s, region)} cr, {TACTICAL_CONFIG.alert.hours}h)

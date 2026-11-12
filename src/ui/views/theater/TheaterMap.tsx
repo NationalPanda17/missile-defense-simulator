@@ -40,7 +40,7 @@ export const effectorsCovering = (s: SimState, region: RegionId, x: number, y: n
 
 const box = (x: number, y: number, r: number): Box => ({ x: x - r, y: y - r, w: r * 2, h: r * 2 });
 
-export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, highlight, children }: {
+export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, highlight, children, replayAt }: {
   s: SimState;
   region: RegionId;
   ghost?: EquipmentSpec | null;
@@ -49,6 +49,7 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
   onPick: (d: Deployment) => void;
   highlight?: { x: number; y: number; label: string } | null; // e.g. the guide pointing at a site
   children?: ReactNode; // overlay drawn on top, in km coordinates
+  replayAt?: number; // replay: show threats at this sim hour, and only systems deployed by then
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
@@ -56,7 +57,7 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
   const t = s.tactical!;
   const terrain = t.terrain?.[region];
   const sites = t.sites.filter((x) => x.region === region);
-  const deps = t.deployments.filter((d) => d.region === region);
+  const deps = t.deployments.filter((d) => d.region === region && (replayAt === undefined || d.deployedAt <= replayAt));
   const axes = [...new Set(t.waves.filter((w) => w.phaseIndex === s.phaseIndex && w.forecast && w.region === region).map((w) => w.axis))];
   const topImportance = Math.max(...sites.map((x) => x.importance));
 
@@ -294,7 +295,7 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
       {keyCursor && hover && !ghost && onPoint && (
         <g pointerEvents="none" stroke="#38d6f5" strokeWidth={1.5}><path d={`M${hover[0] - 10},${hover[1]} H${hover[0] + 10} M${hover[0]},${hover[1] - 10} V${hover[1] + 10}`} /></g>
       )}
-      <LiveThreats s={s} region={region} />
+      <LiveThreats s={s} region={region} at={replayAt} />
       {children}
     </svg>
   );

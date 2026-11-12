@@ -47,3 +47,9 @@ export interface AccountInfo {
 }
 
 export interface AuthResult { user: AccountInfo; claimed?: boolean }
+
+/** A certification exercise result. */
+export interface ExamRecord { passed: boolean; met: number; total: number; score: number; grade: string; at: number }
+
+/** Training Academy progress: lessons done and the best certification attempt. */
+export interface AcademyProgress { done: string[]; bestExam: ExamRecord | null }

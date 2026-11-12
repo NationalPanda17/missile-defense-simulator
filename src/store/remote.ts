@@ -1,6 +1,6 @@
 // Browser client for the persistence API. Authentication is a server session in an HttpOnly cookie.
 import { SAVE_VERSION, ensureTactical, type SimState, type Slot } from '../engine';
-import type { AuthResult, CampaignDetail, CampaignSummary, SaveSummary } from '../shared/api';
+import type { AcademyProgress, AuthResult, CampaignDetail, CampaignSummary, SaveSummary } from '../shared/api';
 
 const ID_KEY = 'mds.playerId';
 
@@ -75,6 +75,8 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ revokedSessions: number }>('/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   deleteAccount: (password: string) => request<void>('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) }),
+  getAcademy: () => request<AcademyProgress>('/academy'),
+  putAcademy: (p: AcademyProgress) => request<AcademyProgress>('/academy', { method: 'PUT', body: JSON.stringify(p) }),
   setCallsign: (callsign: string) => request<AuthResult>('/player', { method: 'PUT', body: JSON.stringify({ callsign }) }),
   listSaves: () => request<SaveSummary[]>('/saves'),
   async getSave(slot: Slot): Promise<SimState> {

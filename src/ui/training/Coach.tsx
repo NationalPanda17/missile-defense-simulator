@@ -1,5 +1,6 @@
 // The in-game coach for Training Academy lessons: one step at a time, ticked off automatically as the player acts.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LESSONS, examResult, examStandards, type SimState, type TrainingLesson } from '../../engine';
 import { dispatch, store } from '../../store/simStore';
 import { useUI, type ViewId } from '../uiState';
@@ -77,12 +78,14 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   }, [open]);
 
   const timeUp = s.status === 'complete' && !last && !passed;
+  const spot = step.target && !passed && !timeUp ? <Spotlight names={step.target} /> : null;
   const restart = () => startLesson(lesson.id);
   const academy = () => ui.setAcademyOpen(true);
 
   if (!open) {
     return (
       <div ref={ref} className="fixed bottom-2 left-2 right-2 z-[55] sm:right-auto sm:w-[380px]">
+        {spot}
         <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => setOpen(true)} aria-expanded={false}>
           <span className="label shrink-0 text-ops-cyan">Coach {i + 1}/{lesson.steps.length}</span>
           <span className="min-w-0 flex-1 truncate text-white">{step.title}</span>
@@ -94,6 +97,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
 
   return (
     <div ref={ref} className="panel fadein fixed bottom-2 left-2 right-2 z-[55] max-h-[45vh] overflow-y-auto border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[70vh]" role="complementary" aria-label="Training coach">
+      {spot}
       <div className="panel-title sticky top-0 z-10 bg-ops-panel">
         <span className="truncate">{lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
@@ -198,5 +202,54 @@ function ExamStandards({ s }: { s: SimState }) {
       )}
       {final && !r.passed && <button className="btn mt-1" onClick={() => { startLesson('exam'); store.notify(); }}>Retry the exercise</button>}
     </div>
+  );
+}
+
+/**
+ * A glowing ring around the control the current step is about. Takes the first `data-coach` name with something
+ * visible on screen and follows it as the page scrolls or dialogs open and close.
+ */
+function Spotlight({ names }: { names: string[] }) {
+  const [rects, setRects] = useState<DOMRect[]>([]);
+  const key = names.join(' ');
+  useEffect(() => {
+    const find = () => {
+      for (const n of names) {
+        const els = [...document.querySelectorAll<HTMLElement>(`[data-coach="${n}"]`)];
+        const rs = els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight);
+        // Skip controls hidden under an open dialog: the dialog's own controls (or nothing) should get the ring.
+        const shown = rs.filter((r, i) => {
+          const topEl = document.elementFromPoint(Math.min(window.innerWidth - 1, r.left + r.width / 2), Math.min(window.innerHeight - 1, r.top + Math.min(r.height / 2, 12)));
+          return !!topEl && (els[i].contains(topEl) || topEl.closest('[data-coach]') === els[i] || !!topEl.closest('[aria-label="Training coach"]'));
+        });
+        if (shown.length) return shown;
+      }
+      return [];
+    };
+    const update = () => setRects((prev) => {
+      const next = find();
+      const same = prev.length === next.length && prev.every((r, i) => Math.abs(r.x - next[i].x) < 1 && Math.abs(r.y - next[i].y) < 1 && Math.abs(r.width - next[i].width) < 1);
+      return same ? prev : next;
+    });
+    update();
+    const id = window.setInterval(update, 400);
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+    // `names` is compared by content, through `key`.
+  }, [key]);
+  if (!rects.length) return null;
+  return createPortal(
+    <>
+      {rects.map((r, i) => (
+        <div key={i} aria-hidden className="coach-spot pointer-events-none fixed z-[54] rounded"
+          style={{ left: r.left - 4, top: r.top - 4, width: r.width + 8, height: r.height + 8 }} />
+      ))}
+    </>,
+    document.body,
   );
 }

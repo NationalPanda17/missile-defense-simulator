@@ -4,6 +4,7 @@ import {
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
+import { MissionReplay } from './MissionReplay';
 
 const LABELS: Record<ScoreKey, string> = {
   readiness: 'Global readiness', network: 'Network reliability', stability: 'Regional stability', response: 'Event response',
@@ -90,6 +91,8 @@ export function AARView({ s }: { s: SimState }) {
           ))}
         </ul>
       </Panel>
+
+      {s.tactical?.waves.some((w) => w.resolved) && <MissionReplay s={s} />}
 
       {tactical && (
         <Panel className="xl:col-span-3" title="Tactical Defense">

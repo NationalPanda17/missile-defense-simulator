@@ -181,7 +181,7 @@ export function LogisticsView({ s }: { s: SimState }) {
                     <option value="">Domain…</option>{DOMAINS.map((d) => <option key={d} value={d}>{DOMAIN_LABEL[d]}</option>)}
                   </select>
                 )}
-                <button className="btn btn-primary ml-auto" disabled={!!err || needs} title={err ?? (needs ? 'Select a target' : '')}
+                <button data-coach="invest" className="btn btn-primary ml-auto" disabled={!!err || needs} title={err ?? (needs ? 'Select a target' : '')}
                   onClick={() => dispatch({ type: 'invest', investmentId: inv.id, region: inv.scope === 'region' ? (t as RegionId) : undefined, domain: inv.scope === 'domain' ? (t as Domain) : undefined })}>Fund</button>
               </div>
             </div>

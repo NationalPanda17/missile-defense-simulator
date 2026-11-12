@@ -87,3 +87,8 @@ body {
 
 /* While the training coach is on screen, dialogs stop above it instead of sliding underneath. */
 body.coach-on .modal-overlay { padding-bottom: calc(var(--coach-h, 0px) + 12px); }
+
+/* Coach spotlight: a pulsing ring around the control the current training step is about. */
+.coach-spot { box-shadow: 0 0 0 2px #38d6f5, 0 0 18px 4px rgba(56, 214, 245, 0.55); animation: coach-pulse 1.6s ease-in-out infinite; }
+@keyframes coach-pulse { 0%, 100% { box-shadow: 0 0 0 2px #38d6f5, 0 0 10px 2px rgba(56, 214, 245, 0.35); } 50% { box-shadow: 0 0 0 3px #38d6f5, 0 0 22px 6px rgba(56, 214, 245, 0.6); } }
+@media (prefers-reduced-motion: reduce) { .coach-spot { animation: none; } }
