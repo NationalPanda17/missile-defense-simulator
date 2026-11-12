@@ -4,7 +4,8 @@ import { SIM_CONFIG } from './config';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
 import { isActive } from './metrics';
 import { incomingWaves, isUnlimited } from './tactical';
-import type { Domain, RegionId, SimState } from './types';
+import { objectiveMet, objectiveValue } from './scoring';
+import type { Domain, Objective, RegionId, SimState } from './types';
 
 export type AdviceLevel = 'urgent' | 'warn' | 'info';
 
@@ -18,6 +19,11 @@ export interface Advice {
 }
 
 const DOMAIN_VIEW: Record<Domain, string> = { space: 'space', air: 'air', sea: 'sea', ground: 'ground' };
+/** Where to go to work on each kind of objective. */
+const OBJECTIVE_VIEW: Record<Objective['metric'], string> = {
+  readiness: 'global', network: 'comms', stability: 'global', infrastructure: 'infra', maintenanceDone: 'air',
+  confirmations: 'intel', escalationsMax: 'global', resolved: 'global', falseDismissed: 'intel', credits: 'logistics',
+};
 const ORDER: Record<AdviceLevel, number> = { urgent: 0, warn: 1, info: 2 };
 
 /** Should the adjutant be available for this scenario? Training lessons have the coach instead. */
@@ -95,6 +101,29 @@ export function advise(s: SimState): Advice[] {
       text: `${overdue.length === 1 ? `${overdue[0].name} is` : `${overdue.length} assets are`} overdue for service and wearing ${SIM_CONFIG.overdueDecayMult}x faster.${crewsFree > 0 ? ` ${crewsFree} crew${crewsFree === 1 ? ' is' : 's are'} free.` : ' All crews are busy.'}`,
       action: overdue.length === 1 ? { label: 'Open', view: DOMAIN_VIEW[overdue[0].domain], assetId: overdue[0].id } : { label: 'Show', view: DOMAIN_VIEW[top] },
     });
+  }
+
+  // Phase objectives heading for a miss, from a third of the way through the phase.
+  if (s.status === 'running') {
+    const phase = s.phases[s.phaseIndex];
+    const elapsed = s.hour - s.phaseStartHour;
+    const left = phase.hours - elapsed;
+    if (phase.objectives.length && elapsed >= phase.hours / 3) {
+      for (const o of phase.objectives) {
+        const v = objectiveValue(s, o.metric);
+        if (objectiveMet(o.metric, v, o.target) && !(o.metric === 'escalationsMax' && v === o.target)) continue;
+        const shown = Number.isInteger(o.target) && ['maintenanceDone', 'confirmations', 'resolved', 'falseDismissed', 'escalationsMax'].includes(o.metric)
+          ? `${Math.round(v)} of ${o.target}` : `${Math.round(v)} vs ${o.target}`;
+        out.push({
+          id: `objective:${s.phaseIndex}:${o.id}:${Math.round(v)}`,
+          level: left <= phase.hours / 4 ? 'warn' : 'info',
+          text: o.metric === 'escalationsMax'
+            ? `Objective at its limit: ${o.text} (${shown}). One more escalation misses it.`
+            : `Objective at risk: ${o.text} (${shown}), ${left}h left in the phase.`,
+          action: { label: 'How', view: OBJECTIVE_VIEW[o.metric] },
+        });
+      }
+    }
   }
 
   if (s.status === 'running') {

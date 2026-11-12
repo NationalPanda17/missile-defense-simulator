@@ -70,3 +70,19 @@ describe('adjutant', () => {
     expect(adjutantApplies(createInitialState(defaultSettings('campaign')))).toBe(true);
   });
 });
+
+describe('adjutant: objectives', () => {
+  it('warns when a phase objective is heading for a miss, from a third of the way in', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 21 }));
+    execute(s, { type: 'beginPhase' });
+    const phase = s.phases[0];
+    expect(advise(s).some((a) => a.id.startsWith('objective:'))).toBe(false); // too early
+    execute(s, { type: 'advance', hours: Math.ceil(phase.hours / 3) });
+    const risks = advise(s).filter((a) => a.id.startsWith('objective:'));
+    const maint = phase.objectives.find((o) => o.metric === 'maintenanceDone')!;
+    if (s.counters.maintenanceDone < maint.target) {
+      expect(risks.some((a) => a.text.includes(maint.text) && /\d+ of \d+/.test(a.text))).toBe(true);
+    }
+    expect(risks.every((a) => /left in the phase|at its limit/.test(a.text))).toBe(true);
+  });
+});

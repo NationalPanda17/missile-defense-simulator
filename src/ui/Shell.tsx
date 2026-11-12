@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, reserveDrain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, objectiveMet, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -138,6 +138,38 @@ export const NAV: { id: ViewId; label: string; icon: string; key: string; group?
   { id: 'aar', label: 'After-Action Review', icon: '▤', key: 'R' },
 ];
 
+/** Assets in a domain due for service within 12h (or overdue) and not already in maintenance. */
+export const dueCount = (s: SimState, d: Domain) =>
+  s.assets.filter((a) => a.domain === d && a.role !== 'defense' && a.hoursToService < 12 && a.status !== 'maintenance' && a.status !== 'transit').length;
+
+/** The current phase's objectives with live progress, so a miss is never a surprise. */
+function ObjectivesSection({ s }: { s: SimState }) {
+  const phase = s.phases[s.phaseIndex];
+  if (!phase?.objectives.length || s.status === 'complete') return null;
+  const left = s.status === 'running' ? phase.hours - (s.hour - s.phaseStartHour) : phase.hours;
+  return (
+    <Section title="Objectives" count={phase.objectives.filter((o) => !objectiveMet(o.metric, objectiveValue(s, o.metric), o.target)).length}>
+      <ul className="space-y-1.5 text-[11px]">
+        {phase.objectives.map((o) => {
+          const v = objectiveValue(s, o.metric);
+          const met = objectiveMet(o.metric, v, o.target);
+          const pct = o.metric === 'escalationsMax' ? (v > o.target ? 100 : 100 - (v / Math.max(1, o.target)) * 100) : Math.min(100, (v / Math.max(1, o.target)) * 100);
+          return (
+            <li key={o.id}>
+              <div className="flex justify-between gap-2">
+                <span className={met ? 'text-ops-green' : 'text-white'}>{met ? '✔' : '○'} {o.text}</span>
+                <span className="shrink-0 tabular-nums text-ops-dim">{Math.round(v)}/{o.target}</span>
+              </div>
+              <Bar value={pct} height={3} color={met ? '#34d399' : '#f5b13d'} />
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-1 text-[10px] text-ops-dim">{left}h left in this phase. Briefings explain how to meet each one.</div>
+    </Section>
+  );
+}
+
 export function LeftNav({ s }: { s: SimState }) {
   const ui = useUI();
   const domainStat = (id: ViewId) => (DOMAINS as string[]).includes(id) ? s.metrics.domainEffective[id as keyof typeof s.metrics.domainEffective] : null;
@@ -156,6 +188,9 @@ export function LeftNav({ s }: { s: SimState }) {
               <span className="w-4 text-center text-ops-cyan" style={v !== null ? { color: DOMAIN_COLOR[n.id as keyof typeof DOMAIN_COLOR] } : undefined}>{n.icon}</span>
               <span className="flex-1 whitespace-nowrap">{n.label}</span>
               {v !== null && <span className={`hidden tabular-nums lg:inline ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</span>}
+              {v !== null && dueCount(s, n.id as Domain) > 0 && (
+                <span className="rounded bg-ops-amber/20 px-1 text-ops-amber" title={`${dueCount(s, n.id as Domain)} asset(s) due or overdue for maintenance`}>⛭{dueCount(s, n.id as Domain)}</span>
+              )}
               {n.id === 'intel' && activeCount > 0 && <span className="hidden rounded bg-ops-red/20 px-1 text-ops-red lg:inline">{activeCount}</span>}
               {n.id === 'theater' && inbound > 0 && <span className="blink rounded bg-ops-red/20 px-1 text-ops-red">{inbound}</span>}
               <kbd className="hidden text-[9px] text-ops-dim opacity-0 group-hover:opacity-100 lg:inline">{n.key}</kbd>
@@ -196,6 +231,7 @@ export function RightSidebar({ s }: { s: SimState }) {
   return (
     <aside className="flex flex-col overflow-y-auto border-t border-ops-line bg-ops-panel/70 lg:w-80 lg:border-l lg:border-t-0" aria-label="Situation sidebar">
       <AdjutantSection s={s} />
+      <ObjectivesSection s={s} />
       <Section title="Active Events" count={active.length} coach="events">
         {active.length === 0 && <div className="text-ops-dim">No active events. Network nominal.</div>}
         <ul className="space-y-1.5">

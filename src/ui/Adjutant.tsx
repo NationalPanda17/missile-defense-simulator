@@ -4,27 +4,30 @@ import { adjutantApplies, advise, type Advice, type SimState } from '../engine';
 import { store } from '../store/simStore';
 import { useUI, type ViewId } from './uiState';
 
-// ── Setting: on by default, except at Commander level where it starts off. ──
-const KEY = 'mds.adjutant';
+// ── Setting, remembered per difficulty: on by default on Recruit and Officer, off on Commander. ──
 type Pref = 'on' | 'off';
 const listeners = new Set<() => void>();
-let pref: Pref | null = (() => {
+let version = 0;
+const keyFor = (s: SimState) => `mds.adjutant.${s.settings.level ?? 'officer'}`;
+function prefFor(s: SimState): Pref | null {
   try {
-    const v = localStorage.getItem(KEY);
+    const v = localStorage.getItem(keyFor(s));
     return v === 'on' || v === 'off' ? v : null;
   } catch { return null; }
-})();
+}
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
+const pref = () => version;
 
 export function adjutantOn(s: SimState): boolean {
   if (!adjutantApplies(s)) return false;
-  if (pref) return pref === 'on';
+  const p = prefFor(s);
+  if (p) return p === 'on';
   return s.settings.level !== 'commander';
 }
 
-export function setAdjutant(on: boolean) {
-  pref = on ? 'on' : 'off';
-  try { localStorage.setItem(KEY, pref); } catch { /* ignore */ }
+export function setAdjutant(s: SimState, on: boolean) {
+  try { localStorage.setItem(keyFor(s), on ? 'on' : 'off'); } catch { /* ignore */ }
+  version++;
   listeners.forEach((f) => f());
 }
 
@@ -45,7 +48,7 @@ const ICON: Record<Advice['level'], string> = { urgent: '⚠', warn: '▲', info
 
 /** The current advice the player hasn't dismissed. */
 export function useAdvice(s: SimState): Advice[] {
-  useSyncExternalStore(subscribe, () => pref);
+  useSyncExternalStore(subscribe, pref);
   if (!adjutantOn(s)) return [];
   const gone = dismissedFor(s);
   return advise(s).filter((a) => !gone.has(a.id));
@@ -104,7 +107,7 @@ export function AdjutantSection({ s }: { s: SimState }) {
         <span className="font-sans text-[12px] font-semibold uppercase tracking-[0.14em] text-ops-cyan">
           Adjutant{on && items.length > 0 && <span className="ml-1.5 text-ops-dim">({items.length})</span>}
         </span>
-        <button role="switch" aria-checked={on} className={`btn px-1.5 py-0 text-[10px] ${on ? 'btn-active' : ''}`} onClick={() => setAdjutant(!on)}
+        <button role="switch" aria-checked={on} className={`btn px-1.5 py-0 text-[10px] ${on ? 'btn-active' : ''}`} onClick={() => setAdjutant(s, !on)}
           title="The adjutant points out things you might miss">{on ? 'On' : 'Off'}</button>
       </div>
       {!on ? <div className="text-[10px] text-ops-dim">Off. Turn on for reminders about low magazines, overdue service and reports about to escalate.</div>

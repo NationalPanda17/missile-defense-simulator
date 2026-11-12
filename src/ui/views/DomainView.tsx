@@ -29,8 +29,17 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
   const events = s.events.filter((e) => isActive(e) && e.domains.includes(domain) && e.reportedAt <= s.hour);
   const overdue = assets.filter((a) => a.hoursToService < 0 && a.status !== 'maintenance');
 
+  const due = assets.filter((a) => a.role !== 'defense' && a.hoursToService < 12 && a.status !== 'maintenance' && a.status !== 'transit');
+  const overdueDue = due.filter((a) => a.hoursToService < 0).length;
   return (
     <div className="grid gap-2 xl:grid-cols-3">
+      {due.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-ops-amber/50 bg-ops-amber/10 px-3 py-2 text-[11px] xl:col-span-3" role="status">
+          <span className="text-ops-amber">⛭ {due.length} asset{due.length === 1 ? '' : 's'} due for maintenance{overdueDue ? ` (${overdueDue} overdue, wearing ${SIM_CONFIG.overdueDecayMult}x faster)` : ''}.</span>
+          <span className="text-ops-dim">Open one below and press Schedule maintenance: {mcost} cr, one crew ({s.crews - s.crewsBusy} free).</span>
+          <button className="btn ml-auto" onClick={() => ui.openAsset([...due].sort((a, b) => a.hoursToService - b.hoursToService)[0].id)}>Open the most urgent</button>
+        </div>
+      )}
       <Panel className="xl:col-span-3" title={<span style={{ color }}>{FOCUS[domain].title}</span>} right={<span>{assets.length} assets</span>}>
         <div className="flex flex-wrap items-center gap-6">
           <Gauge value={eff} label="Effective readiness" />
