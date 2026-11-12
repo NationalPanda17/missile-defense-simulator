@@ -6,7 +6,7 @@ import {
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
-import { CLASS_SHORT, LAYER_COLOR, TheaterMap } from './TacticalDeploy';
+import { CLASS_SHORT, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
 
 export const PROTECTION_TONE: Record<ProtectionLevel, 'green' | 'amber' | 'red'> = { protected: 'green', thin: 'amber', exposed: 'red' };
 const REPLAY_MS = 5000;
@@ -176,6 +176,7 @@ export function TheaterView({ s }: { s: SimState }) {
           <TheaterMap s={s} region={region} selectedId={selected} onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
             {replay && <WaveReplay key={replay.id} s={s} wave={replay} />}
           </TheaterMap>
+          <div className="mt-1.5"><MapLegend region={region} /></div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
             {replay ? (
               <>

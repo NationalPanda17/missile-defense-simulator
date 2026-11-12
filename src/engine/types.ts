@@ -357,12 +357,21 @@ export interface TacticalStats {
   siteDamage: number; // total integrity lost across sites
 }
 
+/** A region's theater terrain (see terrain.ts). */
+export interface TheaterTerrain {
+  coast: 'north' | 'south' | 'east' | 'west';
+  coastline: [number, number][];
+  sea: [number, number][]; // polygon
+  massifs: { x: number; y: number; r: number }[];
+}
+
 /** Tactical layer state. Optional on SimState so saves from before the tactical layer still load. */
 export interface TacticalState {
   enabled: boolean; // campaign only
   rng: number; // own RNG stream, so the management simulation stays reproducible on its own
   nextId: number;
   sites: Site[];
+  terrain?: Record<RegionId, TheaterTerrain>; // absent in saves made before terrain existed
   deployments: Deployment[];
   waves: ThreatWave[];
   forecast: RegionId[]; // regions the current briefing warns about

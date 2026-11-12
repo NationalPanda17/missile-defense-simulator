@@ -333,11 +333,13 @@ export function isEffector(spec: EquipmentSpec): boolean {
  * power curve (a game choice) so cheap systems stay worth buying and expensive ones stay affordable.
  */
 export function equipmentCost(spec: EquipmentSpec): number {
-  const { creditsScale, costExponent, minCost } = TACTICAL_CONFIG;
-  return Math.max(minCost, Math.round(creditsScale * spec.unitCostUsdM ** costExponent));
+  const { creditsScale, costExponent, minCost, rangeCostKm, rangeCostCapKm, rangeCostExponent } = TACTICAL_CONFIG;
+  const exp = isEffector(spec) ? rangeCostExponent.effector : rangeCostExponent.sensor;
+  const rangeFactor = (1 + Math.min(spec.rangeKm, rangeCostCapKm) / rangeCostKm) ** exp;
+  return Math.max(minCost, Math.round(creditsScale * spec.unitCostUsdM ** costExponent * rangeFactor));
 }
 
 /** Hourly upkeep in game credits once deployed. */
 export function equipmentUpkeep(spec: EquipmentSpec): number {
-  return Math.round(equipmentCost(spec) * TACTICAL_CONFIG.upkeepRate * 100) / 100;
+  return Math.max(0.01, Math.round(equipmentCost(spec) * TACTICAL_CONFIG.upkeepRate * 100) / 100);
 }

@@ -1,9 +1,10 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
-  EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, detectionRange,
-  equipmentCost, isEffector, isUnlimited, type DefenseLayer, type Deployment, type EquipmentSpec, type RegionId, type SimState,
-  type Site, type SiteType, type ThreatClass,
+  EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, TERRAIN_PROFILES, THREAT_CLASSES, THREAT_LABELS,
+  canEngage, canEngageClass, coverageAt, detectionRange, equipmentCost, isEffector, isUnlimited, lowHorizonKm, masked,
+  placementError, type DefenseLayer,
+  type Deployment, type EquipmentSpec, type RegionId, type SimState, type Site, type SiteType, type TheaterTerrain, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -19,7 +20,6 @@ export const LAYER_COLOR: Record<DefenseLayer, string> = {
   upper: '#f2545b',
 };
 export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
-export const SITE_GLYPH: Record<SiteType, string> = { city: '●', port: '⚓', power: '⚡', comms: '◆', command: '★' };
 
 const effectorsCovering = (s: SimState, region: RegionId, x: number, y: number) =>
   (s.tactical?.deployments ?? []).filter((d) => {
@@ -28,15 +28,8 @@ const effectorsCovering = (s: SimState, region: RegionId, x: number, y: number) 
     return isEffector(spec) && Math.hypot(d.x - x, d.y - y) <= spec.rangeKm;
   });
 
-/** Best single-shot kill rate against each threat class at a point, from systems in range. */
-function bestKill(s: SimState, region: RegionId, x: number, y: number): Record<ThreatClass, number> {
-  const out = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0 };
-  for (const d of effectorsCovering(s, region, x, y)) {
-    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    for (const c of THREAT_CLASSES) out[c] = Math.max(out[c], spec.killRate[c]);
-  }
-  return out;
-}
+/** Best single-shot kill rate per threat class for a threat aimed at this point (engine rules: altitude, horizon, terrain). */
+const bestKill = (s: SimState, region: RegionId, x: number, y: number) => coverageAt(s, region, x, y);
 
 export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   return (
@@ -53,7 +46,54 @@ export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   );
 }
 
-/** The theater map. With `onPoint` it is a placement surface; without it, a read-only display. */
+/** "Type 45 destroyer (Sea Viper)" → "Type 45 destroyer", for map labels. */
+const shortName = (name: string) => name.replace(/\s*\(.*\)\s*$/, '');
+
+const integrityColor = (v: number) => (v > 60 ? '#dbe7f6' : v > 25 ? '#f5b13d' : '#f2545b');
+
+/** Small SVG icon per site type, drawn around (0,0). */
+export function SiteIcon({ type, color }: { type: SiteType; color: string }) {
+  const stroke = { stroke: '#040912', strokeWidth: 1.5, paintOrder: 'stroke' as const };
+  switch (type) {
+    case 'city': return <g><circle r={9} fill={color} opacity={0.18} /><circle r={5} fill={color} {...stroke} /></g>;
+    case 'port': return <g fill="none" stroke={color} strokeWidth={2}><circle cy={-5} r={2.5} /><path d="M0,-2.5 V7 M-6,2 Q0,9 6,2 M-3.5,0 H3.5" /></g>;
+    case 'power': return <path d="M2,-8 L-5,1 L0,1 L-2,8 L5,-1 L0,-1 Z" fill={color} {...stroke} />;
+    case 'comms': return <g><path d="M0,-7 L6,0 L0,7 L-6,0 Z" fill={color} {...stroke} /><circle r={1.6} fill="#040912" /></g>;
+    case 'command': return <path d="M0,-8 L2.2,-2.5 L8,-2.5 L3.4,1 L5,7 L0,3.6 L-5,7 L-3.4,1 L-8,-2.5 L-2.2,-2.5 Z" fill={color} {...stroke} />;
+  }
+}
+
+/** Sea, coastline and mountain massifs. */
+function Terrain({ terrain }: { terrain: TheaterTerrain | undefined }) {
+  if (!terrain) return null;
+  return (
+    <g pointerEvents="none">
+      <defs>
+        <pattern id="massif-hatch" width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+          <line x1={0} y1={0} x2={0} y2={6} stroke="#8a7350" strokeWidth={1.2} strokeOpacity={0.5} />
+        </pattern>
+        <radialGradient id="massif-fill"><stop offset="0%" stopColor="#5b4a33" stopOpacity={0.55} /><stop offset="100%" stopColor="#3a3022" stopOpacity={0.25} /></radialGradient>
+      </defs>
+      <polygon points={terrain.sea.map((p) => p.join(',')).join(' ')} fill="#0b2a47" fillOpacity={0.75} />
+      <polyline points={terrain.coastline.map((p) => p.join(',')).join(' ')} fill="none" stroke="#3d7fb0" strokeWidth={1.5} strokeOpacity={0.7} />
+      {terrain.massifs.map((m, i) => (
+        <g key={i}>
+          <circle cx={m.x} cy={m.y} r={m.r} fill="url(#massif-fill)" />
+          <circle cx={m.x} cy={m.y} r={m.r} fill="url(#massif-hatch)" stroke="#8a7350" strokeOpacity={0.6} />
+          <circle cx={m.x} cy={m.y} r={m.r * 0.55} fill="none" stroke="#8a7350" strokeOpacity={0.35} />
+          <path d={`M${m.x - 7},${m.y + 4} L${m.x},${m.y - 7} L${m.x + 7},${m.y + 4} Z`} fill="#a88c60" opacity={0.8} />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+const KEY_STEP = 10;
+
+/**
+ * The theater map. With `onPoint` it is a placement surface (mouse, or keyboard: focus the map, move the cursor with
+ * the arrow keys — Shift for bigger steps — and press Enter); without it, a read-only display.
+ */
 export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, children }: {
   s: SimState;
   region: RegionId;
@@ -65,7 +105,9 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
+  const [keyCursor, setKeyCursor] = useState(false);
   const t = s.tactical!;
+  const terrain = t.terrain?.[region];
   const sites = t.sites.filter((x) => x.region === region);
   const deps = t.deployments.filter((d) => d.region === region);
   const axes = [...new Set(t.waves.filter((w) => w.phaseIndex === s.phaseIndex && w.forecast && w.region === region).map((w) => w.axis))];
@@ -78,19 +120,36 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
     return [Math.max(0, Math.min(W, p.x)), Math.max(0, Math.min(H, p.y))];
   };
 
-  // Coverage shading: how many effectors reach each 20 km cell. Recomputed each render because the engine
-  // mutates the deployment list in place.
-  const cells: { x: number; y: number; n: number }[] = [];
-  for (let x = 0; x < W; x += 20) for (let y = 0; y < H; y += 20) {
-    const n = effectorsCovering(s, region, x + 10, y + 10).length;
-    if (n) cells.push({ x, y, n });
-  }
+  // Coverage shading per 20 km cell: faint where only high threats are covered, stronger where low-flying threats
+  // are covered too. Uses the engine's rules, so it's memoized on what it depends on.
+  const depKey = deps.map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}`).join('|') + s.assets.filter((a) => a.role === 'defense').map((a) => a.status).join('');
+  const cells = useMemo(() => {
+    const out: { x: number; y: number; low: boolean }[] = [];
+    if (!deps.length) return out;
+    for (let x = 0; x < W; x += 20) for (let y = 0; y < H; y += 20) {
+      const c: [number, number] = [x + 10, y + 10];
+      const reach = effectorsCovering(s, region, c[0], c[1]).filter((d) => canEngage(s, d));
+      if (!reach.length) continue;
+      // Low-level cover: inside a system's radar horizon with a clear line of sight (matches the engine's rules).
+      const low = reach.some((d) => {
+        const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+        if (!canEngageClass(spec, 'cruise') && !canEngageClass(spec, 'slowDrone')) return false;
+        return Math.hypot(d.x - c[0], d.y - c[1]) <= Math.min(spec.rangeKm, lowHorizonKm(terrain, [d.x, d.y])) && !masked(terrain, [d.x, d.y], c);
+      });
+      out.push({ x, y, low });
+    }
+    return out;
+  }, [depKey, region]);
+
+  const ghostAt = hover;
+  const ghostError = ghost && ghostAt ? placementError(s, ghost, region, Math.round(ghostAt[0]), Math.round(ghostAt[1])) : null;
+  const horizon = (d: { x: number; y: number }) => lowHorizonKm(terrain, [d.x, d.y]);
 
   const arrow = (axis: string) => {
     const at = { north: [W / 2, 18, 180], south: [W / 2, H - 18, 0], west: [18, H / 2, 90], east: [W - 18, H / 2, 270] }[axis]!;
     return (
       <g key={axis} transform={`translate(${at[0]},${at[1]}) rotate(${at[2]})`}>
-        <path d="M0,-14 L10,4 L3,4 L3,14 L-3,14 L-3,4 L-10,4 Z" fill="#f2545b" opacity={0.85} className="blink" />
+        <path d="M0,-14 L10,4 L3,4 L3,14 L-3,14 L-3,4 L-10,4 Z" fill="#f2545b" opacity={0.9} className="blink" />
       </g>
     );
   };
@@ -99,61 +158,109 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
     <svg
       ref={svg}
       viewBox={`0 0 ${W} ${H}`}
-      className={`block h-auto w-full select-none rounded border border-ops-line bg-[#040912] ${onPoint ? 'cursor-crosshair' : ''}`}
-      role="img"
-      aria-label={`Theater map of ${s.regions[region].name}`}
-      onMouseMove={(e) => setHover(toKm(e))}
-      onMouseLeave={() => setHover(null)}
+      className={`block h-auto w-full select-none rounded border border-ops-line bg-[#06111f] outline-none focus-visible:ring-2 focus-visible:ring-ops-cyan ${onPoint ? 'cursor-crosshair' : ''}`}
+      role={onPoint ? 'application' : 'img'}
+      tabIndex={onPoint ? 0 : undefined}
+      aria-label={`Theater map of ${s.regions[region].name}.${onPoint ? ' Arrow keys move the placement cursor, Shift for larger steps, Enter places or moves.' : ''}`}
+      onMouseMove={(e) => { setKeyCursor(false); setHover(toKm(e)); }}
+      onMouseLeave={() => { if (!keyCursor) setHover(null); }}
+      onFocus={() => { if (onPoint && !hover) { setKeyCursor(true); setHover([W / 2, H / 2]); } }}
+      onBlur={() => { if (keyCursor) setHover(null); }}
+      onKeyDown={(e) => {
+        if (!onPoint) return;
+        const step = e.shiftKey ? 50 : KEY_STEP;
+        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+        if (d) {
+          e.preventDefault();
+          setKeyCursor(true);
+          setHover((h) => { const c = h ?? [W / 2, H / 2]; return [Math.max(0, Math.min(W, c[0] + d[0])), Math.max(0, Math.min(H, c[1] + d[1]))]; });
+        } else if ((e.key === 'Enter' || e.key === ' ') && hover) {
+          e.preventDefault();
+          onPoint(Math.round(hover[0]), Math.round(hover[1]));
+        }
+      }}
       onClick={(e) => {
         const p = onPoint && toKm(e);
         if (p) onPoint(Math.round(p[0]), Math.round(p[1]));
       }}
     >
-      {Array.from({ length: W / 50 + 1 }, (_, i) => <line key={`v${i}`} x1={i * 50} x2={i * 50} y1={0} y2={H} stroke="#1b2c47" strokeWidth={0.5} />)}
-      {Array.from({ length: H / 50 + 1 }, (_, i) => <line key={`h${i}`} y1={i * 50} y2={i * 50} x1={0} x2={W} stroke="#1b2c47" strokeWidth={0.5} />)}
-      {cells.map((c) => <rect key={`${c.x}-${c.y}`} x={c.x} y={c.y} width={20} height={20} fill="#38d6f5" opacity={Math.min(0.32, 0.09 * c.n)} pointerEvents="none" />)}
+      <Terrain terrain={terrain} />
+      {Array.from({ length: W / 50 + 1 }, (_, i) => <line key={`v${i}`} x1={i * 50} x2={i * 50} y1={0} y2={H} stroke="#1b2c47" strokeWidth={0.5} strokeOpacity={0.6} />)}
+      {Array.from({ length: H / 50 + 1 }, (_, i) => <line key={`h${i}`} y1={i * 50} y2={i * 50} x1={0} x2={W} stroke="#1b2c47" strokeWidth={0.5} strokeOpacity={0.6} />)}
+      {cells.map((c) => <rect key={`${c.x}-${c.y}`} x={c.x} y={c.y} width={20} height={20} fill="#38d6f5" opacity={c.low ? 0.2 : 0.07} pointerEvents="none" />)}
       {axes.map(arrow)}
 
       {deps.map((d) => {
         const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
         const col = LAYER_COLOR[spec.layer];
         const sensorR = spec.layer === 'detection' ? spec.rangeKm : spec.radar?.rangeKm ?? 0;
+        const sel = d.id === selectedId;
+        const lowR = spec.domain === 'air' ? 0 : horizon(d);
         return (
           <g key={`r${d.id}`} pointerEvents="none">
-            {sensorR > 0 && <circle cx={d.x} cy={d.y} r={Math.min(sensorR, 1200)} fill="none" stroke={col} strokeOpacity={0.35} strokeDasharray="4 5" />}
-            {isEffector(spec) && <circle cx={d.x} cy={d.y} r={Math.min(spec.rangeKm, 1200)} fill={col} fillOpacity={0.04} stroke={col} strokeOpacity={d.id === selectedId ? 1 : 0.7} strokeWidth={d.id === selectedId ? 2 : 1} />}
+            {sensorR > 0 && <circle cx={d.x} cy={d.y} r={Math.min(sensorR, 1200)} fill="none" stroke={col} strokeOpacity={0.3} strokeDasharray="4 5" />}
+            {isEffector(spec) && <circle cx={d.x} cy={d.y} r={Math.min(spec.rangeKm, 1200)} fill={col} fillOpacity={0.03} stroke={col} strokeOpacity={sel ? 1 : 0.65} strokeWidth={sel ? 2 : 1} />}
+            {isEffector(spec) && lowR > 0 && spec.rangeKm > lowR && (
+              <circle cx={d.x} cy={d.y} r={lowR} fill="none" stroke={col} strokeOpacity={sel ? 0.9 : 0.45} strokeDasharray="1 3" strokeWidth={1.5} />
+            )}
           </g>
         );
       })}
 
       {sites.map((site) => (
         <g key={site.id} transform={`translate(${site.x},${site.y})`} pointerEvents="none">
-          <text textAnchor="middle" dy={6} fontSize={20} fill={site.integrity > 60 ? '#c9d8ec' : site.integrity > 25 ? '#f5b13d' : '#f2545b'}>{SITE_GLYPH[site.type]}</text>
-          <text textAnchor="middle" y={24} fontSize={13} fill="#7d93b1">{site.name}</text>
+          <SiteIcon type={site.type} color={integrityColor(site.integrity)} />
+          <text textAnchor={site.x < 70 ? 'start' : site.x > W - 70 ? 'end' : 'middle'} x={site.x < 70 ? -8 : site.x > W - 70 ? 8 : 0} y={22} fontSize={12.5} fill="#9fb4cf" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{site.name}</text>
         </g>
       ))}
 
       {deps.map((d) => {
         const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
         const sel = d.id === selectedId;
+        const asset = s.assets.find((a) => a.id === d.assetId);
+        const down = asset && (asset.status === 'transit' || asset.status === 'maintenance' || asset.status === 'offline');
         return (
-          <g key={d.id} transform={`translate(${d.x},${d.y})`} className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onPick(d); }}>
-            <rect x={-8} y={-8} width={16} height={16} fill={LAYER_COLOR[spec.layer]} stroke={sel ? '#fff' : '#060b14'} strokeWidth={sel ? 2 : 1} transform="rotate(45)" />
-            <text y={-12} textAnchor="middle" fontSize={12} fill="#fff">{spec.name}</text>
+          <g key={d.id} transform={`translate(${d.x},${d.y})`} className="cursor-pointer outline-none" tabIndex={0} role="button"
+            aria-label={`${asset?.name ?? spec.name}${down ? `, ${asset!.status}` : ''}. Press Enter to select.`}
+            onClick={(e) => { e.stopPropagation(); onPick(d); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onPick(d); } }}>
+            {sel && <circle r={14} fill="none" stroke="#fff" strokeOpacity={0.7} className="pulse-ring" />}
+            <rect x={-8} y={-8} width={16} height={16} fill={LAYER_COLOR[spec.layer]} fillOpacity={down ? 0.35 : 1} stroke={sel ? '#fff' : '#060b14'} strokeWidth={sel ? 2 : 1.5} transform="rotate(45)" />
+            <text y={-13} textAnchor={d.x < 70 ? 'start' : d.x > W - 70 ? 'end' : 'middle'} x={d.x < 70 ? -8 : d.x > W - 70 ? 8 : 0} fontSize={11.5} fill="#fff" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{shortName(spec.name)}</text>
           </g>
         );
       })}
 
-      {ghost && hover && (
-        <g pointerEvents="none" opacity={0.7}>
-          {isEffector(ghost) && <circle cx={hover[0]} cy={hover[1]} r={Math.min(ghost.rangeKm, 1200)} fill="none" stroke={LAYER_COLOR[ghost.layer]} strokeDasharray="6 4" />}
-          {detectionRange(ghost, 'cruise') > 0 && <circle cx={hover[0]} cy={hover[1]} r={Math.min(detectionRange(ghost, 'cruise'), 1200)} fill="none" stroke={LAYER_COLOR[ghost.layer]} strokeOpacity={0.4} strokeDasharray="2 6" />}
-          <rect x={hover[0] - 6} y={hover[1] - 6} width={12} height={12} fill={LAYER_COLOR[ghost.layer]} transform={`rotate(45 ${hover[0]} ${hover[1]})`} />
+      {ghost && ghostAt && (
+        <g pointerEvents="none" opacity={0.8}>
+          {isEffector(ghost) && <circle cx={ghostAt[0]} cy={ghostAt[1]} r={Math.min(ghost.rangeKm, 1200)} fill="none" stroke={ghostError ? '#f2545b' : LAYER_COLOR[ghost.layer]} strokeDasharray="6 4" />}
+          {isEffector(ghost) && ghost.domain !== 'air' && ghost.rangeKm > horizon({ x: ghostAt[0], y: ghostAt[1] }) && (
+            <circle cx={ghostAt[0]} cy={ghostAt[1]} r={horizon({ x: ghostAt[0], y: ghostAt[1] })} fill="none" stroke={LAYER_COLOR[ghost.layer]} strokeOpacity={0.6} strokeDasharray="1 3" strokeWidth={1.5} />
+          )}
+          {detectionRange(ghost, 'cruise') > 0 && <circle cx={ghostAt[0]} cy={ghostAt[1]} r={Math.min(detectionRange(ghost, 'cruise'), 1200)} fill="none" stroke={LAYER_COLOR[ghost.layer]} strokeOpacity={0.35} strokeDasharray="2 6" />}
+          <rect x={ghostAt[0] - 7} y={ghostAt[1] - 7} width={14} height={14} fill={ghostError ? '#f2545b' : LAYER_COLOR[ghost.layer]} transform={`rotate(45 ${ghostAt[0]} ${ghostAt[1]})`} />
+          {ghostError && <text x={ghostAt[0]} y={ghostAt[1] + 24} textAnchor="middle" fontSize={11} fill="#f2545b" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{ghostError}</text>}
         </g>
       )}
+      {keyCursor && hover && !ghost && onPoint && (
+        <g pointerEvents="none" stroke="#38d6f5" strokeWidth={1.5}><path d={`M${hover[0] - 10},${hover[1]} H${hover[0] + 10} M${hover[0]},${hover[1] - 10} V${hover[1] + 10}`} /></g>
+      )}
       {children}
-      <text x={6} y={H - 6} fontSize={10} fill="#5d7391">{W} × {H} km · grid 50 km</text>
+      <text x={6} y={H - 6} fontSize={10} fill="#5d7391" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{W} × {H} km · grid 50 km</text>
     </svg>
+  );
+}
+
+/** Map legend: what the rings and shading mean. */
+export function MapLegend({ region }: { region: RegionId }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ops-dim">
+      <span className="italic">{TERRAIN_PROFILES[region].character}</span>
+      <span className="flex items-center gap-1"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#38d6f5" /></svg>engagement range</span>
+      <span className="flex items-center gap-1"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#38d6f5" strokeDasharray="1 3" strokeWidth="1.5" /></svg>reach vs low-flying threats</span>
+      <span className="flex items-center gap-1"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#a78bfa" strokeDasharray="4 5" /></svg>radar</span>
+      <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#8a7350]/60" />high ground: blocks low line of sight, doubles radar horizon</span>
+    </div>
   );
 }
 
@@ -212,7 +319,7 @@ function SiteCoverage({ s, region }: { s: SimState; region: RegionId }) {
     return (
       <li key={site.id} className="grid grid-cols-[1fr_7rem] items-center gap-2">
         <div className="min-w-0">
-          <div className="truncate text-white">{SITE_GLYPH[site.type]} {site.name}</div>
+          <div className="flex items-center gap-1.5 truncate text-white"><svg width="16" height="16" viewBox="-9 -9 18 18" aria-hidden className="shrink-0"><SiteIcon type={site.type} color={site.integrity > 60 ? '#dbe7f6' : site.integrity > 25 ? '#f5b13d' : '#f2545b'} /></svg>{site.name}</div>
           <div className="text-[10px] text-ops-dim">{n ? `${n} system${n > 1 ? 's' : ''} in range` : 'Unprotected'} · integrity {Math.round(site.integrity)}%</div>
         </div>
         <KillBars k={bestKill(s, region, site.x, site.y)} />
@@ -244,7 +351,7 @@ export function DeployPanel({ s }: { s: SimState }) {
 
   const hint = moving ? `Click the map to move ${depSpec?.name}. Relocating costs ${TACTICAL_CONFIG.relocateCost} credits.`
     : spec ? `Click the map to place ${spec.name} (${equipmentCost(spec)} credits).`
-    : 'Pick equipment from the catalog, then click the map to place it. Click a placed system to move or withdraw it.';
+    : 'Pick equipment from the catalog, then click the map to place it (or Tab to the map, move with the arrow keys and press Enter). Click or Tab to a placed system to move or withdraw it.';
 
   return (
     <div className="space-y-3">
@@ -270,6 +377,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1">
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
             onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
+          <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
             <span className="tabular-nums text-white">Credits <span className="text-ops-green">{Math.round(s.credits)}</span></span>

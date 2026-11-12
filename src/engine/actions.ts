@@ -2,7 +2,7 @@
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine';
 import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
-import { addDeployment, ensureTactical, insideTheater, isUnlimited, removeDeployment, resupplyCost, theaterToLonLat } from './tactical';
+import { addDeployment, ensureTactical, isUnlimited, placementError, removeDeployment, resupplyCost, theaterToLonLat } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import type { Domain, RegionId, SimState, SpendCategory } from './types';
@@ -224,7 +224,8 @@ function run(s: SimState, cmd: Command): CommandResult {
       const spec = EQUIPMENT_MAP.get(cmd.equipmentId);
       if (!spec) return fail('Unknown equipment.');
       if (!s.regions[cmd.region]) return fail('Unknown region.');
-      if (!insideTheater(cmd.x, cmd.y)) return fail('Position is outside the theater.');
+      const where = placementError(s, spec, cmd.region, cmd.x, cmd.y);
+      if (where) return fail(where);
       const cost = equipmentCost(spec);
       const err = canAfford(s, cost, TACTICAL_CONFIG.deployPersonnel, 0);
       if (err) return fail(err);
@@ -239,7 +240,8 @@ function run(s: SimState, cmd: Command): CommandResult {
       const d = t.deployments.find((x) => x.id === cmd.deploymentId);
       if (!d) return fail('Unknown deployment.');
       if (s.status !== 'briefing') return fail('Equipment can only be relocated during a briefing.');
-      if (!insideTheater(cmd.x, cmd.y)) return fail('Position is outside the theater.');
+      const where = placementError(s, EQUIPMENT_MAP.get(d.equipmentId)!, d.region, cmd.x, cmd.y);
+      if (where) return fail(where);
       const err = canAfford(s, TACTICAL_CONFIG.relocateCost, 0, 0);
       if (err) return fail(err);
       spend(s, TACTICAL_CONFIG.relocateCost, 0, 'redeploy');

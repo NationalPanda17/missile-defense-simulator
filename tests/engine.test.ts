@@ -3,10 +3,22 @@ import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
   TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
-  tacticalReport, lessonsLearned, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
+  tacticalReport, lessonsLearned, isSea, coverageAt, onMassif, masked, TERRAIN_PROFILES, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
   exportTacticalScenario, importTacticalScenario,
 } from '../src/engine';
-import type { SimState } from '../src/engine';
+import type { RegionId, SimState } from '../src/engine';
+
+/** The nearest land point to (x, y) in a region's theater: tests must not drop ground systems in the sea. */
+function landNear(s: SimState, region: RegionId, x = 300, y = 200): { x: number; y: number } {
+  const t = s.tactical!.terrain![region];
+  for (let r = 0; r < 600; r += 10) {
+    for (let a = 0; a < 16; a++) {
+      const p: [number, number] = [Math.round(x + Math.cos((a / 16) * Math.PI * 2) * r), Math.round(y + Math.sin((a / 16) * Math.PI * 2) * r)];
+      if (p[0] >= 0 && p[0] <= 600 && p[1] >= 0 && p[1] <= 400 && !isSea(t, p) && !onMassif(t, p)) return { x: p[0], y: p[1] };
+    }
+  }
+  throw new Error('no land');
+}
 
 function runCampaign(policy: (s: SimState) => void, seed = 7) {
   const s = createInitialState(defaultSettings('campaign', { seed }));
@@ -182,15 +194,21 @@ describe('tactical layer: engine', () => {
     return { x: sites.reduce((a, x) => a + x.x, 0) / sites.length, y: sites.reduce((a, x) => a + x.y, 0) / sites.length };
   };
 
-  /** Area defense in every forecast region: a long-range system at the centre and point defense at the top site. */
+  /**
+   * A layered defense in every forecast region: medium-range systems at the two most important sites, a gun system
+   * and a counter-drone interceptor for close-in cover, and a long-range system near the middle for high threats.
+   */
   const areaDefense = (s: SimState) => {
     const t = s.tactical!;
     for (const r of t.forecast) {
       if (t.deployments.some((d) => d.region === r)) continue;
-      const c = centroid(s, r);
-      const top = t.sites.filter((x) => x.region === r).sort((a, b) => b.importance - a.importance)[0];
+      const ss = t.sites.filter((x) => x.region === r).sort((a, b) => b.importance - a.importance);
+      execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: r, x: ss[0].x, y: ss[0].y });
+      execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: r, x: ss[1].x, y: ss[1].y });
+      execute(s, { type: 'deploy', equipmentId: 'skynex', region: r, x: ss[2].x, y: ss[2].y });
+      execute(s, { type: 'deploy', equipmentId: 'coyote', region: r, x: ss[0].x, y: ss[0].y });
+      const c = landNear(s, r as RegionId, centroid(s, r).x, centroid(s, r).y);
       execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: r, x: c.x, y: c.y });
-      execute(s, { type: 'deploy', equipmentId: 'coyote', region: r, x: top.x, y: top.y });
     }
   };
   const resupplyLow = (s: SimState) => {
@@ -244,8 +262,9 @@ describe('tactical layer: engine', () => {
 
   it('numbers units per system type', () => {
     const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
-    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 100, y: 100 });
-    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 200, y: 100 });
+    const [a, b] = s.tactical!.sites.filter((x) => x.region === 'EUR');
+    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: a.x, y: a.y });
+    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: b.x, y: b.y });
     const names = s.assets.filter((a) => a.role === 'defense').map((a) => a.name);
     expect(names).toEqual(['NASAMS 1', 'NASAMS 2']);
   });
@@ -262,7 +281,9 @@ describe('tactical layer: engine', () => {
     const before = s.credits;
     const readiness = s.metrics.globalReadiness;
     const regionReady = s.regions.EUR.readiness;
-    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 300, y: 200 }).ok).toBe(true);
+    const p = landNear(s, 'EUR');
+    const q = landNear(s, 'EUR', 120, 300);
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: p.x, y: p.y }).ok).toBe(true);
     expect(s.credits).toBe(before - equipmentCost(EQUIPMENT_MAP.get('nasams')!));
     const d = s.tactical!.deployments[0];
     const a = s.assets.find((x) => x.id === d.assetId)!;
@@ -274,8 +295,8 @@ describe('tactical layer: engine', () => {
 
     expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 900, y: 200 }).ok).toBe(false);
     expect(execute(s, { type: 'deploy', equipmentId: 'no-such-thing', region: 'EUR', x: 1, y: 1 }).ok).toBe(false);
-    expect(execute(s, { type: 'relocate', deploymentId: d.id, x: 50, y: 60 }).ok).toBe(true);
-    expect([d.x, d.y]).toEqual([50, 60]);
+    expect(execute(s, { type: 'relocate', deploymentId: d.id, x: q.x, y: q.y }).ok).toBe(true);
+    expect([d.x, d.y]).toEqual([q.x, q.y]);
     expect(execute(s, { type: 'redeploy', assetId: a.id, region: 'NAM' }).ok).toBe(false);
 
     execute(s, { type: 'beginPhase' });
@@ -291,8 +312,9 @@ describe('tactical layer: engine', () => {
 
   it('resupplies magazines over time and refuses pointless resupply', () => {
     const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
-    execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: 'EUR', x: 300, y: 200 });
-    execute(s, { type: 'deploy', equipmentId: 'ew-jammer', region: 'EUR', x: 300, y: 200 });
+    const p = landNear(s, 'EUR');
+    execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: 'EUR', x: p.x, y: p.y });
+    execute(s, { type: 'deploy', equipmentId: 'ew-jammer', region: 'EUR', x: p.x, y: p.y });
     const [missiles, jammer] = s.tactical!.deployments;
     expect(execute(s, { type: 'resupply', deploymentId: missiles.id }).ok).toBe(false); // full
     expect(execute(s, { type: 'resupply', deploymentId: jammer.id }).ok).toBe(false); // unlimited
@@ -320,7 +342,8 @@ describe('tactical layer: engine', () => {
     const on = createInitialState(defaultSettings('campaign', { seed: 11 }));
     expect(on.rng).toBe(off.rng); // sites and wave scheduling used tactical.rng only
     const r = on.tactical!.forecast[0];
-    execute(on, { type: 'deploy', equipmentId: 'davids-sling', region: r, x: 300, y: 200 });
+    const p = landNear(on, r);
+    execute(on, { type: 'deploy', equipmentId: 'davids-sling', region: r, x: p.x, y: p.y });
     execute(on, { type: 'beginPhase' });
     const firstWave = on.tactical!.waves[0].atHour;
     // Up to the first wave, both runs are identical apart from the deployment.
@@ -348,14 +371,16 @@ describe('tactical layer: engine', () => {
   it('rates regional protection by covered site value', () => {
     const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
     expect(regionProtection(s, 'EUR').level).toBe('exposed');
-    // A 300 km system mid-theater reaches every site.
-    execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: 'EUR', x: 300, y: 200 });
-    expect(regionProtection(s, 'EUR')).toEqual({ coverage: 1, level: 'protected' });
+    // A 300 km system near the middle reaches most sites (for high threats, at least).
+    const p = landNear(s, 'EUR');
+    execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: 'EUR', x: p.x, y: p.y });
+    expect(regionProtection(s, 'EUR').level).toBe('protected');
     // Out of rounds means it no longer counts.
     s.tactical!.deployments[0].stock = 0;
     expect(regionProtection(s, 'EUR').level).toBe('exposed');
     // Sensors alone protect nothing.
-    execute(s, { type: 'deploy', equipmentId: 'gm400', region: 'NAM', x: 300, y: 200 });
+    const n = landNear(s, 'NAM');
+    execute(s, { type: 'deploy', equipmentId: 'gm400', region: 'NAM', x: n.x, y: n.y });
     expect(regionProtection(s, 'NAM').level).toBe('exposed');
   });
 
@@ -381,7 +406,7 @@ describe('tactical layer: engine', () => {
       const a = computeScore(ignored);
       const b = computeScore(defended);
       expect(a.components.protection, `seed ${seed}`).toBe(0);
-      expect(b.components.protection!, `seed ${seed}`).toBeGreaterThan(50);
+      expect(b.components.protection!, `seed ${seed}`).toBeGreaterThan(40);
       expect(b.total, `seed ${seed}`).toBeGreaterThan(a.total);
       const w = Object.values(b.weights).reduce((x, y) => x + y!, 0);
       expect(w).toBeCloseTo(1, 9);
@@ -484,5 +509,93 @@ describe('tactical layer: scenarios', () => {
     const only = { ...standardTactical(), mix: { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 3 } };
     const s = createInitialState(defaultSettings('campaign', { seed: 5, tactical: only })); // phase 1 has no ballistic weight
     expect(s.tactical!.waves.every((w) => w.tracks.length > 0)).toBe(true);
+  });
+});
+
+describe('tactical layer: terrain, altitude and cost', () => {
+  const fresh = (seed = 4) => createInitialState(defaultSettings('campaign', { seed }));
+
+  it('gives every region its own coast, massifs and land-based sites', () => {
+    const s = fresh();
+    const t = s.tactical!;
+    const signatures = new Set<string>();
+    for (const r of Object.keys(TERRAIN_PROFILES) as RegionId[]) {
+      const ter = t.terrain![r];
+      expect(ter.coast).toBe(TERRAIN_PROFILES[r].coast);
+      expect(ter.massifs.length).toBeGreaterThan(0);
+      signatures.add(`${ter.coast}:${ter.massifs.length}:${ter.coastline[0].join(',')}`);
+      for (const site of t.sites.filter((x) => x.region === r)) {
+        expect(isSea(ter, [site.x, site.y]), `${r} ${site.name}`).toBe(false);
+      }
+    }
+    expect(signatures.size).toBe(7);
+  });
+
+  it('puts ships at sea and ground systems on land', () => {
+    const s = fresh();
+    const ter = s.tactical!.terrain!.IPA; // mostly ocean to the east
+    const land = landNear(s, 'IPA', 60, 200);
+    const sea = ter.coast === 'east' ? { x: 590, y: 200 } : { x: 10, y: 200 };
+    expect(isSea(ter, [sea.x, sea.y])).toBe(true);
+    expect(execute(s, { type: 'deploy', equipmentId: 'type-45', region: 'IPA', ...land }).ok).toBe(false);
+    expect(execute(s, { type: 'deploy', equipmentId: 'type-45', region: 'IPA', ...sea }).ok).toBe(true);
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'IPA', ...sea }).ok).toBe(false);
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'IPA', ...land }).ok).toBe(true);
+    expect(execute(s, { type: 'deploy', equipmentId: 'e-7', region: 'IPA', ...sea }).ok).toBe(true); // aircraft fly anywhere
+  });
+
+  it('hides low-flying threats below the radar horizon unless airborne early warning cues', () => {
+    const s = fresh();
+    const site = s.tactical!.sites.find((x) => x.region === 'EUR')!;
+    // A long-range system 120 km from the site: in range of high threats, beyond the horizon for low ones.
+    let p = { x: 0, y: 0 };
+    for (const [dx, dy] of [[120, 0], [-120, 0], [0, 120], [0, -120], [85, 85], [-85, -85], [85, -85], [-85, 85]]) {
+      const c = { x: site.x + dx, y: site.y + dy };
+      if (c.x > 0 && c.x < 600 && c.y > 0 && c.y < 400 && !isSea(s.tactical!.terrain!.EUR, [c.x, c.y]) && !onMassif(s.tactical!.terrain!.EUR, [c.x, c.y])) { p = c; break; }
+    }
+    expect(p.x || p.y).toBeTruthy();
+    execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: 'EUR', ...p });
+    let k = coverageAt(s, 'EUR', site.x, site.y);
+    expect(k.ballistic).toBeGreaterThan(0);
+    expect(k.cruise).toBe(0);
+    expect(k.slowDrone).toBe(0);
+    execute(s, { type: 'deploy', equipmentId: 'e-7', region: 'EUR', x: site.x, y: site.y });
+    k = coverageAt(s, 'EUR', site.x, site.y);
+    expect(k.cruise).toBeGreaterThan(0);
+  });
+
+  it('lets massifs block low-level line of sight', () => {
+    const s = fresh();
+    const m = s.tactical!.terrain!.EUR.massifs[0];
+    const a: [number, number] = [m.x - m.r - 30, m.y];
+    const b: [number, number] = [m.x + m.r + 30, m.y];
+    expect(masked(s.tactical!.terrain!.EUR, a, b)).toBe(true);
+    expect(masked(s.tactical!.terrain!.EUR, a, [m.x - m.r - 30, m.y + 200])).toBe(false);
+  });
+
+  it('respects altitude ceilings', () => {
+    const s = fresh();
+    const p = landNear(s, 'EUR');
+    execute(s, { type: 'deploy', equipmentId: 'iron-dome', region: 'EUR', ...p });
+    // Iron Dome lists a small ballistic kill rate, but its 10 km ceiling is below where ballistic threats are engaged.
+    expect(EQUIPMENT_MAP.get('iron-dome')!.killRate.ballistic).toBeGreaterThan(0);
+    expect(coverageAt(s, 'EUR', p.x, p.y).ballistic).toBe(0);
+    expect(coverageAt(s, 'EUR', p.x, p.y).rocket).toBeGreaterThan(0);
+  });
+
+  it('prices reach: long-range systems cost more than their compressed real price alone', () => {
+    const sling = EQUIPMENT_MAP.get('davids-sling')!;
+    const base = Math.round(TACTICAL_CONFIG.creditsScale * sling.unitCostUsdM ** TACTICAL_CONFIG.costExponent);
+    expect(equipmentCost(sling)).toBeGreaterThan(base * 1.8);
+    expect(equipmentCost(sling)).toBeGreaterThan(equipmentCost(EQUIPMENT_MAP.get('iris-t-slm')!) * 1.8);
+  });
+
+  it('adds terrain to saves made before it existed, without moving sites', () => {
+    const s = fresh(8);
+    const sites = s.tactical!.sites.map((x) => [x.x, x.y]);
+    delete s.tactical!.terrain;
+    const t = ensureTactical(s);
+    expect(Object.keys(t.terrain!)).toHaveLength(7);
+    expect(t.sites.map((x) => [x.x, x.y])).toEqual(sites);
   });
 });

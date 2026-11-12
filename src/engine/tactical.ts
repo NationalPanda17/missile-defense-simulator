@@ -7,8 +7,10 @@ import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
+import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
-  Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, ThreatAxis, ThreatClass, ThreatWave, Track,
+  Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
+  ThreatWave, Track,
 } from './types';
 import { REGION_IDS } from './types';
 
@@ -28,12 +30,16 @@ export function createTactical(s: SimState): TacticalState {
     rng: (s.settings.seed * 2654435761 + 0x7ac7) >>> 0,
     nextId: 1,
     sites: [],
+    terrain: {} as Record<RegionId, TheaterTerrain>,
     deployments: [],
     waves: [],
     forecast: [],
     stats: emptyStats(),
   };
-  for (const region of REGION_IDS) t.sites.push(...generateSites(t, region));
+  for (const region of REGION_IDS) {
+    t.terrain![region] = generateTerrain(t, region);
+    t.sites.push(...generateSites(t, region));
+  }
   return t;
 }
 
@@ -44,6 +50,12 @@ export function createTactical(s: SimState): TacticalState {
 export function ensureTactical(s: SimState): TacticalState {
   const old = s.tactical as Partial<TacticalState> | undefined;
   if (old && Array.isArray(old.sites) && Array.isArray(old.waves) && old.stats) {
+    // Saves from before terrain: add maps from a separate stream so the save's own wave sequence is untouched.
+    // Existing sites keep their positions.
+    if (!old.terrain) {
+      const r = { rng: (s.settings.seed * 2246822519 + 0x3c1) >>> 0 };
+      old.terrain = Object.fromEntries(REGION_IDS.map((id) => [id, generateTerrain(r, id)])) as Record<RegionId, TheaterTerrain>;
+    }
     // A campaign started while the feature flag was off picks the tactical layer up once it is on.
     if (!old.enabled && tacticalAllowed(s)) {
       old.enabled = true;
@@ -80,21 +92,28 @@ function siteName(r: Rng, used: Set<string>): string {
 function generateSites(t: TacticalState, region: RegionId): Site[] {
   const { width, height } = TACTICAL_CONFIG.theaterKm;
   const m = TACTICAL_CONFIG.siteMarginKm;
+  const terrain = t.terrain![region];
+  const profileClusters = TERRAIN_PROFILES[region].clusters;
   const used = new Set<string>();
   const out: Site[] = [];
+  const fallback = (): [number, number] => [Math.round(m + rand(t) * (width - 2 * m)), Math.round(m + rand(t) * (height - 2 * m))];
+  const spaced = (p: [number, number] | null) => !!p && out.every((o) => Math.hypot(o.x - p[0], o.y - p[1]) > 35);
+  // Cities gather around a few metro centres; everything else is spread over the land.
+  const centres = Array.from({ length: profileClusters }, () => randomLand(t, terrain, m + 30, 25) ?? fallback());
+  let cityIndex = 0;
   for (const mix of TACTICAL_CONFIG.siteMix) {
     for (let i = 0; i < mix.count; i++) {
-      // Keep sites apart so one system can't cover everything.
-      let x = 0;
-      let y = 0;
-      for (let tries = 0; tries < 30; tries++) {
-        x = Math.round(m + rand(t) * (width - 2 * m));
-        y = Math.round(m + rand(t) * (height - 2 * m));
-        if (out.every((o) => Math.hypot(o.x - x, o.y - y) > 60)) break;
+      let p: [number, number] | null = null;
+      for (let tries = 0; tries < 12 && !spaced(p); tries++) {
+        if (mix.type === 'city') p = randomLand(t, terrain, m - 30, 10, { at: centres[cityIndex % centres.length], within: 75 });
+        else if (mix.type === 'port') p = randomCoastal(t, terrain, m - 40);
+        else p = randomLand(t, terrain, m - 20, 10);
       }
+      if (!p) p = fallback();
+      if (mix.type === 'city') cityIndex++;
       out.push({
         id: `${region}-S${out.length + 1}`, name: siteName(t, used) + SITE_SUFFIX[mix.type], region, type: mix.type,
-        x, y, importance: mix.importance, integrity: 100,
+        x: p[0], y: p[1], importance: mix.importance, integrity: 100,
       });
     }
   }
@@ -196,23 +215,90 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
 
 // ── Geometry ─────────────────────────────────────────────────────────────
 
-/** Length (km) of the segment a→b that lies inside the circle at c with radius r. */
-export function chordInside(a: [number, number], b: [number, number], c: [number, number], r: number): number {
+/** Where (0-1 along a→b) the segment enters and leaves the circle at c with radius r, or null if it doesn't. */
+export function chordSpan(a: [number, number], b: [number, number], c: [number, number], r: number): [number, number] | null {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return 0;
+  if (dx === 0 && dy === 0) return null;
   const fx = a[0] - c[0];
   const fy = a[1] - c[1];
   const A = dx * dx + dy * dy;
   const B = 2 * (fx * dx + fy * dy);
   const C = fx * fx + fy * fy - r * r;
   const disc = B * B - 4 * A * C;
-  if (disc <= 0) return 0;
+  if (disc <= 0) return null;
   const sq = Math.sqrt(disc);
   const t1 = clamp((-B - sq) / (2 * A), 0, 1);
   const t2 = clamp((-B + sq) / (2 * A), 0, 1);
-  return Math.max(0, t2 - t1) * len;
+  return t2 > t1 ? [t1, t2] : null;
+}
+
+/** Length (km) of the segment a→b that lies inside the circle at c with radius r. */
+export function chordInside(a: [number, number], b: [number, number], c: [number, number], r: number): number {
+  const span = chordSpan(a, b, c, r);
+  return span ? (span[1] - span[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+}
+
+export const isLowFlying = (cls: ThreatClass) => TACTICAL_CONFIG.lowAltitude.classes.includes(cls);
+/** Passive sensors listen rather than look, so they aren't horizon-limited (their range is short anyway). */
+const isPassive = (spec: EquipmentSpec) => spec.id === 'acoustic-net' || spec.id === 'passive-rf';
+
+/**
+ * The part of a path (a→b) a deployment can work against, for one threat class: its range, cut to the radar
+ * horizon for low-flying threats unless cued from the air, and dropped if a massif hides the path from it.
+ * `range` is the system's own reach (detection or engagement). Returns the chord length in km.
+ */
+function reach(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, a: [number, number], b: [number, number], range: number, cued: boolean): number {
+  if (range <= 0) return 0;
+  const low = isLowFlying(cls) && spec.domain !== 'air';
+  const limited = low && !cued && !isPassive(spec) ? Math.min(range, lowHorizonKm(terrain, [d.x, d.y])) : range;
+  const span = chordSpan(a, b, [d.x, d.y], limited);
+  if (!span) return 0;
+  if (low && !cued) {
+    const mid = (span[0] + span[1]) / 2;
+    if (masked(terrain, [d.x, d.y], [a[0] + (b[0] - a[0]) * mid, a[1] + (b[1] - a[1]) * mid])) return 0;
+  }
+  return (span[1] - span[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]);
+}
+
+/** Can this system engage this class at all (kill rate and altitude ceiling)? */
+export const canEngageClass = (spec: EquipmentSpec, cls: ThreatClass) =>
+  spec.killRate[cls] > 0 && spec.altitudeKm >= TACTICAL_CONFIG.threatAltitudeKm[cls];
+
+/**
+ * Best single-shot kill rate against each class for a threat aimed at this point, from systems that can engage now.
+ * Uses the same rules as wave resolution (altitude, horizon, terrain, airborne cueing), approximating the path as
+ * the last 40 km into the point from every direction.
+ */
+export function coverageAt(s: SimState, region: RegionId, x: number, y: number): Record<ThreatClass, number> {
+  const out = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0 };
+  const t = s.tactical;
+  if (!t) return out;
+  const terrain = t.terrain?.[region];
+  const deps = t.deployments.filter((d) => d.region === region && canEngage(s, d));
+  const air = t.deployments.filter((d) => d.region === region && EQUIPMENT_MAP.get(d.equipmentId)!.domain === 'air' && s.assets.some((a) => a.id === d.assetId && availability(s, a) > 0));
+  const target: [number, number] = [x, y];
+  for (const cls of CLASSES) {
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const from: [number, number] = [x + dx * 40, y + dy * 40];
+      const cued = isLowFlying(cls) && air.some((d) => reach(terrain, d, EQUIPMENT_MAP.get(d.equipmentId)!, cls, from, target, detectionRange(EQUIPMENT_MAP.get(d.equipmentId)!, cls), true) > 0);
+      for (const d of deps) {
+        const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+        if (!canEngageClass(spec, cls)) continue;
+        if (reach(terrain, d, spec, cls, from, target, spec.rangeKm, cued) > 0) out[cls] = Math.max(out[cls], spec.killRate[cls]);
+      }
+    }
+  }
+  return out;
+}
+
+/** Why a system can't be placed here, or null. Ships go at sea; everything else on land. */
+export function placementError(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number): string | null {
+  if (!insideTheater(x, y)) return 'Position is outside the theater.';
+  const sea = isSea(s.tactical?.terrain?.[region], [x, y]);
+  if (spec.domain === 'sea' && !sea) return `${spec.name} must be placed at sea.`;
+  if (spec.domain === 'ground' && sea) return `${spec.name} must be placed on land.`;
+  return null;
 }
 
 /** Range (km) at which a system detects a threat class, or 0 if it can't. */
@@ -238,12 +324,17 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const region = s.regions[w.region];
   const target: [number, number] = [site.x, site.y];
   const assetOf = (d: Deployment) => s.assets.find((a) => a.id === d.assetId);
+  const terrain = t.terrain?.[w.region];
+  const working = deps.filter((d) => { const a = assetOf(d); return !!a && availability(s, a) > 0; });
 
-  const seen = deps.some((d) => {
-    const asset = assetOf(d);
-    if (!asset || availability(s, asset) <= 0) return false;
-    const range = detectionRange(EQUIPMENT_MAP.get(d.equipmentId)!, tr.cls);
-    return range > 0 && chordInside(tr.from, target, [d.x, d.y], range) > 0;
+  // Airborne early warning sees low threats beyond the horizon and over terrain, and cues surface systems.
+  const cued = isLowFlying(tr.cls) && working.some((d) => {
+    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+    return spec.domain === 'air' && reach(terrain, d, spec, tr.cls, tr.from, target, detectionRange(spec, tr.cls), true) > 0;
+  });
+  const seen = cued || working.some((d) => {
+    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+    return reach(terrain, d, spec, tr.cls, tr.from, target, detectionRange(spec, tr.cls), false) > 0;
   });
   const detection = (seen ? 1 : TACTICAL_CONFIG.unseenDetection) * (0.7 + 0.3 * (region.awareness / 100));
   const commsF = 0.6 + 0.4 * (region.comms / 100);
@@ -252,8 +343,8 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   // Outer layers engage first.
   const shooters = deps
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)!, asset: assetOf(d) }))
-    .filter((x) => x.asset && isEffector(x.spec) && x.spec.killRate[tr.cls] > 0)
-    .map((x) => ({ ...x, chord: chordInside(tr.from, target, [x.d.x, x.d.y], x.spec.rangeKm) }))
+    .filter((x) => x.asset && isEffector(x.spec) && canEngageClass(x.spec, tr.cls))
+    .map((x) => ({ ...x, chord: reach(terrain, x.d, x.spec, tr.cls, tr.from, target, x.spec.rangeKm, cued) }))
     .filter((x) => x.chord > 0)
     .sort((a, b) => b.spec.rangeKm - a.spec.rangeKm);
 
@@ -366,9 +457,8 @@ export function regionProtection(s: SimState, region: RegionId): { coverage: num
   const sites = t?.sites.filter((x) => x.region === region && x.integrity > 0) ?? [];
   const total = sites.reduce((a, x) => a + x.importance, 0);
   if (!t || !total) return { coverage: 0, level: 'exposed' };
-  const ready = t.deployments.filter((d) => d.region === region && canEngage(s, d));
   const covered = sites
-    .filter((x) => ready.some((d) => Math.hypot(d.x - x.x, d.y - x.y) <= EQUIPMENT_MAP.get(d.equipmentId)!.rangeKm))
+    .filter((x) => Object.values(coverageAt(s, region, x.x, x.y)).some((k) => k > 0))
     .reduce((a, x) => a + x.importance, 0);
   const coverage = covered / total;
   const { protected: p, thin } = TACTICAL_CONFIG.protection;
