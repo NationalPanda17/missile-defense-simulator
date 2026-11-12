@@ -157,11 +157,13 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   if (last <= first) return;
   const hours = Array.from({ length: profile.count }, () => first + Math.floor(rand(t) * (last - first + 1))).sort((a, b) => a - b);
   const others = REGION_IDS.filter((r) => !t.forecast.includes(r));
+  // Forecast regions take turns (in random order), so every forecast region sees at least one wave when there are
+  // enough waves. A forecast that never comes true would teach players to ignore it.
+  const order = [...t.forecast].sort(() => rand(t) - 0.5);
+  let next = 0;
   for (const atHour of hours) {
     const surprise = others.length > 0 && rand(t) < TACTICAL_CONFIG.surpriseRate;
-    const region = surprise
-      ? others[Math.floor(rand(t) * others.length)]
-      : t.forecast[Math.floor(rand(t) * t.forecast.length)];
+    const region = surprise ? others[Math.floor(rand(t) * others.length)] : order[next++ % order.length];
     const axis = AXES[Math.floor(rand(t) * AXES.length)];
     const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
     const tracks: Track[] = [];
@@ -341,8 +343,12 @@ export function addDeployment(s: SimState, spec: EquipmentSpec, region: RegionId
   const t = ensureTactical(s);
   const n = t.nextId++;
   const assetId = `TAC-${n}`;
+  // Number units per system type: "NASAMS 1", "NASAMS 2"… reusing numbers freed by withdrawals.
+  const taken = new Set(s.assets.filter((a) => a.role === 'defense' && a.className === spec.name).map((a) => a.name));
+  let unit = 1;
+  while (taken.has(`${spec.name} ${unit}`)) unit++;
   s.assets.push({
-    id: assetId, name: `${spec.name} ${n}`, className: spec.name, domain: spec.domain, role: 'defense', region,
+    id: assetId, name: `${spec.name} ${unit}`, className: spec.name, domain: spec.domain, role: 'defense', region,
     coverage: [region], condition: 100, capability: 0, status: 'operational',
     hoursToService: SIM_CONFIG.serviceInterval[spec.domain], maintenanceRemaining: 0, upkeep,
     pos: theaterToLonLat(s, region, x, y), history: [100],

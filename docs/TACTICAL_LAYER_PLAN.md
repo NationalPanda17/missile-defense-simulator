@@ -128,9 +128,9 @@ Each stage is its own PR with tests, and the game stays playable after every one
 | --- | --- | --- |
 | 1 | Rules and data | CONTRIBUTING/README updated, equipment catalog, types, optional tactical state with load defaults, tests for old saves and catalog completeness |
 | 2 | Engine | Theaters, deployment commands, waves, resolution, magazines. Tests: determinism, and a balance check that a sensible deployment beats no deployment on several seeds (on protection). Ships behind `TACTICAL_CONFIG.enabledInCampaign`, off until stage 3 |
-| 3 | Deployment UI | Briefing Deploy step with theater map, rings, heat map and budget. Turns the feature flag on |
+| 3 | Deployment UI | Briefing Deploy step with theater map, rings, heat map and budget. Preview with `?tactical=1`; the flag stays off for everyone else until stage 5 makes tactical spending pay off |
 | 4 | In-phase UI | Theater tab, live tracks, stats panel, world map badges |
-| 5 | Scoring and AAR | Protection component, rebalanced weights so tactical spending pays off, tactical AAR section, server scoring updated |
+| 5 | Scoring and AAR | Protection component, rebalanced weights so tactical spending pays off, tactical AAR section, server scoring updated. Turns the feature flag on |
 | 6 | Scenarios | Presets, builder, export/import |
 
 ## Resolved questions

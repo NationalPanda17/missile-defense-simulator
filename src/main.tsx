@@ -1,3 +1,4 @@
+import './preview'; // must run before the store loads any saved game
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './ui/App';
