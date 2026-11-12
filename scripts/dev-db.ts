@@ -1,6 +1,6 @@
 // Runs a real PostgreSQL server from node_modules (embedded-postgres) for local development.
 // Data persists in ./.pgdata. Ctrl+C stops it. Not needed if you already have PostgreSQL — set DATABASE_URL instead.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -57,12 +57,19 @@ function startWithPgCtl(dir: string, port: number, keep: (m: unknown) => void): 
       return execFileSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       const err = e as { stdout?: string; stderr?: string; message: string };
+      keep(`pg_ctl: ${err.message}`);
       keep(err.stdout ?? '');
-      keep(err.stderr ?? err.message);
+      keep(err.stderr ?? '');
       throw new Error('pg_ctl failed');
     }
   };
-  run(['start', '-D', dir, '-o', `-p ${port}`, '-l', path.join(dir, 'server.log'), '-w', '-t', '60']);
+  const logFile = path.join(dir, 'server.log');
+  try {
+    run(['start', '-D', dir, '-o', `-p ${port}`, '-l', logFile, '-w', '-t', '60']);
+  } catch (e) {
+    try { keep(readFileSync(logFile, 'utf8').split(/\r?\n/).slice(-15).join('\n')); } catch { /* no log yet */ }
+    throw e;
+  }
   return {
     stop: async () => { try { run(['stop', '-D', dir, '-m', 'fast', '-w']); } catch { /* already stopped */ } },
   };
