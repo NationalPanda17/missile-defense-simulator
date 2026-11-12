@@ -30,6 +30,7 @@ function verdict(s: SimState, c: CommandEntry): { tone: 'green' | 'red' | 'dim' 
   if (c.kind === 'maintain') return { tone: 'green', text: 'Preventive upkeep' };
   if (c.kind === 'deploy') return { tone: 'green', text: 'Tactical deployment' };
   if (c.kind === 'resupply') return { tone: 'green', text: 'Kept magazines full' };
+  if (c.kind === 'alert') return { tone: 'dim', text: 'Raised readiness for a wave' };
   return { tone: 'dim', text: '' };
 }
 

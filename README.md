@@ -88,7 +88,9 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    strike. In the briefing's *Deploy defenses* step, place real air defense systems on each
    region's 600 × 400 km theater map: long-range systems where their rings cover most sites,
    point defense at the most important ones, and sensors to see threats early. During the phase,
-   watch waves play out in the **Tactical Theater** (X) and resupply systems that run low.
+   watch waves play out in the **Tactical Theater** (X), resupply systems that run low, **raise
+   an alert** in a region when a wave is inbound, or **redeploy** a system (it's out of action
+   while it moves).
    Threat protection is 15% of the campaign score.
 
    Pick a **tactical scenario** on the campaign card: *Standard*, *Coastal Saturation* (drone

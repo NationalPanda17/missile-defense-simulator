@@ -211,6 +211,12 @@ export const TACTICAL_CONFIG = {
   resupplyRate: 0.25, // a full resupply costs this share of the deployment cost
   minLogisticsForResupply: 25,
 
+  // ── In-phase orders ──
+  /** Emergency redeploy: hours out of action and credits. Moving to another region takes the domain's transit time. */
+  emergencyRedeploy: { sameRegionHours: 3, otherRegionHours: { ground: 12, air: 4, sea: 18, space: 24 }, cost: 30, otherRegionCost: 40 },
+  /** Raise alert: detection and reaction boost in one region for a few hours, at a cost and extra wear. */
+  alert: { hours: 8, baseCost: 20, perDeploymentCost: 4, detectionBonus: 0.2, minDetectionUnseen: 0.7, reactionMult: 0.7, wearPerHour: 0.4 },
+
   // ── Sites ──
   /** Site types placed in every theater, with their importance. */
   siteMix: [

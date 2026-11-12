@@ -166,6 +166,11 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
   files and old saves are safe. The Standard preset reproduces the base profile exactly (same random draws).
   Files are `{ kind: 'mds-tactical-scenario', v: 1, name, tactical }`; `importTacticalScenario` rejects other kinds
   and versions. Presets are fictional and never named after real events.
+- **In-phase orders** (running phases only). `emergencyRedeploy` moves a system to a new valid position, in the same
+  region (3h) or another (domain transit time: air 4h, ground 12h, sea 18h). The asset is in `transit` and can't fire
+  until it arrives. `raiseAlert` costs 20 + 4 per system in the region and, for 8h, adds 20% detection, raises the
+  floor for unseen threats and cuts reaction times by 30%, while wearing those systems 0.4 condition/h. Tuning is in
+  `TACTICAL_CONFIG.emergencyRedeploy` and `TACTICAL_CONFIG.alert`.
 - **UI helpers.** `regionProtection` (share of live site value within range of a system that can engage:
   protected ≥ 70%, thin ≥ 30%, else exposed), `warningHours` (2h + up to 6h more with awareness) and
   `incomingWaves` (waves inside their warning window) feed the *Tactical Theater* view

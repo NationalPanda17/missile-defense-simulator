@@ -336,7 +336,10 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
     return reach(terrain, d, spec, tr.cls, tr.from, target, detectionRange(spec, tr.cls), false) > 0;
   });
-  const detection = (seen ? 1 : TACTICAL_CONFIG.unseenDetection) * (0.7 + 0.3 * (region.awareness / 100));
+  const alert = alertActive(s, w.region);
+  const A = TACTICAL_CONFIG.alert;
+  const unseen = alert ? Math.max(TACTICAL_CONFIG.unseenDetection, A.minDetectionUnseen) : TACTICAL_CONFIG.unseenDetection;
+  const detection = Math.min(1, (seen ? 1 : unseen) * (0.7 + 0.3 * (region.awareness / 100)) * (alert ? 1 + A.detectionBonus : 1));
   const commsF = 0.6 + 0.4 * (region.comms / 100);
   const speed = TACTICAL_CONFIG.threatSpeedKmS[tr.cls];
 
@@ -353,7 +356,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     if (stopped) break;
     const avail = Math.min(1, availability(s, asset!));
     if (avail <= 0) continue;
-    const reaction = spec.reactionSec * (seen ? 1 : 2);
+    const reaction = spec.reactionSec * (seen ? 1 : 2) * (alert ? A.reactionMult : 1);
     const window = chord / speed - reaction;
     if (window <= 0) continue;
     const shots = Math.min(TACTICAL_CONFIG.maxShotsPerSystem, 1 + Math.floor(window / Math.max(reaction, 30)));
@@ -415,10 +418,67 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   else tlog(s, leaked * 3 >= real.length ? 'crit' : 'warn', `Threat wave ${w.id} in ${where}: ${real.length - leaked}/${real.length} stopped, ${leaked} got through.`, w.region);
 }
 
-/** Hourly tactical update: resupply timers, then any waves arriving this hour. */
+/** Is a raised alert in force in this region now? */
+export function alertActive(s: SimState, region: RegionId): boolean {
+  return !!s.tactical?.alerts?.some((a) => a.region === region && a.until > s.hour);
+}
+
+/** Hours left on a region's alert (0 if none). */
+export function alertHoursLeft(s: SimState, region: RegionId): number {
+  const a = s.tactical?.alerts?.find((x) => x.region === region && x.until > s.hour);
+  return a ? a.until - s.hour : 0;
+}
+
+export function alertCost(s: SimState, region: RegionId): number {
+  const n = s.tactical?.deployments.filter((d) => d.region === region).length ?? 0;
+  return TACTICAL_CONFIG.alert.baseCost + TACTICAL_CONFIG.alert.perDeploymentCost * n;
+}
+
+/** Hours an emergency redeploy takes. */
+export function redeployHours(spec: EquipmentSpec, from: RegionId, to: RegionId): number {
+  const r = TACTICAL_CONFIG.emergencyRedeploy;
+  return from === to ? r.sameRegionHours : r.otherRegionHours[spec.domain];
+}
+
+export function redeployCost(from: RegionId, to: RegionId): number {
+  const r = TACTICAL_CONFIG.emergencyRedeploy;
+  return r.cost + (from === to ? 0 : r.otherRegionCost);
+}
+
+/** Hourly tactical update: transits, alerts, resupply timers, then any waves arriving this hour. */
 export function tickTactical(s: SimState) {
   const t = s.tactical;
   if (!t?.enabled) return;
+  for (const d of t.deployments) {
+    if (!d.transit) continue;
+    d.transit.remaining -= 1;
+    if (d.transit.remaining > 0) continue;
+    const { region, x, y } = d.transit;
+    d.region = region;
+    d.x = x;
+    d.y = y;
+    d.transit = undefined;
+    const a = s.assets.find((z) => z.id === d.assetId);
+    if (a) {
+      a.region = region;
+      a.coverage = [region];
+      a.pos = theaterToLonLat(s, region, x, y);
+      a.status = 'operational';
+      a.maintenanceRemaining = 0;
+      tlog(s, 'info', `${a.name} is in position in ${s.regions[region].name}.`, region);
+    }
+  }
+  if (t.alerts?.length) {
+    for (const al of t.alerts) {
+      if (al.until <= s.hour) continue;
+      for (const d of t.deployments) {
+        if (d.region !== al.region) continue;
+        const a = s.assets.find((z) => z.id === d.assetId);
+        if (a && a.status !== 'transit' && a.status !== 'maintenance') a.condition = clamp(a.condition - TACTICAL_CONFIG.alert.wearPerHour);
+      }
+    }
+    t.alerts = t.alerts.filter((al) => al.until > s.hour);
+  }
   for (const d of t.deployments) {
     if (d.reloadRemaining === undefined) continue;
     d.reloadRemaining -= 1;
@@ -536,6 +596,7 @@ export function tacticalShapeError(x: unknown): string | null {
     if (!REGION_IDS.includes(d.region)) return 'state.tactical deployment has an invalid region';
     if (!insideTheater(d.x, d.y)) return 'state.tactical deployment is outside the theater';
     if (!Number.isFinite(d.stock) || d.stock < 0) return 'state.tactical deployment stock is invalid';
+    if (d.transit && (!REGION_IDS.includes(d.transit.region) || !insideTheater(d.transit.x, d.transit.y))) return 'state.tactical deployment transit is invalid';
   }
   return null;
 }
