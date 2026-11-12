@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -242,6 +242,27 @@ const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
 
 const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
 
+/** What earlier phases left behind: damaged sites, and what that does to each region. */
+function CarriedOver({ s }: { s: SimState }) {
+  const hurt = REGION_IDS.map((r) => ({ r, share: siteDamageShare(s, r) })).filter((x) => x.share >= 0.03).sort((a, b) => b.share - a.share);
+  if (!hurt.length || s.settings.mode === 'training') return null;
+  const C = TACTICAL_CONFIG.consequences;
+  return (
+    <div className="rounded border border-ops-amber/40 bg-ops-amber/5 p-3">
+      <div className="label mb-1 text-ops-amber">Carried over from earlier fighting</div>
+      <ul className="space-y-0.5 text-[11px]">
+        {hurt.map(({ r, share }) => (
+          <li key={r}>
+            <span className="text-white">{s.regions[r].name}</span>: sites at {Math.round(100 - share * 100)}% of their value.
+            <span className="text-ops-dim"> Stability pulled down by about {Math.round(C.stability * share)} points, and a likelier target for attacks.</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[10px] text-ops-dim">Rebuild Damaged Sites (Logistics → investments, per region) repairs them.</p>
+    </div>
+  );
+}
+
 export function BriefingModal({ s }: { s: SimState }) {
   const phase = s.phases[s.phaseIndex];
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
@@ -302,6 +323,7 @@ export function BriefingModal({ s }: { s: SimState }) {
           <h2 className="font-sans text-3xl font-bold tracking-wide text-white">{phase.name}</h2>
           <div className="text-ops-dim">Duration {phase.hours}h · starts T+{s.hour}h{phase.grant ? ` · funding release +${phase.grant} credits` : ''}</div>
         </div>
+        <CarriedOver s={s} />
         {prevResults.length > 0 && (
           <div className="rounded border border-ops-line p-3">
             <div className="label mb-1">Previous phase evaluation</div>

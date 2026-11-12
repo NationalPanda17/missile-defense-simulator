@@ -8,7 +8,7 @@ import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
 import { LESSON_MAP, type ScriptedWave } from './training';
-import { WEATHER, conditionsAt, hash01, nextNightHour } from './weather';
+import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -189,7 +189,8 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   // Forecast: regions under the most strain are the likeliest targets.
   const pool = [...REGION_IDS];
   for (let i = 0; i < sc.forecastRegions && pool.length; i++) {
-    const id = weighted(t, pool.map((r) => ({ item: r, w: 20 + (100 - s.regions[r].stability) })));
+    // Strained and badly damaged regions are likelier targets: attackers press where defenses already failed.
+    const id = weighted(t, pool.map((r) => ({ item: r, w: 20 + (100 - s.regions[r].stability) + TACTICAL_CONFIG.consequences.targeting * siteDamageShare(s, r) })));
     t.forecast.push(id);
     pool.splice(pool.indexOf(id), 1);
   }
@@ -216,8 +217,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     const { region, surprise } = targets[k];
     // Some raids are timed to arrive in the dark (decided from the seed, not the game's random stream).
     let atHour = scheduled;
-    // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the night.
-    if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = Math.min(last, nextNightHour(s, region, scheduled) + 3);
+    // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the
+    // night: to the closest dark hour, earlier or later, so night raids don't pile up at the end of a phase.
+    if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = nearestNightHour(s, region, scheduled - 3, first - 3, last - 3) + 3;
     const axis = AXES[Math.floor(rand(t) * AXES.length)];
     const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
     const tracks: Track[] = [];
@@ -680,6 +682,14 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
     waves: waves.length, threats: Math.round(total / runs), stopRate: total ? stopped / total : 0,
     prevented: potential ? saved / potential : 0, range: [q(0.1), q(0.9)], mix,
   };
+}
+
+/** Share (0-1) of a region's site value lost to threat waves so far; it carries over from phase to phase. */
+export function siteDamageShare(s: SimState, region: RegionId): number {
+  const sites = s.tactical?.sites.filter((x) => x.region === region) ?? [];
+  const total = sites.reduce((a, x) => a + x.importance * 100, 0);
+  if (!total) return 0;
+  return sites.reduce((a, x) => a + x.importance * (100 - x.integrity), 0) / total;
 }
 
 /** Is a raised alert in force in this region now? */

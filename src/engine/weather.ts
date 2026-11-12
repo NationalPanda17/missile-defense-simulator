@@ -70,6 +70,14 @@ export function stormWindows(s: SimState, region: RegionId, from: number, to: nu
 }
 
 /** The next night hour at or after `hour` (within a day). */
+/** The night hour closest to `hour` within [lo, hi] (later wins a tie), or `hour` itself when there is none. */
+export function nearestNightHour(s: SimState, region: RegionId, hour: number, lo: number, hi: number): number {
+  for (let d = 0; d <= 12; d++) {
+    for (const h of [hour + d, hour - d]) if (h >= lo && h <= hi && isNight(s, region, h)) return h;
+  }
+  return hour;
+}
+
 export function nextNightHour(s: SimState, region: RegionId, hour: number): number {
   for (let h = hour; h < hour + 24; h++) if (isNight(s, region, h)) return h;
   return hour;
