@@ -356,8 +356,9 @@ export function BriefingModal({ s }: { s: SimState }) {
                     const pct = Math.round(p.prevented * 100);
                     return (
                       <li key={r}>
-                        ▸ {s.regions[r].name}: with your current layout, about{' '}
-                        <b className={pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red'}>{pct}%</b> of the expected damage would be prevented.
+                        ▸ {s.regions[r].name}: simulated with your current layout, about{' '}
+                        <b className={pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red'}>{pct}%</b> of the expected damage would be prevented
+                        {' '}<span className="text-ops-dim">(likely {Math.round(p.range[0] * 100)}–{Math.round(p.range[1] * 100)}%)</span>.
                       </li>
                     );
                   })}

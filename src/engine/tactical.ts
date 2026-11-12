@@ -448,21 +448,40 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     .filter((x) => x.chord > 0)
     .sort((a, b) => b.spec.rangeKm - a.spec.rangeKm);
 
+  // Diagnostics only (what happened and why): nothing below changes the outcome or draws random numbers.
+  tr.detected = seen;
+  const fired: { dep: string; shots: number }[] = [];
+  const why = new Map<string, string>();
+  for (const d of deps) {
+    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+    if (!isEffector(spec)) continue;
+    const a = assetOf(d);
+    if (!a || availability(s, a) <= 0) why.set(d.id, 'out of action (maintenance, damage or moving)');
+    else if (spec.altitudeKm < TACTICAL_CONFIG.threatAltitudeKm[tr.cls]) why.set(d.id, `cannot reach a ${THREAT_WORDS[tr.cls]}’s altitude`);
+    else if (spec.killRate[tr.cls] <= 0) why.set(d.id, `cannot engage ${THREAT_WORDS[tr.cls]}s`);
+    else if (!shooters.some((x) => x.d === d)) {
+      const blind = isLowFlying(tr.cls) && !cued && reachPath(terrain, d, spec, tr.cls, path, spec.rangeKm, true) > 0;
+      why.set(d.id, blind ? 'it flew below this system’s radar horizon or behind terrain' : 'its path never came within range');
+    }
+  }
+
   let stopped = false;
   for (const { d, spec, asset, chord } of shooters) {
-    if (stopped) break;
+    if (stopped) { why.set(d.id, 'not needed: already stopped'); continue; }
     const avail = Math.min(1, availability(s, asset!));
-    if (avail <= 0) continue;
+    if (avail <= 0) { why.set(d.id, 'out of action (maintenance, damage or moving)'); continue; }
     const reaction = spec.reactionSec * (seen ? 1 : 2) * (alert ? A.reactionMult : 1);
     const window = chord / speed - reaction;
-    if (window <= 0) continue;
+    if (window <= 0) { why.set(d.id, seen ? 'too fast: inside its range too briefly to react' : 'not detected in time to react'); continue; }
     const shots = Math.min(TACTICAL_CONFIG.maxShotsPerSystem, 1 + Math.floor(window / Math.max(reaction, 30)));
+    let firedHere = 0;
     for (let i = 0; i < shots && !stopped; i++) {
       if (!isUnlimited(spec)) {
-        if (d.stock <= 0) break;
+        if (d.stock <= 0) { if (!firedHere) why.set(d.id, 'magazine empty'); break; }
         d.stock -= 1;
         tr.cost = (tr.cost ?? 0) + roundCost(spec);
       }
+      firedHere++;
       tr.shots += 1;
       t.stats.shots += 1;
       if (rand(t) < spec.killRate[tr.cls] * avail * detection * commsF) {
@@ -473,7 +492,10 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
         if (span) tr.stopAt = Math.min(0.97, span[0] + (span[1] - span[0]) * (0.25 + 0.3 * i));
       }
     }
+    if (firedHere) fired.push({ dep: d.id, shots: firedHere });
   }
+  tr.fired = fired;
+  tr.why = [...why].filter(([dep]) => !fired.some((f) => f.dep === dep)).map(([dep, reason]) => ({ dep, reason }));
 
   if (tr.decoy) {
     tr.outcome = stopped ? 'decoyStopped' : 'decoyLeaked';
@@ -488,6 +510,26 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   }
   tr.outcome = 'leaked';
   t.stats.leaked += 1;
+  tr.leak = leakReason(tr, deps);
+}
+
+const THREAT_WORDS: Record<ThreatClass, string> = { slowDrone: 'slow drone', fastDrone: 'fast drone', cruise: 'cruise missile', rocket: 'rocket', ballistic: 'ballistic missile' };
+
+/** One plain sentence on why a genuine threat got through. */
+function leakReason(tr: Track, deps: Deployment[]): string {
+  const name = (id: string) => EQUIPMENT_MAP.get(deps.find((d) => d.id === id)?.equipmentId ?? '')?.name ?? id;
+  const shooters = deps.filter((d) => isEffector(EQUIPMENT_MAP.get(d.equipmentId)!));
+  if (!shooters.length) return 'Nothing deployed in the region could engage it.';
+  if (tr.fired?.length) {
+    const shots = tr.fired.reduce((a, f) => a + f.shots, 0);
+    return `Engaged by ${tr.fired.map((f) => name(f.dep)).join(', ')} (${shots} shot${shots === 1 ? '' : 's'}) but not stopped${tr.detected ? '' : '; it was not seen by a sensor, which lowers the chance'}.`;
+  }
+  const reasons = tr.why ?? [];
+  if (!reasons.length) return 'No system engaged it.';
+  // Group systems by reason: "Patriot, NASAMS: its path never came within range".
+  const groups = new Map<string, string[]>();
+  for (const r of reasons) groups.set(r.reason, [...(groups.get(r.reason) ?? []), name(r.dep)]);
+  return `No system fired: ${[...groups].map(([reason, names]) => `${[...new Set(names)].join(', ')}: ${reason}`).join('; ')}.`;
 }
 
 /** At impact: threats that got through damage their site and the region. */
@@ -511,7 +553,14 @@ function applyImpacts(s: SimState, t: TacticalState, w: ThreatWave) {
   const leaked = real.filter((x) => x.outcome === 'leaked').length;
   const where = `${region.name}, from the ${w.axis}`;
   if (leaked === 0) tlog(s, 'success', `Threat wave ${w.id} (${real.length} threats) defeated in ${where}.`, w.region);
-  else tlog(s, leaked * 3 >= real.length ? 'crit' : 'warn', `Threat wave ${w.id} in ${where}: ${real.length - leaked}/${real.length} stopped, ${leaked} got through.`, w.region);
+  else {
+    // The most common reason, so the log says why, not just how many.
+    const counts = new Map<string, number>();
+    for (const tr of real) if (tr.outcome === 'leaked' && tr.leak) counts.set(tr.leak, (counts.get(tr.leak) ?? 0) + 1);
+    const top = [...counts].sort((a, b) => b[1] - a[1])[0];
+    tlog(s, leaked * 3 >= real.length ? 'crit' : 'warn',
+      `Threat wave ${w.id} in ${where}: ${real.length - leaked}/${real.length} stopped, ${leaked} got through.${top ? ` Mostly: ${top[0]}` : ''}`, w.region);
+  }
 }
 
 function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
@@ -540,6 +589,8 @@ export interface DefensePreview {
   threats: number; // genuine threats in them
   stopRate: number; // expected share of genuine threats stopped (0-1)
   prevented: number; // expected share of their damage prevented, weighted by site importance (0-1)
+  /** The middle 80% of outcomes (10th to 90th percentile) of the damage prevented: how much luck can move it. */
+  range: [number, number];
   mix: Partial<Record<ThreatClass, number>>; // threats by class
 }
 
@@ -560,7 +611,10 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   let total = 0;
   let saved = 0;
   let potential = 0;
+  const perRun: number[] = [];
   for (let k = 0; k < runs; k++) {
+    let runSaved = 0;
+    let runPotential = 0;
     const t2: TacticalState = {
       ...t,
       rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
@@ -576,13 +630,17 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
         const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
         total++;
         potential += v;
-        if (tr.outcome === 'stopped') { stopped++; saved += v; }
+        runPotential += v;
+        if (tr.outcome === 'stopped') { stopped++; saved += v; runSaved += v; }
       }
     }
+    perRun.push(runPotential ? runSaved / runPotential : 0);
   }
+  perRun.sort((a, b) => a - b);
+  const q = (p: number) => perRun[Math.min(perRun.length - 1, Math.max(0, Math.round(p * (perRun.length - 1))))];
   return {
     waves: waves.length, threats: Math.round(total / runs), stopRate: total ? stopped / total : 0,
-    prevented: potential ? saved / potential : 0, mix,
+    prevented: potential ? saved / potential : 0, range: [q(0.1), q(0.9)], mix,
   };
 }
 

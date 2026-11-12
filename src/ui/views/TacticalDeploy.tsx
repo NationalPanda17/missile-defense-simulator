@@ -185,13 +185,16 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
     <details className="rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
       <summary className="cursor-pointer list-none">
         <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
-        With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
-        <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+        Simulated outcome with this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
+        <span className="text-ops-dim">(likely {Math.round(p.range[0] * 100)}–{Math.round(p.range[1] * 100)}%; {Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
       </summary>
       <ul className="mt-1 space-y-0.5 text-ops-dim">
         {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
       </ul>
-      <div className="mt-1 text-[10px] text-ops-dim">An estimate from replaying the forecast waves against your layout. Surprise attacks are not included.</div>
+      <div className="mt-1 text-[10px] text-ops-dim">
+        An estimate from replaying the forecast waves against your layout many times. Luck matters: the real result can land anywhere in the likely range, and sometimes outside it. Surprise attacks are not included.
+        Site coverage (on the map) is different: it only measures which sites sit inside some system’s reach.
+      </div>
     </details>
   );
 }

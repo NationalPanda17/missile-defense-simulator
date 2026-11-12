@@ -4,6 +4,7 @@ import { REGION_IDS, type CommandEntry, type RegionId, type SimState, type Threa
 import { Panel } from '../components/ui';
 import { trackPhase } from '../threatTimeline';
 import { TheaterMap } from './theater/TheaterMap';
+import { WaveBreakdown } from './WaveBreakdown';
 
 const CAT_COLOR: Record<CommandEntry['category'], string> = {
   response: '#38d6f5', maintenance: '#34d399', investment: '#a78bfa', redeploy: '#f5b13d', confirmation: '#7dd3fc', control: '#7088a8',
@@ -68,6 +69,8 @@ export function MissionReplay({ s }: { s: SimState }) {
   const X = (h: number) => (h / end) * 1000;
   const recent = decisions.filter((c) => c.t <= t && c.t > t - 6).slice(-4).reverse();
   const live = regionWaves.filter((w) => t >= launchOf(w) - 2 && t <= w.atHour + 3);
+  // The wave to explain: the one in the air, or else the most recent one before this moment.
+  const focusWave = live[0] ?? [...regionWaves].reverse().find((w) => launchOf(w) <= t) ?? null;
 
   if (!regions.length) return null;
   return (
@@ -133,6 +136,12 @@ export function MissionReplay({ s }: { s: SimState }) {
           ))}
           <line x1={X(t)} y1={0} x2={X(t)} y2={46} stroke="#ffffff" strokeWidth={2} vectorEffect="non-scaling-stroke" />
         </svg>
+        {focusWave && (
+          <details className="rounded border border-ops-line px-2 py-1" open>
+            <summary className="cursor-pointer text-[11px]"><span className="label">Breakdown</span> <span className="text-white">wave at T+{focusWave.atHour}h, {s.regions[focusWave.region].name}</span></summary>
+            <div className="pt-1"><WaveBreakdown s={s} wave={focusWave} /></div>
+          </details>
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ops-dim">
           <span><span className="text-ops-red">■</span> waves in {s.regions[region].name}</span>
           <span><span style={{ color: '#7088a8' }}>■</span> waves elsewhere</span>

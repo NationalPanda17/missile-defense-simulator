@@ -7,6 +7,7 @@ import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEX
 import { useUI } from '../uiState';
 import { MissionReplay } from './MissionReplay';
 import { ChallengePanel } from '../Challenge';
+import { WaveBreakdown } from './WaveBreakdown';
 
 const LABELS: Record<ScoreKey, string> = {
   readiness: 'Global readiness', network: 'Network reliability', stability: 'Regional stability', response: 'Event response',
@@ -157,6 +158,7 @@ export function AARView({ s }: { s: SimState }) {
             </div>
           </div>
           <CostExchange s={s} />
+          <WaveBreakdowns s={s} />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="min-w-0">
               <div className="label mb-1">Most effective systems</div>
@@ -295,6 +297,33 @@ function CostExchange({ s }: { s: SimState }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/** Every wave, expandable to what happened to each threat and why. */
+function WaveBreakdowns({ s }: { s: SimState }) {
+  const waves = (s.tactical?.waves ?? []).filter((w) => w.resolved).sort((a, b) => a.atHour - b.atHour);
+  if (!waves.length) return null;
+  return (
+    <div className="mt-4 min-w-0">
+      <div className="label mb-1">What happened to each threat</div>
+      <div className="space-y-1">
+        {waves.map((w) => {
+          const real = w.tracks.filter((x) => !x.decoy);
+          const stopped = real.filter((x) => x.outcome === 'stopped').length;
+          return (
+            <details key={w.id} className="rounded border border-ops-line px-2 py-1">
+              <summary className="cursor-pointer text-[11px]">
+                <span className="text-white">T+{w.atHour}h · {s.regions[w.region].name}</span>{' '}
+                <span className={TONE_TEXT[tone(real.length ? (stopped / real.length) * 100 : 0)]}>{stopped}/{real.length} stopped</span>
+                {!w.forecast && <span className="text-ops-amber"> · surprise</span>}
+              </summary>
+              <div className="pt-1"><WaveBreakdown s={s} wave={w} /></div>
+            </details>
+          );
+        })}
       </div>
     </div>
   );

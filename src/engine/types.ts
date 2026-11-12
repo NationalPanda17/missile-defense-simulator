@@ -345,6 +345,10 @@ export interface Track {
   launchAt?: number; // sim hour (fractional) it launches; it impacts at the wave's atHour
   stopAt?: number; // 0-1 along its path where it was stopped (for drawing the interception)
   cost?: number; // credits of interceptor rounds fired at it (absent in older saves)
+  detected?: boolean; // seen by a sensor (or cued by airborne radar) before it arrived
+  fired?: { dep: string; shots: number }[]; // systems that engaged it, in order
+  why?: { dep: string; reason: string }[]; // systems in the region that did not engage it, and why
+  leak?: string; // why it got through, in plain words (genuine threats that leaked)
   via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
 }
 
