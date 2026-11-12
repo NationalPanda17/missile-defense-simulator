@@ -1,14 +1,20 @@
 // Training Academy: the course outline, progress and certification record.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EXAM_PASS, LESSONS, defaultSettings } from '../../engine';
-import { store } from '../../store/simStore';
+import { store, useStoreVersion } from '../../store/simStore';
 import { Modal } from '../components/ui';
 import { useUI } from '../uiState';
-import { loadProgress, nextLessonId, resetProgress, startLesson } from './progress';
+import { loadProgress, nextLessonId, onProgressChange, resetProgress, startLesson, syncAcademy } from './progress';
 
 export function AcademyModal() {
   const ui = useUI();
+  useStoreVersion();
   const [p, setP] = useState(loadProgress);
+  useEffect(() => {
+    void syncAcademy();
+    return onProgressChange(() => setP(loadProgress()));
+  }, []);
+  const user = store.server.status === 'online' ? store.server.user : null;
   const next = nextLessonId(p);
   const course = LESSONS.filter((l) => !l.exam);
   const doneCount = course.filter((l) => p.done.includes(l.id)).length;
@@ -32,7 +38,11 @@ export function AcademyModal() {
               tells you what to do, waits until you have done it, and explains why it matters. Lessons can be taken in any
               order and repeated as often as you like.
             </p>
-            <p className="text-[11px] text-ops-dim">Progress is saved in this browser.</p>
+            <p className="text-[11px] text-ops-dim">
+              {user
+                ? <>Progress is saved in this browser and with your account <b className="text-white">{user.username}</b>, so it follows you to any browser you sign in on.</>
+                : <>Progress is saved in this browser. Sign in to the save server to keep it with your account.</>}
+            </p>
           </div>
           <div className="rounded border border-ops-line p-3">
             <div className="label">Your progress</div>
@@ -72,7 +82,7 @@ export function AcademyModal() {
           })}
         </ol>
         {p.done.length > 0 && (
-          <button className="btn text-[10px]" onClick={() => { if (window.confirm('Clear your Training Academy progress in this browser?')) { resetProgress(); setP(loadProgress()); } }}>Reset progress</button>
+          <button className="btn text-[10px]" onClick={() => { if (window.confirm(user ? 'Clear your Training Academy progress in this browser? Progress saved with your account is kept and comes back the next time it syncs.' : 'Clear your Training Academy progress in this browser?')) { resetProgress(); setP(loadProgress()); } }}>Reset progress</button>
         )}
       </div>
     </Modal>

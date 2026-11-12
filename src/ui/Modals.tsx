@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { useRef, useState } from 'react';
 import {
-  LESSONS, REGION_IDS, SIM_CONFIG, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -100,10 +100,10 @@ export function EventModal({ s }: { s: SimState }) {
               {e.status !== 'responding' && (
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" disabled={e.status !== 'reported' || e.confidence >= 92 || s.credits < SIM_CONFIG.confirmCost}
-                    onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report">
+                    data-coach="confirm" onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report">
                     ◈ Task confirmation ({SIM_CONFIG.confirmCost} cr, ~{SIM_CONFIG.confirmHours}h)
                   </button>
-                  <button className="btn btn-danger" onClick={() => { dispatch({ type: 'dismiss', eventId: e.id }); }} title="Close as unreliable. If it is genuine, it will keep developing unseen.">✕ Dismiss as unreliable</button>
+                  <button data-coach="dismiss" className="btn btn-danger" onClick={() => { dispatch({ type: 'dismiss', eventId: e.id }); }} title="Close as unreliable. If it is genuine, it will keep developing unseen.">✕ Dismiss as unreliable</button>
                 </div>
               )}
               <div className="label">Management responses</div>
@@ -119,7 +119,7 @@ export function EventModal({ s }: { s: SimState }) {
                           <div className="font-semibold text-white">{resp.label}</div>
                           <div className="text-[11px] text-ops-dim">{resp.description}</div>
                         </div>
-                        <button className={`btn shrink-0 ${resp.passive ? '' : 'btn-primary'}`} disabled={busy || !!err} title={err ?? undefined}
+                        <button data-coach={resp.passive ? 'monitor' : 'respond'} className={`btn shrink-0 ${resp.passive ? '' : 'btn-primary'}`} disabled={busy || !!err} title={err ?? undefined}
                           onClick={() => dispatch({ type: 'respond', eventId: e.id, responseId: resp.id })}>{resp.passive ? 'Monitor' : 'Execute'}</button>
                       </div>
                       {!resp.passive && (
@@ -200,12 +200,12 @@ export function AssetModal({ s }: { s: SimState }) {
           {a.status === 'maintenance' ? (
             <button className="btn" onClick={() => dispatch({ type: 'cancelMaintenance', assetId: a.id })}>Cancel maintenance</button>
           ) : (
-            <button className="btn btn-primary" disabled={a.status === 'transit'} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>
+            <button data-coach="maintain" className="btn btn-primary" disabled={a.status === 'transit'} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>
               ⛭ Schedule maintenance ({cost} cr, {SIM_CONFIG.maintenanceHours[a.domain]}h, 1 crew)
             </button>
           )}
           {mobile && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1" data-coach="redeploy">
               <select className="input py-1" value={dest} onChange={(e) => setDest(e.target.value as RegionId)} aria-label="Redeploy destination">
                 <option value="">Redeploy to…</option>
                 {REGION_IDS.filter((r) => r !== a.region).map((r) => <option key={r} value={r}>{s.regions[r].name}</option>)}
@@ -232,12 +232,12 @@ export function BriefingModal({ s }: { s: SimState }) {
     <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
-        <button className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
+        <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
       </>}>
       {tactical && (
         <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">
           <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>1 · Briefing</button>
-          <button role="tab" aria-selected={step === 'deploy'} className={`btn ${step === 'deploy' ? 'btn-active' : ''}`} onClick={() => setStep('deploy')}>
+          <button data-coach="deploy-tab" role="tab" aria-selected={step === 'deploy'} className={`btn ${step === 'deploy' ? 'btn-active' : ''}`} onClick={() => setStep('deploy')}>
             2 · Deploy defenses <span className="text-ops-dim">{tactical.deployments.length}</span>
           </button>
         </div>
@@ -301,6 +301,28 @@ export function BriefingModal({ s }: { s: SimState }) {
   );
 }
 
+const LEVEL_KEY = 'mds.level';
+function loadLevel(): CommandLevel {
+  try {
+    const v = localStorage.getItem(LEVEL_KEY) as CommandLevel | null;
+    return v && COMMAND_LEVEL_IDS.includes(v) ? v : 'officer';
+  } catch { return 'officer'; }
+}
+
+function LevelPicker({ value, onChange }: { value: CommandLevel; onChange: (l: CommandLevel) => void }) {
+  return (
+    <div className="mt-3 space-y-1">
+      <div className="label" id="level-label">Difficulty</div>
+      <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-labelledby="level-label">
+        {COMMAND_LEVEL_IDS.map((l) => (
+          <button key={l} role="radio" aria-checked={value === l} className={`btn px-1 ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}>{COMMAND_LEVELS[l].label}</button>
+        ))}
+      </div>
+      <p className="text-[10px] leading-relaxed text-ops-dim">{COMMAND_LEVELS[value].description}</p>
+    </div>
+  );
+}
+
 function AcademyProgressLine() {
   const p = loadProgress();
   const total = LESSONS.length - 1;
@@ -320,11 +342,17 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const saves = listSaves();
   const [scenario, setScenario] = useState<ChosenScenario>(loadChosenScenario);
   const tacticalOn = TACTICAL_CONFIG.enabledInCampaign;
+  const [level, setLevelState] = useState<CommandLevel>(loadLevel);
+  const setLevel = (l: CommandLevel) => {
+    setLevelState(l);
+    try { localStorage.setItem(LEVEL_KEY, l); } catch { /* ignore */ }
+  };
   const start = (mode: 'campaign' | 'crisis' | 'training') => {
-    if (mode !== 'campaign' || !tacticalOn) return store.newGame(defaultSettings(mode));
+    if (mode !== 'campaign') return store.newGame(defaultSettings(mode));
+    if (!tacticalOn) return store.newGame(withLevel(defaultSettings('campaign'), level));
     const base = defaultSettings('campaign');
     const std = scenario.tactical.preset === 'standard';
-    store.newGame({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical });
+    store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical }, level));
   };
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
@@ -344,6 +372,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             <div key={m.id} className="panel flex flex-col p-4">
               <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{m.title}</div>
               <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{m.desc}</p>
+              {m.id === 'campaign' && <LevelPicker value={level} onChange={setLevel} />}
               {m.id === 'campaign' && tacticalOn && (
                 <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
               )}

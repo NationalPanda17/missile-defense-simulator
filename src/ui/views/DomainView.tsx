@@ -57,7 +57,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
           <tbody>
             {sorted.map((a) => (
               <tr key={a.id}>
-                <td><button className="text-white hover:text-ops-cyan" onClick={() => ui.openAsset(a.id)}>{a.name}</button></td>
+                <td><button data-coach="asset" className="text-white hover:text-ops-cyan" onClick={() => ui.openAsset(a.id)}>{a.name}</button></td>
                 <td className="max-w-[170px] truncate text-ops-dim" title={a.className}>{a.className}</td>
                 <td>{domain === 'space' ? a.coverage.map((c) => s.regions[c].short).join(' ') : a.status === 'transit' ? `→ ${a.transitTo}` : s.regions[a.region].short}</td>
                 <td><span style={{ color: statusColor(a, s.hour) }} className="uppercase">{a.status}</span></td>

@@ -47,7 +47,7 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
       <div className="flex flex-wrap gap-1">
         <button className={`btn px-1.5 py-0.5 text-[10px] ${layer === 'all' ? 'btn-active' : ''}`} onClick={() => setLayer('all')}>All</button>
         {layers.map((l) => (
-          <button key={l} className={`btn px-1.5 py-0.5 text-[10px] ${layer === l ? 'btn-active' : ''}`} onClick={() => setLayer(l)}>
+          <button key={l} data-coach={`layer-${l}`} className={`btn px-1.5 py-0.5 text-[10px] ${layer === l ? 'btn-active' : ''}`} onClick={() => setLayer(l)}>
             <span className="inline-block h-2 w-2 rotate-45" style={{ background: LAYER_COLOR[l] }} />{LAYER_LABELS[l]}
           </button>
         ))}
@@ -203,7 +203,7 @@ export function DeployPanel({ s }: { s: SimState }) {
 
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
         {REGION_IDS.map((r) => (
-          <button key={r} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelectedDep(null); setMoving(false); }}>
+          <button key={r} data-coach={`region-${r}`} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelectedDep(null); setMoving(false); }}>
             {s.regions[r].short}
             {t.forecast.includes(r) && <span className="text-ops-red">●</span>}
             {count(r) > 0 && <span className="text-ops-dim">{count(r)}</span>}
@@ -213,7 +213,7 @@ export function DeployPanel({ s }: { s: SimState }) {
 
       {/* Phones: map, catalog, then coverage. Wider screens: map and coverage on the left, catalog on the right. */}
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
-        <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1">
+        <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1" data-coach="deploy-map">
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
             highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
             onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />

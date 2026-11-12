@@ -233,6 +233,29 @@ describe('authentication', () => {
     expect((await agent(base).call('POST', '/auth/login', { username: a.username, password: PW })).status).toBe(401);
   });
 
+  it('keeps Training Academy progress with the account, merging lessons and keeping the best exam', async () => {
+    const a = await signedUp(base);
+    expect((await a.call('GET', '/academy')).body).toEqual({ done: [], bestExam: null });
+    const fail = { passed: false, met: 3, total: 6, score: 52, grade: 'D', at: 1 };
+    const pass = { passed: true, met: 5, total: 6, score: 68, grade: 'C', at: 2 };
+    let r = await a.call('PUT', '/academy', { done: ['basics', 'situation'], bestExam: fail });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ done: ['basics', 'situation'], bestExam: fail });
+    // A second browser with different progress: lessons are united, the pass beats the higher-scoring fail.
+    r = await a.call('PUT', '/academy', { done: ['information'], bestExam: pass });
+    expect(r.body.done).toEqual(['basics', 'information', 'situation']);
+    expect(r.body.bestExam).toEqual(pass);
+    r = await a.call('PUT', '/academy', { done: [], bestExam: { ...fail, score: 90 } });
+    expect(r.body.bestExam).toEqual(pass);
+    expect(r.body.done).toHaveLength(3);
+    // Validation, and isolation between accounts.
+    expect((await a.call('PUT', '/academy', { done: ['not-a-lesson'] })).status).toBe(400);
+    expect((await a.call('PUT', '/academy', { done: [], bestExam: { passed: 'yes' } })).status).toBe(400);
+    const b = await signedUp(base);
+    expect((await b.call('GET', '/academy')).body).toEqual({ done: [], bestExam: null });
+    expect((await agent(base).call('GET', '/academy')).status).toBe(401);
+  });
+
   it('updates the callsign', async () => {
     const a = await signedUp(base);
     expect((await a.call('PUT', '/player', { callsign: '  Night Watch ' })).body.user.callsign).toBe('Night Watch');

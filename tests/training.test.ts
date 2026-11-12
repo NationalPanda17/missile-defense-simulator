@@ -216,6 +216,8 @@ describe('Training Academy', () => {
     expect(s.status).toBe('complete');
     const st = examStandards(s);
     expect(st.find((x) => x.id === 'defense')!.met).toBe(false);
+    // Doing nothing is not good information discipline.
+    expect(st.find((x) => x.id === 'discipline')!.met).toBe(false);
     expect(examResult(s).passed).toBe(false);
   });
 

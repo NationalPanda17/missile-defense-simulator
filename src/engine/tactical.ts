@@ -2,7 +2,7 @@
 //
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
-import { SIM_CONFIG, TACTICAL_CONFIG } from './config';
+import { SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
 import { EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
@@ -170,6 +170,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   if (!base || !phase) return;
   // Apply the scenario's multipliers. The standard scenario (all 1s) reproduces the base profile exactly.
   const sc = normalizeTactical(s.settings.tactical);
+  const lv = levelOf(s.settings);
+  if (lv.waveSize !== 1) sc.waveSize *= lv.waveSize;
+  if (lv.surpriseMult !== 1) sc.surpriseRate = Math.min(0.9, sc.surpriseRate * lv.surpriseMult);
   const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c]])) as Record<ThreatClass, number>;
   const profile = {
     count: Math.max(1, Math.round(base.count * sc.waveCount)),
@@ -452,7 +455,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   const region = s.regions[w.region];
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
-  const decoyScale = normalizeTactical(s.settings.tactical).decoys;
+  const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult;
   const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * 0.6 * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);

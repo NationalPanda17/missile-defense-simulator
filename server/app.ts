@@ -4,7 +4,8 @@ import { stat } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import type pg from 'pg';
-import { SAVE_VERSION, SLOTS, stateShapeError, type SimState } from '../src/engine';
+import { LESSONS, LESSON_MAP, SAVE_VERSION, SLOTS, stateShapeError, type SimState } from '../src/engine';
+import type { ExamRecord } from '../src/shared/api';
 import {
   RateLimiter, SESSION_COOKIE, Sessions, USERNAME_RE, UsernameTaken, Users, clearedCookie, dummyVerify, hashPassword,
   passwordProblem, readCookie, sessionCookie, verifyPassword, type AuthContext,
@@ -151,6 +152,21 @@ export function createApp(opts: AppOptions) {
     await users.deleteAccount(ctx.auth.userId);
     ctx.res.setHeader('Set-Cookie', clearedCookie(secure));
     ctx.res.writeHead(204).end();
+  });
+
+  // ── Training Academy progress ───────────────────────────────────────────
+
+  authed('GET', /^\/api\/academy$/, async ({ res, auth }) => json(res, 200, await repo.getAcademy(auth.playerId)));
+
+  authed('PUT', /^\/api\/academy$/, async (ctx) => {
+    const body = await ctx.body();
+    const done = body.done;
+    if (!Array.isArray(done) || done.length > LESSONS.length || !done.every((x) => typeof x === 'string' && LESSON_MAP.has(x))) {
+      throw new HttpError(400, 'done must be a list of lesson ids');
+    }
+    const bestExam = body.bestExam ?? null;
+    if (bestExam !== null && !isExamRecord(bestExam)) throw new HttpError(400, 'bestExam is invalid');
+    json(ctx.res, 200, await repo.mergeAcademy(ctx.auth.playerId, { done, bestExam }));
   });
 
   authed('PUT', /^\/api\/player$/, async (ctx) => {
@@ -318,4 +334,12 @@ async function serveStatic(root: string, pathname: string, res: http.ServerRespo
     'Cache-Control': file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
   });
   createReadStream(file).pipe(res);
+}
+
+function isExamRecord(x: unknown): x is ExamRecord {
+  const e = x as ExamRecord;
+  return !!e && typeof e === 'object' && typeof e.passed === 'boolean'
+    && Number.isInteger(e.met) && Number.isInteger(e.total) && e.met >= 0 && e.met <= e.total && e.total <= 20
+    && Number.isFinite(e.score) && e.score >= 0 && e.score <= 100
+    && typeof e.grade === 'string' && e.grade.length <= 4 && Number.isFinite(e.at);
 }

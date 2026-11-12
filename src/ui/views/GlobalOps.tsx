@@ -22,7 +22,7 @@ export function GlobalOps({ s }: { s: SimState }) {
         <Stat label="Personnel" value={Math.round(s.personnel)} sub={`crews ${s.crews - s.crewsBusy}/${s.crews} free`} />
       </div>
       <div className="relative flex min-h-0 flex-1 gap-2">
-        <div className="min-h-[380px] min-w-0 flex-1"><GlobalMap s={s} /></div>
+        <div className="min-h-[380px] min-w-0 flex-1" data-coach="map"><GlobalMap s={s} /></div>
         {ui.region && <RegionPanel s={s} id={ui.region} />}
       </div>
     </div>
