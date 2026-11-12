@@ -1,8 +1,8 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  equipmentCost, isEffector, isUnlimited, previewDefense, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -158,6 +158,43 @@ function DeployGuide({ s, region, onPick, onHide }: { s: SimState; region: Regio
   );
 }
 
+/** What each threat class needs, in a sentence, for the forecast check. */
+const CLASS_ADVICE: Record<ThreatClass, string> = {
+  slowDrone: 'slow drones: cheap to stop with guns, Coyote or jamming; low, so radars must be close or on high ground',
+  fastDrone: 'fast drones: counter-drone guns and short-range missiles; low-flying',
+  cruise: 'cruise missiles: fly very low; short/medium-range missiles (NASAMS, IRIS-T) with a radar nearby or airborne early warning',
+  rocket: 'rockets: fast and short-lived; Iron Dome-class systems near the sites they target',
+  ballistic: 'ballistic missiles: only upper-tier or long-range systems reach them (Patriot PAC-3, THAAD, Arrow, SM-3/SM-6)',
+};
+
+/** Forecast check: the expected threats in this region and how the current layout would do against them. */
+function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
+  const t = s.tactical!;
+  const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}`).join('|');
+  // Recomputed only when this region's layout (or the phase) changes.
+  const p = useMemo(() => previewDefense(s, region), [key, region, s.phaseIndex, s.hour]);
+  if (!p) {
+    return t.forecast.includes(region) ? null : (
+      <p className="text-[11px] text-ops-dim">{s.regions[region].name} is not in this phase’s forecast. Surprise attacks are possible in later phases.</p>
+    );
+  }
+  const pct = Math.round(p.prevented * 100);
+  const tone = pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red';
+  const classes = (Object.entries(p.mix) as [ThreatClass, number][]).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="rounded border border-ops-line p-2 text-[11px]" aria-live="polite">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="label">Forecast check · {s.regions[region].name}</span>
+        <span>With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b> <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped)</span></span>
+      </div>
+      <ul className="mt-1 space-y-0.5 text-ops-dim">
+        {classes.map(([c, n]) => <li key={c}>▸ ~{n} {CLASS_ADVICE[c]}</li>)}
+      </ul>
+      <div className="mt-1 text-[10px] text-ops-dim">An estimate from replaying the forecast waves against your layout. Surprise attacks are not included.</div>
+    </div>
+  );
+}
+
 export function DeployPanel({ s }: { s: SimState }) {
   const t = s.tactical!;
   const [region, setRegion] = useState<RegionId>(t.forecast[0] ?? 'NAM');
@@ -195,6 +232,8 @@ export function DeployPanel({ s }: { s: SimState }) {
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
         {' '}Each forecast region will be hit at least once; red arrows show the expected approach. Later, larger phases may also strike elsewhere.
       </div>
+
+      <ForecastCheck s={s} region={region} />
 
       {showGuide && <DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} />}
       {!showGuide && s.phaseIndex === 0 && (

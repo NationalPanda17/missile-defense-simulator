@@ -534,6 +534,57 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   if (real) tlog(s, 'crit', `LAUNCH: threat wave ${w.id} (${real} threats) inbound to ${region.name} from the ${w.axis}, impact T+${w.atHour}h.`, w.region);
 }
 
+export interface DefensePreview {
+  waves: number; // forecast waves still to come in the region this phase
+  threats: number; // genuine threats in them
+  stopRate: number; // expected share of genuine threats stopped (0-1)
+  prevented: number; // expected share of their damage prevented, weighted by site importance (0-1)
+  mix: Partial<Record<ThreatClass, number>>; // threats by class
+}
+
+/**
+ * What-if for a briefing: plays the region's forecast waves against the current layout many times with fresh
+ * random numbers (never the game's own stream) and averages the result. Uses the real engagement rules, so moving
+ * or adding a system changes the estimate exactly as it would change the fight. Surprise waves are not included.
+ */
+export function previewDefense(s: SimState, region: RegionId, runs = 24): DefensePreview | null {
+  const t = s.tactical;
+  if (!t?.enabled) return null;
+  const waves = t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved && w.forecast);
+  if (!waves.length) return null;
+  const sites = new Map(t.sites.map((x) => [x.id, x]));
+  const mix: Partial<Record<ThreatClass, number>> = {};
+  for (const w of waves) for (const tr of w.tracks) if (!tr.decoy) mix[tr.cls] = (mix[tr.cls] ?? 0) + 1;
+  let stopped = 0;
+  let total = 0;
+  let saved = 0;
+  let potential = 0;
+  for (let k = 0; k < runs; k++) {
+    const t2: TacticalState = {
+      ...t,
+      rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
+      deployments: t.deployments.map((d) => ({ ...d })),
+      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined })) })),
+      stats: emptyStats(),
+    };
+    const s2 = { ...s, tactical: t2, log: [] } as SimState;
+    for (const w of t2.waves) {
+      resolveWave(s2, t2, w);
+      for (const tr of w.tracks) {
+        if (tr.decoy) continue;
+        const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
+        total++;
+        potential += v;
+        if (tr.outcome === 'stopped') { stopped++; saved += v; }
+      }
+    }
+  }
+  return {
+    waves: waves.length, threats: Math.round(total / runs), stopRate: total ? stopped / total : 0,
+    prevented: potential ? saved / potential : 0, mix,
+  };
+}
+
 /** Is a raised alert in force in this region now? */
 export function alertActive(s: SimState, region: RegionId): boolean {
   return !!s.tactical?.alerts?.some((a) => a.region === region && a.until > s.hour);

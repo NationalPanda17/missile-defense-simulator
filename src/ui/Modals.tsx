@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -344,6 +344,19 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <div className="label mb-1 text-ops-red">Threat forecast</div>
                 Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
+                <ul className="mt-1 space-y-0.5">
+                  {tactical.forecast.map((r) => {
+                    const p = previewDefense(s, r, 12);
+                    if (!p) return null;
+                    const pct = Math.round(p.prevented * 100);
+                    return (
+                      <li key={r}>
+                        ▸ {s.regions[r].name}: with your current layout, about{' '}
+                        <b className={pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red'}>{pct}%</b> of the expected damage would be prevented.
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>
