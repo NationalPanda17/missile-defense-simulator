@@ -291,7 +291,13 @@ export function TheaterView({ s }: { s: SimState }) {
             {deps.length ? (
               <ul className="max-h-[26rem] space-y-1.5 overflow-y-auto pr-1">{deps.map((d) => <DeploymentRow key={d.id} s={s} d={d} moving={moving === d.id} onRedeploy={() => setMoving(moving === d.id ? null : d.id)} />)}</ul>
             ) : (
-              <p className="text-[11px] text-ops-dim">Nothing deployed in {s.regions[region].name}. Equipment is placed during campaign briefings.</p>
+              <div className="rounded border border-ops-line p-2 text-[11px] leading-relaxed">
+                <div className="text-white">Nothing deployed in {s.regions[region].name}.</div>
+                <p className="text-ops-dim">
+                  You build the defense; the simulation fights it. New systems are placed in each phase’s briefing (Deploy defenses).
+                  {s.status === 'running' ? ' During the phase you can raise alerts, resupply magazines, move a system here with an emergency redeploy, and handle reports.' : ''}
+                </p>
+              </div>
             )}
             <p className="mt-2 text-[10px] text-ops-dim">
               Systems wear down like other equipment: send them for maintenance from Ground, Air or Maritime Command.

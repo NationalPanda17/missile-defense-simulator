@@ -48,7 +48,18 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [overlay, setOverlay] = useState<OverlayMetric>('readiness');
   const [tutorial, setTutorial] = useState(false);
   const [help, setHelp] = useState(false);
-  const [bottomOpen, setBottomOpen] = useState(true);
+  // The timeline drawer remembers being closed; on short screens it starts closed so the map keeps its height.
+  const [bottomOpen, setBottomOpenState] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('mds.bottomOpen');
+      if (v !== null) return v === '1';
+    } catch { /* ignore */ }
+    return typeof window === 'undefined' || window.innerHeight >= 860;
+  });
+  const setBottomOpen = (b: boolean) => {
+    setBottomOpenState(b);
+    try { localStorage.setItem('mds.bottomOpen', b ? '1' : '0'); } catch { /* ignore */ }
+  };
   const [accountOpen, setAccountOpen] = useState(false);
   const [academyOpen, setAcademyOpen] = useState(false);
   const [theaterFocus, setTheaterFocus] = useState<RegionId | null>(null);

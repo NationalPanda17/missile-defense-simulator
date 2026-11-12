@@ -289,7 +289,7 @@ export function BottomPanel({ s }: { s: SimState }) {
     );
   }
   return (
-    <div className="flex h-52 flex-col border-t border-ops-line bg-ops-panel/80">
+    <div className="flex h-[min(13rem,28vh)] min-h-[8rem] flex-col border-t border-ops-line bg-ops-panel/80">
       <div className="flex items-center gap-2 border-b border-ops-line px-2 py-1">
         <Tabs<BottomTab> value={tab} onChange={setTab} tabs={[
           { id: 'timeline', label: 'Event Timeline' }, { id: 'commands', label: 'Command History' },
