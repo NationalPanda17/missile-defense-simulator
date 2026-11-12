@@ -38,7 +38,8 @@ async function start(): Promise<string> {
   server = http.createServer(createApp({ pool, staticDir: WEB, secureCookies: false, trustProxy: false }));
   const port = await freePort();
   await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', resolve));
-  return `http://127.0.0.1:${port}/`;
+  // The page shows a notice when GitHub Releases has a newer version than this one.
+  return `http://127.0.0.1:${port}/?desktop=${encodeURIComponent(app.getVersion())}`;
 }
 
 let stopping = false;
