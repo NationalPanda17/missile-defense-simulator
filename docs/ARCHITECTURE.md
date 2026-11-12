@@ -126,8 +126,9 @@ network health.
 
 ## Tactical layer (`engine/tactical.ts`, `engine/equipment.ts`)
 
-Campaign only, behind the `TACTICAL_CONFIG.enabledInCampaign` feature flag (off until the deployment screen
-ships). All tuning lives in `TACTICAL_CONFIG` (`config.ts`); real equipment figures live in `EQUIPMENT`.
+Campaign only, behind the `TACTICAL_CONFIG.enabledInCampaign` feature flag (off until scoring rewards it). Open
+the game with `?tactical=1` to preview it in one browser (`src/preview.ts` remembers the choice; `?tactical=0` clears
+it). The deployment step is `ui/views/TacticalDeploy.tsx`, shown as step 2 of the campaign briefing. All tuning lives in `TACTICAL_CONFIG` (`config.ts`); real equipment figures live in `EQUIPMENT`.
 
 - **Own RNG.** `tactical.rng` drives site generation, wave scheduling and resolution, so the management
   simulation draws the same random numbers whether the layer is on or off.

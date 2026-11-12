@@ -9,6 +9,7 @@ import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Modal, SEV_TONE, Sparkline, TONE
 import { useUI, type ViewId } from './uiState';
 import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
+import { DeployPanel } from './views/TacticalDeploy';
 
 function effectText(f: EffectSpec): string {
   const v = Math.abs(f.value).toFixed(f.value % 1 ? 1 : 0);
@@ -223,9 +224,23 @@ export function BriefingModal({ s }: { s: SimState }) {
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
   const activeEv = s.events.filter(isActive);
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
+  const tactical = s.tactical?.enabled ? s.tactical : null;
+  const [step, setStep] = useState<'brief' | 'deploy'>('brief');
   return (
     <Modal wide title={`CAMPAIGN BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
-      footer={<button className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>}>
+      footer={<>
+        {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
+        <button className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
+      </>}>
+      {tactical && (
+        <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">
+          <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>1 · Briefing</button>
+          <button role="tab" aria-selected={step === 'deploy'} className={`btn ${step === 'deploy' ? 'btn-active' : ''}`} onClick={() => setStep('deploy')}>
+            2 · Deploy defenses <span className="text-ops-dim">{tactical.deployments.length}</span>
+          </button>
+        </div>
+      )}
+      {tactical && step === 'deploy' ? <DeployPanel s={s} /> : (
       <div className="space-y-4">
         <div>
           <div className="label">{s.settings.name}</div>
@@ -269,9 +284,17 @@ export function BriefingModal({ s }: { s: SimState }) {
                 {!degraded.length && !activeEv.length && <li className="text-ops-dim">None reported.</li>}
               </ul>
             </div>
+            {tactical && (
+              <div className="rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+                <div className="label mb-1 text-ops-red">Threat forecast</div>
+                Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
+                <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
+              </div>
+            )}
           </div>
         </div>
       </div>
+      )}
     </Modal>
   );
 }

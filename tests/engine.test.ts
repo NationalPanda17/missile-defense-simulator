@@ -221,6 +221,22 @@ describe('tactical layer: engine', () => {
     }
   });
 
+  it('sends at least one wave to every forecast region when no wave is a surprise', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const t = createInitialState(defaultSettings('campaign', { seed })).tactical!;
+      if (t.waves.some((w) => !w.forecast)) continue;
+      for (const r of t.forecast) expect(t.waves.some((w) => w.region === r), `seed ${seed} ${r}`).toBe(true);
+    }
+  });
+
+  it('numbers units per system type', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 100, y: 100 });
+    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 200, y: 100 });
+    const names = s.assets.filter((a) => a.role === 'defense').map((a) => a.name);
+    expect(names).toEqual(['NASAMS 1', 'NASAMS 2']);
+  });
+
   it('stays off outside the campaign', () => {
     const s = createInitialState(defaultSettings('crisis', { seed: 4 }));
     expect(s.tactical!.enabled).toBe(false);
