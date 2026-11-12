@@ -58,3 +58,104 @@ jobs:
 
       - name: Run tests (engine + API/auth against PostgreSQL)
         run: npm test
+
+  # The double-click start files and the embedded database on the platforms players actually use.
+  start-files:
+    name: Start file & tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Run tests (API/auth against an embedded PostgreSQL)
+        run: npm test
+
+      - name: Start file brings up the game and its save server (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MDS_NO_BROWSER: '1'
+          MDS_NO_PAUSE: '1'
+        run: |
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', '"Start Simulator (Windows).bat"' -PassThru -WindowStyle Hidden
+          $ok = $false
+          for ($i = 0; $i -lt 90 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $page = Invoke-WebRequest -UseBasicParsing http://localhost:5173/ -TimeoutSec 5
+              $api = Invoke-RestMethod http://localhost:5173/api/health -TimeoutSec 5
+              if ($page.StatusCode -eq 200 -and $api.ok -and $api.db) { $ok = $true }
+            } catch { }
+          }
+          taskkill /PID $p.Id /T /F | Out-Null
+          if (-not $ok) { throw 'The game or its save server did not come up' }
+          Write-Host 'Game and save server are up.'
+
+      - name: Start file brings up the game and its save server (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MDS_NO_BROWSER: '1'
+        run: |
+          bash "Start Simulator (Mac).command" > start.log 2>&1 &
+          pid=$!
+          ok=0
+          for i in $(seq 1 90); do
+            sleep 2
+            if curl -sf http://localhost:5173/ >/dev/null && curl -sf http://localhost:5173/api/health | grep -q '"db":true'; then ok=1; break; fi
+          done
+          pkill -P $pid || true; kill $pid || true; pkill -f dev-full || true
+          if [ "$ok" != 1 ]; then cat start.log; echo 'The game or its save server did not come up'; exit 1; fi
+          echo 'Game and save server are up.'
+
+  # The hosting image (docs/HOSTING.md) builds, migrates a real database and serves the game and the API.
+  docker:
+    name: Hosting image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: mds
+          POSTGRES_PASSWORD: mds
+          POSTGRES_DB: mds
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mds -d mds"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t mds .
+      - name: Run it against PostgreSQL and check the game and the API
+        run: |
+          docker run -d --name mds --network host -e DATABASE_URL=postgres://mds:mds@localhost:5432/mds -e COOKIE_SECURE=0 mds
+          ok=0
+          for i in $(seq 1 60); do
+            sleep 2
+            if curl -sf http://localhost:8787/api/health | grep -q '"db":true' && curl -sf http://localhost:8787/ | grep -q 'Missile Defense Simulator'; then ok=1; break; fi
+          done
+          docker logs mds
+          [ "$ok" = 1 ] || { echo 'The hosted image did not come up'; exit 1; }
+          # An account can be created and used end to end.
+          curl -sf -c jar -H 'Content-Type: application/json' -d '{"username":"ci_user","password":"correct horse battery"}' http://localhost:8787/api/auth/register >/dev/null
+          curl -sf -b jar http://localhost:8787/api/auth/me | grep -q ci_user
+          echo 'Hosted image works.'

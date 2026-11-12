@@ -39,6 +39,7 @@ echo Starting the game and its save server...
 echo Your browser will open at http://localhost:5173 in a few seconds.
 echo Keep this window open while you play. Close it to stop.
 echo.
-start "" /min cmd /c "timeout /t 8 >nul & start http://localhost:5173"
+rem MDS_NO_BROWSER=1 skips opening the browser and MDS_NO_PAUSE=1 skips the final pause (used by automated checks).
+if not "%MDS_NO_BROWSER%"=="1" start "" /min cmd /c "timeout /t 8 >nul & start http://localhost:5173"
 call npm run dev:full
-pause
+if not "%MDS_NO_PAUSE%"=="1" pause
