@@ -2,8 +2,26 @@
 import { ensureTactical, tacticalShapeError } from './tactical';
 import type { SimState } from './types';
 
-export const SLOTS = ['auto', 'slot1', 'slot2', 'slot3'] as const;
+export const SLOTS = ['auto', 'autoacademy', 'autocrisis', 'autosandbox', 'slot1', 'slot2', 'slot3'] as const;
 export type Slot = (typeof SLOTS)[number];
+
+/** Each kind of play autosaves to its own slot, so a drill never overwrites a campaign ('auto' is the campaign's). */
+export function autosaveSlot(s: { settings: { mode: string } }): Slot {
+  switch (s.settings.mode) {
+    case 'training': return 'autoacademy';
+    case 'crisis': return 'autocrisis';
+    case 'sandbox': return 'autosandbox';
+    default: return 'auto';
+  }
+}
+
+export const isAutosaveSlot = (slot: string) => slot.startsWith('auto');
+
+/** A slot's name for people: "Autosave · Campaign", "SLOT1". */
+export function slotLabel(slot: string): string {
+  const auto: Record<string, string> = { auto: 'Campaign', autoacademy: 'Academy', autocrisis: 'Crisis', autosandbox: 'Sandbox' };
+  return slot in auto ? `Autosave · ${auto[slot]}` : slot.toUpperCase();
+}
 const KEY = (slot: string) => `mds.save.${slot}`;
 export const SAVE_VERSION = 1;
 

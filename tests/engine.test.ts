@@ -764,3 +764,15 @@ describe('threat timeline: launch, flight, impact', () => {
     expect(w.applied).toBe(true);
   });
 });
+
+import { autosaveSlot, slotLabel } from '../src/engine';
+describe('autosave slots', () => {
+  it('gives each kind of play its own autosave', () => {
+    expect(autosaveSlot(createInitialState(defaultSettings('campaign')))).toBe('auto');
+    expect(autosaveSlot(createInitialState(defaultSettings('training')))).toBe('autoacademy');
+    expect(autosaveSlot(createInitialState(defaultSettings('crisis')))).toBe('autocrisis');
+    expect(autosaveSlot(createInitialState(defaultSettings('sandbox')))).toBe('autosandbox');
+    expect(slotLabel('autoacademy')).toBe('Autosave · Academy');
+    expect(slotLabel('slot2')).toBe('SLOT2');
+  });
+});

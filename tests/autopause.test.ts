@@ -50,7 +50,7 @@ describe('auto-pause', () => {
     expect(defaultAutoPause('recruit')).toEqual({ launch: true, deadline: true, report: true });
     expect(defaultAutoPause('officer')).toEqual({ launch: true, deadline: true, report: false });
     expect(defaultAutoPause(undefined)).toEqual(defaultAutoPause('officer'));
-    expect(defaultAutoPause('commander')).toEqual({ launch: false, deadline: false, report: false });
+    expect(defaultAutoPause('commander')).toEqual({ launch: true, deadline: false, report: false }); // launches pause everywhere
     const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
     expect(pauseReasons(pauseMemo(s), s).reasons).toEqual([]);
   });

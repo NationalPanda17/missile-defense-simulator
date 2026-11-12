@@ -1,5 +1,5 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
   equipmentCost, isEffector, isUnlimited, previewDefense, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
@@ -185,13 +185,16 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
     <details className="rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
       <summary className="cursor-pointer list-none">
         <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
-        With this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
-        <span className="text-ops-dim">({Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+        Simulated outcome with this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
+        <span className="text-ops-dim">(likely {Math.round(p.range[0] * 100)}–{Math.round(p.range[1] * 100)}%; {Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
       </summary>
       <ul className="mt-1 space-y-0.5 text-ops-dim">
         {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
       </ul>
-      <div className="mt-1 text-[10px] text-ops-dim">An estimate from replaying the forecast waves against your layout. Surprise attacks are not included.</div>
+      <div className="mt-1 text-[10px] text-ops-dim">
+        An estimate from replaying the forecast waves against your layout many times. Luck matters: the real result can land anywhere in the likely range, and sometimes outside it. Surprise attacks are not included.
+        Site coverage (on the map) is different: it only measures which sites sit inside some system’s reach.
+      </div>
     </details>
   );
 }
@@ -212,6 +215,13 @@ export function DeployPanel({ s }: { s: SimState }) {
   const showGuide = s.phaseIndex === 0 && !hideGuide && s.settings.mode === 'campaign'; // training lessons have their own coach
   const guideTarget = showGuide && !guideSteps(s, region).find((x) => x.id === 'cover')!.done
     ? t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0] : undefined;
+
+  useEffect(() => {
+    if (!equipment && !moving) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setEquipment(null); setMoving(false); } };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [equipment, moving]);
 
   const onPoint = (x: number, y: number) => {
     if (moving && dep) {
@@ -254,7 +264,17 @@ export function DeployPanel({ s }: { s: SimState }) {
 
       {/* Phones: map, catalog, then coverage. Wider screens: map and coverage on the left, catalog on the right. */}
       <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
-        <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-1" data-coach="deploy-map">
+        {/* The map stays put while the catalog scrolls, so a click after picking a system lands where it looks. */}
+        <div className="min-w-0 space-y-2 md:sticky md:top-0 md:col-start-1 md:row-start-1 md:self-start" data-coach="deploy-map">
+          {/* Always the same height, so picking a system never moves the map under the pointer. */}
+          <div className={`flex min-h-[30px] items-center justify-between gap-2 rounded border px-2 py-1 text-[11px] ${spec || (moving && depSpec) ? 'border-ops-cyan/60 bg-ops-cyan/10' : 'border-ops-line'}`} role="status">
+            <span className={spec || (moving && depSpec) ? 'text-white' : 'text-ops-dim'}>
+              {moving && depSpec ? <>Moving <b>{depSpec.name}</b>: click its new spot on the map. Esc cancels.</>
+                : spec ? <>Placing <b>{spec.name}</b> ({equipmentCost(spec)} cr): click a spot{spec.domain === 'sea' ? ' at sea' : spec.domain === 'air' ? '' : ' on land'}. The outline follows your pointer. Esc cancels.</>
+                : 'Pick a system from the catalog, then click the map to place it.'}
+            </span>
+            {(spec || moving) && <button className="btn px-2 py-0" onClick={() => { setEquipment(null); setMoving(false); }}>Cancel</button>}
+          </div>
           <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
             highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
             onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />

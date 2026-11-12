@@ -41,9 +41,12 @@ sound.install();
 installA11y();
 
 function UpdateBanner() {
+  useStoreVersion();
   const [ready, setReady] = useState(updateReady);
   useEffect(() => onUpdateReady(() => setReady(true)), []);
-  if (!ready) return null;
+  // Never interrupt a running phase: wait for a briefing, the end of a run or the start screen.
+  const busy = store.state?.status === 'running';
+  if (!ready || busy) return null;
   return (
     <div className="fixed bottom-3 right-3 z-[60] flex items-center gap-2 rounded border border-ops-cyan/50 bg-ops-panel px-3 py-2 text-[11px] shadow-lg" role="status">
       A new version is ready.
@@ -179,7 +182,7 @@ function Root() {
         <div className="flex items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">
           SCENARIO COMPLETE — review the after-action report.
           <button className="btn" onClick={() => ui.setView('aar')}>Open AAR</button>
-          <button className="btn" onClick={() => { store.quit(); ui.setView('global'); }} title="Back to the start screen to begin a new run (this run stays in your autosave)">New run</button>
+          <button className="btn" onClick={() => { store.quit(); ui.setView('global'); }} title="Back to the start screen to begin a new run (this run stays in your autosave)">New run: start screen ▸</button>
         </div>
       )}
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">

@@ -209,7 +209,7 @@ export function TheaterView({ s }: { s: SimState }) {
 
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Panel title={`Theater · ${s.regions[region].name}`} right={<Chip t={PROTECTION_TONE[prot.level]}>{prot.level} · {Math.round(prot.coverage * 100)}% covered</Chip>}>
+        <Panel title={`Theater · ${s.regions[region].name}`} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
           {inbound.some((x) => x.wave.region === region) && (
             <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
               <div className="label text-ops-red">Wave inbound · what you can do now</div>

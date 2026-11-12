@@ -24,6 +24,12 @@ export interface PauseMemo {
 /** Hours before escalation at which an untouched report pauses the game. */
 export const DEADLINE_HOURS = 4;
 
+/**
+ * Report and escalation pauses are batched: after one, they wait this many sim hours before pausing again (they
+ * still appear in the next prompt). Launch warnings always pause.
+ */
+export const BATCH_HOURS = 6;
+
 export const pauseMemo = (s: SimState): PauseMemo => ({
   campaignId: s.campaignId,
   warned: new Set(incomingWaves(s).filter((x) => !x.launched).map((x) => x.wave.id)),
@@ -58,9 +64,12 @@ export function pauseReasons(prev: PauseMemo | null, s: SimState): { reasons: Pa
 
 export interface AutoPauseSettings { launch: boolean; deadline: boolean; report: boolean }
 
-/** Defaults by difficulty: Recruit stops for everything, Officer for launches and escalations, Commander for nothing. */
+/**
+ * Defaults by difficulty. Launch warnings pause on every difficulty (the decision window is too short in real time
+ * otherwise); Recruit also stops for every report, Officer for reports about to escalate, Commander for launches only.
+ */
 export function defaultAutoPause(level: CommandLevel | undefined): AutoPauseSettings {
-  if (level === 'commander') return { launch: false, deadline: false, report: false };
+  if (level === 'commander') return { launch: true, deadline: false, report: false };
   if (level === 'recruit') return { launch: true, deadline: true, report: true };
   return { launch: true, deadline: true, report: false };
 }

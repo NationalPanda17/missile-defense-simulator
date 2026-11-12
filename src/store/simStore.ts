@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
-  defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
+  BATCH_HOURS, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
 } from '../engine';
 import type { AccountInfo, CampaignSummary, SaveSummary } from '../shared/api';
 import { api, ApiError, forgetLegacyPlayerId, legacyPlayerId, newId } from './remote';
@@ -21,6 +21,13 @@ export interface ServerState {
 
 const PACING_KEY = 'mds.autopause';
 
+/** A held report or escalation is only worth pausing for if the report is still waiting on the player. */
+function isStillRelevant(s: SimState, r: PauseReason): boolean {
+  if (!r.eventId) return true;
+  const e = s.events.find((x) => x.id === r.eventId);
+  return !!e && e.status === 'reported';
+}
+
 /** The player's auto-pause choices, or null to use the defaults for the scenario's difficulty. */
 function loadPacing(): AutoPauseSettings | null {
   try {
@@ -35,6 +42,8 @@ class SimStore {
   pausePrompt: PauseReason[] | null = null;
   pacing: AutoPauseSettings | null = loadPacing();
   private pMemo: PauseMemo | null = null;
+  private held: PauseReason[] = [];
+  private lastBatchPause = -Infinity;
   version = 0;
   toasts: Toast[] = [];
   server: ServerState = { status: 'unknown', user: null, saves: [], campaigns: [], lastSync: null, syncing: false, error: null };
@@ -62,6 +71,8 @@ class SimStore {
     this.state.campaignId = newId();
     this.pMemo = pauseMemo(this.state);
     this.pausePrompt = null;
+    this.held = [];
+    this.lastBatchPause = -Infinity;
     this.toast('info', `New scenario: ${settings.name}`);
     this.ensureLoop();
     this.notify();
@@ -73,6 +84,8 @@ class SimStore {
     if (!state.campaignId) state.campaignId = newId(); // saves from before the server existed
     this.pMemo = pauseMemo(state);
     this.pausePrompt = null;
+    this.held = [];
+    this.lastBatchPause = -Infinity;
     this.ensureLoop();
     this.notify();
   }
@@ -117,8 +130,16 @@ class SimStore {
       const found = pauseReasons(this.pMemo, s);
       this.pMemo = found.memo;
       const want = this.autoPause();
-      const hits = want ? found.reasons.filter((x) => want[x.kind]) : [];
-      if (hits.length) {
+      const wanted = want ? found.reasons.filter((x) => want[x.kind]) : [];
+      // Batch report and escalation pauses (at most one per BATCH_HOURS); keep what happened meanwhile for the prompt.
+      this.held.push(...wanted.filter((x) => x.kind !== 'launch'));
+      const launch = wanted.filter((x) => x.kind === 'launch');
+      const due = this.held.length > 0 && s.hour - this.lastBatchPause >= BATCH_HOURS;
+      if (launch.length || due) {
+        const hits = [...launch, ...this.held.filter((x) => isStillRelevant(s, x))];
+        this.held = [];
+        if (!launch.length) this.lastBatchPause = s.hour;
+        if (!hits.length) continue;
         this.pausePrompt = hits;
         s.paused = true; // the game's own pause, not a player order: not written to the command log
         this.acc = 0;
@@ -145,7 +166,7 @@ class SimStore {
   private afterHours(before: number) {
     const s = this.state!;
     if (Math.floor(s.hour / 12) !== Math.floor(before / 12) || s.status === 'complete' || s.status === 'briefing') {
-      saveGame(s, 'auto');
+      saveGame(s, autosaveSlot(s));
       this.pushAutosave();
     }
   }
@@ -235,7 +256,7 @@ class SimStore {
     try {
       do {
         this.pushQueued = false;
-        await this.writeServer('auto', this.state!, false);
+        await this.writeServer(autosaveSlot(this.state!), this.state!, false);
       } while (this.pushQueued && this.state);
     } finally {
       this.pushInFlight = false;

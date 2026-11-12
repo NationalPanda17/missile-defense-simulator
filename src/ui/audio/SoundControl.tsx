@@ -1,5 +1,6 @@
 // Speaker button with mute and volume sliders for effects and music.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { sound } from './sound';
 
 let version = 0;
@@ -30,6 +31,8 @@ export function SoundControl() {
             : <path d="M10.5 4.5a3 3 0 010 5M12.5 2.5a6 6 0 010 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />}
         </svg>
       </button>
+      {/* Dim the page behind the popover, and close it on a click outside. */}
+      {open && createPortal(<div className="fixed inset-0 z-[35] bg-black/40" aria-hidden onMouseDown={() => setOpen(false)} />, document.body)}
       {open && (
         <div role="dialog" aria-label="Sound" className="panel fadein absolute right-0 top-full z-[60] mt-1 w-60 space-y-3 border-ops-cyan/40 bg-ops-panel p-3 text-[11px]">
           <label className="flex items-center justify-between gap-2">

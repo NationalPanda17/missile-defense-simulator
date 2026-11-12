@@ -37,6 +37,13 @@ export interface LessonStep {
   hint?: string;
   /** The view "Show me" opens. */
   view?: string;
+  /** The step waits for time to pass (a confirmation, a repair, a wave): the coach doesn't pause the clock for it. */
+  wait?: boolean;
+  /**
+   * Must be done after the step opens. Other steps also count work done earlier, so a player who runs ahead is not
+   * asked to repeat it.
+   */
+  fresh?: boolean;
   /**
    * Controls to spotlight while the step is open, by their `data-coach` name in the UI. The first name with anything
    * visible on screen wins, so a list can say "the button in the dialog, or else the thing that opens the dialog".
@@ -142,8 +149,8 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'turns', target: ['turn'], title: 'Switch to turn mode',
         text: 'Prefer to play step by step? Turn on Turn mode in the top bar. The clock stops and moves only when you advance it.',
         check: (c) => c.s.turnBased },
-      { id: 'advance', target: ['advance'], title: 'Advance one turn',
-        text: 'Press +6h (or the T key) to move the clock forward six hours.',
+      { id: 'advance', fresh: true, target: ['advance'], title: 'Advance one turn',
+        text: 'Press Next turn +6h in the top bar (or the T key) to move the clock forward six hours.',
         check: (c) => c.s.hour >= c.since.hour + 6 },
       { id: 'region', target: ['map'], title: 'Open a region', view: 'global',
         text: 'Click any region on the world map to open its dashboard: readiness, communications, awareness and stability for that area.',
@@ -223,7 +230,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'confirm', target: ['confirm', 'events'], title: 'Task a confirmation',
         text: 'In the report window, press “Task confirmation”. An independent source checks the report for a small fee and a few hours.',
         check: (c) => did(c, 'confirm') },
-      { id: 'result', title: 'Wait for the result',
+      { id: 'result', wait: true, title: 'Wait for the result',
         text: 'Let time run until the confirmation finishes. A false report closes itself; a real one becomes CONFIRMED.',
         check: (c) => c.s.counters.confirmations >= 1 },
       { id: 'dismiss', target: ['dismiss', 'events'], title: 'Dismiss a false report',
@@ -266,7 +273,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Execute a response on two different incidents. Watch crews: each crew can work on one job at a time.',
         hint: 'If you run out of crews, choose responses that need 0 crews or wait for one to finish.',
         check: (c) => c.s.counters.responsesTotal >= 2 },
-      { id: 'resolve', title: 'See them through',
+      { id: 'resolve', wait: true, title: 'See them through',
         text: 'Let time run until two incidents are resolved. If a response fails, order another before the window closes.',
         check: (c) => c.s.counters.resolved >= 2 },
       { id: 'quiz', title: 'Check your understanding',
@@ -298,7 +305,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Pick a worn asset and schedule maintenance. It leaves service for a while, costs credits and needs one crew.',
         why: 'An asset that is never serviced loses condition faster and eventually fails, which costs far more than a planned service.',
         check: (c) => did(c, 'maintain', 'scheduled') },
-      { id: 'finish', title: 'Complete a maintenance cycle',
+      { id: 'finish', wait: true, title: 'Complete a maintenance cycle',
         text: 'Let time run until the maintenance finishes and the asset is back in service.',
         check: (c) => c.s.counters.maintenanceDone >= 1 },
       { id: 'redeploy', target: ['redeploy', 'asset', 'nav-air'], title: 'Redeploy an aircraft or ship',
@@ -335,7 +342,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Choose a long-term investment in Logistics or Infrastructure (for example Network Resilience Program or Expand Maintenance Crews) and start it.',
         why: 'Investments take time but keep paying off. Early in a campaign they are worth the most.',
         check: (c) => did(c, 'invest') },
-      { id: 'progress', title: 'Watch it build',
+      { id: 'progress', wait: true, title: 'Watch it build',
         text: 'Let time run until your project is at least a quarter complete. Projects keep going while you handle other work.',
         check: (c) => c.s.projects.some((p) => p.progress >= 25) || (c.s.projects.length === 0 && c.s.commands.some((x) => x.kind === 'invest')) },
       { id: 'reserve', target: ['respond', 'events'], title: 'Keep a reserve',
@@ -371,7 +378,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'theater', target: ['nav-theater'], title: 'Open the Tactical Theater', view: 'theater',
         text: 'Open the Tactical Theater (key X) and choose Europe. When the wave launches you’ll see each threat fly in from the map edge towards its target.',
         check: (c) => c.view === 'theater' },
-      { id: 'watch', title: 'Watch the wave',
+      { id: 'watch', wait: true, title: 'Watch the wave',
         text: 'Let time run until the wave has arrived. Green crosses are interceptions; red bursts are hits on a site.',
         check: (c) => wavesDone(c.s) },
       { id: 'quiz', title: 'Check your understanding',
@@ -417,7 +424,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'An attack the forecast did not predict is building against Africa. Use Emergency redeploy to move a system there. It is out of action while it moves, so act early.',
         hint: 'Select a deployed system in the Tactical Theater, choose Emergency redeploy, pick Africa and click a spot near its sites.',
         check: (c) => did(c, 'redeploy', 'Emergency') },
-      { id: 'ride', title: 'Ride it out',
+      { id: 'ride', wait: true, title: 'Ride it out',
         text: 'Let time run until all four waves have arrived.',
         check: (c) => wavesDone(c.s) },
       { id: 'quiz', title: 'Check your understanding',
@@ -438,7 +445,7 @@ export const LESSONS: TrainingLesson[] = [
       situation: 'A short watch to completion. Handle what comes in, then review how you did.' },
     steps: [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
-      { id: 'finish', target: ['speed'], title: 'Run to the end',
+      { id: 'finish', wait: true, target: ['speed'], title: 'Run to the end',
         text: 'Handle the two reports however you judge best, then let the clock run until the scenario completes (speed 8x helps).',
         check: (c) => c.s.status === 'complete' },
       { id: 'aar', target: ['nav-aar'], title: 'Open the after-action review', view: 'aar',
@@ -478,7 +485,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'brief', target: ['deploy-tab'], title: 'Plan your defense',
         text: 'Read the briefing and the six standards in this panel. Deploy defenses for the forecast regions, keeping enough credits for incidents.' },
       { id: 'begin', target: ['begin'], title: 'Begin the exercise', text: 'Assume command when ready.', check: running },
-      { id: 'finish', title: 'Complete the exercise',
+      { id: 'finish', wait: true, title: 'Complete the exercise',
         text: 'Run the full 72 hours. The standards update live below. There are no hints from here: this is your test.',
         check: (c) => c.s.status === 'complete' },
       { id: 'result', title: 'Your result', view: 'aar',
@@ -492,7 +499,7 @@ export const LESSONS: TrainingLesson[] = [
 const drillSteps = (goal: string, setup: string): LessonStep[] => [
   { id: 'brief', title: 'Your objective', text: `${goal} ${setup}` },
   { id: 'begin', target: ['begin'], title: 'Begin', text: 'Assume command when ready. Your score updates live below.', check: running },
-  { id: 'finish', title: 'Play it out', text: 'Play until the drill ends. Use any speed you like.', check: (c) => c.s.status === 'complete' },
+  { id: 'finish', wait: true, title: 'Play it out', text: 'Play until the drill ends. Use any speed you like.', check: (c) => c.s.status === 'complete' },
   { id: 'result', title: 'Result', text: 'Your score and stars are below. Try again to beat your best.' },
 ];
 
