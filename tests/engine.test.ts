@@ -3,7 +3,7 @@ import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
   TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical, regionProtection, warningHours, incomingWaves,
-  tacticalReport, lessonsLearned, isSea, coverageAt, onMassif, masked, TERRAIN_PROFILES, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
+  tacticalReport, lessonsLearned, alertActive, alertCost, redeployHours, isSea, coverageAt, onMassif, masked, TERRAIN_PROFILES, TACTICAL_PRESETS, TACTICAL_LIMITS, normalizeTactical, standardTactical,
   exportTacticalScenario, importTacticalScenario,
 } from '../src/engine';
 import type { RegionId, SimState } from '../src/engine';
@@ -597,5 +597,89 @@ describe('tactical layer: terrain, altitude and cost', () => {
     const t = ensureTactical(s);
     expect(Object.keys(t.terrain!)).toHaveLength(7);
     expect(t.sites.map((x) => [x.x, x.y])).toEqual(sites);
+  });
+});
+
+describe('tactical layer: in-phase orders', () => {
+  const ready = () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 6 }));
+    const p = landNear(s, 'EUR');
+    execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', ...p });
+    return { s, d: s.tactical!.deployments[0] };
+  };
+
+  it('emergency redeploy takes the system out of action until it arrives', () => {
+    const { s, d } = ready();
+    const q = landNear(s, 'EUR', 100, 300);
+    expect(execute(s, { type: 'emergencyRedeploy', deploymentId: d.id, region: 'EUR', ...q }).ok).toBe(false); // briefing: use Move
+    execute(s, { type: 'beginPhase' });
+    const credits = s.credits;
+    expect(execute(s, { type: 'emergencyRedeploy', deploymentId: d.id, region: 'EUR', ...q }).ok).toBe(true);
+    expect(s.credits).toBe(credits - TACTICAL_CONFIG.emergencyRedeploy.cost);
+    const a = s.assets.find((x) => x.id === d.assetId)!;
+    expect(a.status).toBe('transit');
+    expect(regionProtection(s, 'EUR').level).toBe('exposed'); // can't fire while moving
+    expect(execute(s, { type: 'emergencyRedeploy', deploymentId: d.id, region: 'EUR', ...q }).ok).toBe(false); // already moving
+    execute(s, { type: 'advance', hours: TACTICAL_CONFIG.emergencyRedeploy.sameRegionHours });
+    expect(d.transit).toBeUndefined();
+    expect([d.x, d.y]).toEqual([q.x, q.y]);
+    expect(a.status).not.toBe('transit');
+  });
+
+  it('redeploys to another region over the domain transit time, onto valid ground', () => {
+    const { s, d } = ready();
+    execute(s, { type: 'beginPhase' });
+    const sea = s.tactical!.terrain!.IPA.coast === 'east' ? { x: 590, y: 200 } : { x: 10, y: 200 };
+    expect(execute(s, { type: 'emergencyRedeploy', deploymentId: d.id, region: 'IPA', ...sea }).ok).toBe(false); // NASAMS can't go to sea
+    const land = landNear(s, 'IPA', 60, 200);
+    expect(execute(s, { type: 'emergencyRedeploy', deploymentId: d.id, region: 'IPA', ...land }).ok).toBe(true);
+    const hours = redeployHours(EQUIPMENT_MAP.get('nasams')!, 'EUR', 'IPA');
+    expect(hours).toBe(TACTICAL_CONFIG.emergencyRedeploy.otherRegionHours.ground);
+    execute(s, { type: 'advance', hours: hours - 1 });
+    expect(d.region).toBe('EUR');
+    execute(s, { type: 'advance', hours: 1 });
+    expect(d.region).toBe('IPA');
+    expect(s.assets.find((x) => x.id === d.assetId)!.region).toBe('IPA');
+  });
+
+  it('raises a time-limited alert that costs credits and wears equipment', () => {
+    const { s, d } = ready();
+    expect(execute(s, { type: 'raiseAlert', region: 'EUR' }).ok).toBe(false); // briefing
+    execute(s, { type: 'beginPhase' });
+    expect(execute(s, { type: 'raiseAlert', region: 'NAM' }).ok).toBe(false); // nothing deployed there
+    const cost = alertCost(s, 'EUR');
+    const credits = s.credits;
+    expect(execute(s, { type: 'raiseAlert', region: 'EUR' }).ok).toBe(true);
+    expect(s.credits).toBe(credits - cost);
+    expect(alertActive(s, 'EUR')).toBe(true);
+    expect(execute(s, { type: 'raiseAlert', region: 'EUR' }).ok).toBe(false); // already in force
+    const a = s.assets.find((x) => x.id === d.assetId)!;
+    const before = a.condition;
+    execute(s, { type: 'advance', hours: TACTICAL_CONFIG.alert.hours });
+    expect(alertActive(s, 'EUR')).toBe(false);
+    expect(before - a.condition).toBeGreaterThan(TACTICAL_CONFIG.alert.wearPerHour * (TACTICAL_CONFIG.alert.hours - 1));
+  });
+
+  it('an alert improves results against the same wave', () => {
+    // Same seed, same deployments: one run raises an alert just before every wave, the other doesn't.
+    const play = (alert: boolean) => {
+      const s = createInitialState(defaultSettings('campaign', { seed: 12 }));
+      for (const r of s.tactical!.forecast) {
+        const ss = s.tactical!.sites.filter((x) => x.region === r).sort((a, b) => b.importance - a.importance);
+        execute(s, { type: 'deploy', equipmentId: 'stinger', region: r, x: ss[0].x, y: ss[0].y });
+        execute(s, { type: 'deploy', equipmentId: 'avenger', region: r, x: ss[1].x, y: ss[1].y });
+      }
+      execute(s, { type: 'beginPhase' });
+      let g = 0;
+      while (s.status === 'running' && g++ < 100) {
+        if (alert) for (const w of s.tactical!.waves) if (!w.resolved && w.atHour === s.hour + 1) execute(s, { type: 'raiseAlert', region: w.region });
+        execute(s, { type: 'advance', hours: 1 });
+      }
+      return s.tactical!.stats;
+    };
+    const plain = play(false);
+    const alerted = play(true);
+    expect(alerted.tracks).toBe(plain.tracks);
+    expect(alerted.stopped).toBeGreaterThanOrEqual(plain.stopped);
   });
 });

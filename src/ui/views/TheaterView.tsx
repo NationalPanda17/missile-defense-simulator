@@ -1,7 +1,8 @@
 // Tactical Theater: watch threat waves play out, track magazines and resupply during a phase.
 import { useEffect, useRef, useState } from 'react';
 import {
-  EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, incomingWaves, isEffector, isUnlimited,
+  EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
+  isUnlimited, redeployCost, redeployHours,
   regionProtection, resupplyCost, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
@@ -88,13 +89,13 @@ function WaveReplay({ s, wave }: { s: SimState; wave: ThreatWave }) {
   );
 }
 
-function DeploymentRow({ s, d }: { s: SimState; d: Deployment }) {
+function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deployment; moving: boolean; onRedeploy: () => void }) {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   const asset = s.assets.find((a) => a.id === d.assetId);
   const cost = resupplyCost(d);
   const unlimited = isUnlimited(spec);
   return (
-    <li className="rounded border border-ops-line p-2">
+    <li className={`rounded border p-2 ${moving ? 'border-ops-cyan bg-ops-cyan/5' : 'border-ops-line'}`}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate font-sans text-[13px] font-semibold text-white">
           <span className="mr-1 inline-block h-2 w-2 rotate-45" style={{ background: LAYER_COLOR[spec.layer] }} />{asset?.name ?? spec.name}
@@ -115,6 +116,15 @@ function DeploymentRow({ s, d }: { s: SimState; d: Deployment }) {
         </div>
       )}
       {!isEffector(spec) && <div className="mt-1 text-[10px] text-ops-dim">{LAYER_LABELS[spec.layer]} · detects to {spec.rangeKm} km</div>}
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
+        <span className={d.transit ? 'text-ops-amber' : 'text-ops-dim'}>
+          {d.transit ? `En route to ${s.regions[d.transit.region].short}, ${d.transit.remaining}h` : 'In position'}
+        </span>
+        <button className={`btn px-2 py-0.5 ${moving ? 'btn-active' : ''}`} disabled={!!d.transit || s.status !== 'running' || asset?.status === 'maintenance'}
+          title="Move during the phase: out of action while it travels" onClick={onRedeploy}>
+          {moving ? 'Choose position…' : 'Redeploy'}
+        </button>
+      </div>
     </li>
   );
 }
@@ -126,6 +136,15 @@ export function TheaterView({ s }: { s: SimState }) {
   const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
   const [replayId, setReplayId] = useState<string | null>(lastResolved?.id ?? null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
+  const movingDep = t?.deployments.find((d) => d.id === moving) ?? null;
+  const movingSpec = movingDep ? EQUIPMENT_MAP.get(movingDep.equipmentId)! : null;
+  useEffect(() => {
+    if (!moving) return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoving(null); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [moving]);
 
   // Jump to each new wave as it lands, and replay it.
   const seen = useRef(lastResolved?.id);
@@ -173,7 +192,27 @@ export function TheaterView({ s }: { s: SimState }) {
 
       <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel title={`Theater · ${s.regions[region].name}`} right={<Chip t={PROTECTION_TONE[prot.level]}>{prot.level} · {Math.round(prot.coverage * 100)}% covered</Chip>}>
-          <TheaterMap s={s} region={region} selectedId={selected} onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            {alertActive(s, region) ? (
+              <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
+            ) : (
+              <button className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
+                title={`Better detection and ${Math.round((1 - TACTICAL_CONFIG.alert.reactionMult) * 100)}% faster reactions for ${TACTICAL_CONFIG.alert.hours}h; equipment wears faster`}
+                onClick={() => dispatch({ type: 'raiseAlert', region })}>
+                Raise alert ({alertCost(s, region)} cr, {TACTICAL_CONFIG.alert.hours}h)
+              </button>
+            )}
+            {movingSpec && movingDep && (
+              <span className="text-ops-cyan">
+                Click the map (any region tab) to redeploy {s.assets.find((a) => a.id === movingDep.assetId)?.name}:{' '}
+                {redeployCost(movingDep.region, region)} cr, out of action {redeployHours(movingSpec, movingDep.region, region)}h.{' '}
+                <button className="underline" onClick={() => setMoving(null)}>Cancel</button>
+              </span>
+            )}
+          </div>
+          <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
+            onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
+            onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
             {replay && <WaveReplay key={replay.id} s={s} wave={replay} />}
           </TheaterMap>
           <div className="mt-1.5"><MapLegend region={region} /></div>
@@ -219,7 +258,7 @@ export function TheaterView({ s }: { s: SimState }) {
           </Panel>
           <Panel title="Deployed here" right={<span>{deps.length}</span>}>
             {deps.length ? (
-              <ul className="max-h-[26rem] space-y-1.5 overflow-y-auto pr-1">{deps.map((d) => <DeploymentRow key={d.id} s={s} d={d} />)}</ul>
+              <ul className="max-h-[26rem] space-y-1.5 overflow-y-auto pr-1">{deps.map((d) => <DeploymentRow key={d.id} s={s} d={d} moving={moving === d.id} onRedeploy={() => setMoving(moving === d.id ? null : d.id)} />)}</ul>
             ) : (
               <p className="text-[11px] text-ops-dim">Nothing deployed in {s.regions[region].name}. Equipment is placed during campaign briefings.</p>
             )}

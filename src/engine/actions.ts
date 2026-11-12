@@ -2,7 +2,10 @@
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine';
 import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
-import { addDeployment, ensureTactical, isUnlimited, placementError, removeDeployment, resupplyCost, theaterToLonLat } from './tactical';
+import {
+  addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
+  resupplyCost, theaterToLonLat,
+} from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import type { Domain, RegionId, SimState, SpendCategory } from './types';
@@ -19,6 +22,8 @@ export type Command =
   | { type: 'relocate'; deploymentId: string; x: number; y: number }
   | { type: 'withdraw'; deploymentId: string }
   | { type: 'resupply'; deploymentId: string }
+  | { type: 'emergencyRedeploy'; deploymentId: string; region: RegionId; x: number; y: number }
+  | { type: 'raiseAlert'; region: RegionId }
   | { type: 'beginPhase' }
   | { type: 'setPaused'; paused: boolean }
   | { type: 'setSpeed'; speed: 1 | 2 | 4 | 8 }
@@ -283,6 +288,46 @@ function run(s: SimState, cmd: Command): CommandResult {
       record(s, 'resupply', `Resupply ordered: ${spec.name} (${d.id}), ${spec.reloadHours}h.`, cost, 'maintenance');
       log(s, 'info', `${spec.name} resupplying (${spec.reloadHours}h).`, d.region);
       return { ok: true, message: 'Resupply ordered' };
+    }
+    case 'emergencyRedeploy': {
+      const t = ensureTactical(s);
+      if (s.status !== 'running') return fail('Emergency redeploy is for use during a phase; in a briefing, use Move.');
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      if (d.transit) return fail('Already on the move.');
+      const a = s.assets.find((x) => x.id === d.assetId);
+      if (!a || a.status === 'maintenance') return fail('Not available: the system is in maintenance.');
+      if (!s.regions[cmd.region]) return fail('Unknown region.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      const where = placementError(s, spec, cmd.region, cmd.x, cmd.y);
+      if (where) return fail(where);
+      const cost = redeployCost(d.region, cmd.region);
+      const err = canAfford(s, cost, 0, 0);
+      if (err) return fail(err);
+      spend(s, cost, 0, 'redeploy');
+      const hours = redeployHours(spec, d.region, cmd.region);
+      d.transit = { region: cmd.region, x: Math.round(cmd.x), y: Math.round(cmd.y), remaining: hours };
+      a.status = 'transit';
+      a.maintenanceRemaining = hours;
+      record(s, 'redeploy', `Emergency redeploy: ${a.name} to ${s.regions[cmd.region].name} (${hours}h out of action).`, cost, 'redeploy');
+      log(s, 'warn', `${a.name} redeploying to ${s.regions[cmd.region].name}; out of action for ${hours}h.`, cmd.region);
+      return { ok: true, message: `${a.name} on the move (${hours}h)` };
+    }
+    case 'raiseAlert': {
+      const t = ensureTactical(s);
+      if (!t.enabled) return fail('The tactical layer is only available in the campaign.');
+      if (s.status !== 'running') return fail('Alerts can only be raised during a phase.');
+      if (!s.regions[cmd.region]) return fail('Unknown region.');
+      if (alertActive(s, cmd.region)) return fail('An alert is already in force there.');
+      if (!t.deployments.some((d) => d.region === cmd.region)) return fail('Nothing deployed there to put on alert.');
+      const cost = alertCost(s, cmd.region);
+      const err = canAfford(s, cost, 0, 0);
+      if (err) return fail(err);
+      spend(s, cost, 0, 'response');
+      t.alerts = [...(t.alerts ?? []), { region: cmd.region, until: s.hour + TACTICAL_CONFIG.alert.hours }];
+      record(s, 'alert', `Defenses in ${s.regions[cmd.region].name} raised to alert for ${TACTICAL_CONFIG.alert.hours}h.`, cost, 'response');
+      log(s, 'warn', `ALERT: defenses in ${s.regions[cmd.region].name} at high readiness for ${TACTICAL_CONFIG.alert.hours}h.`, cmd.region);
+      return { ok: true, message: 'Alert raised' };
     }
   }
 }

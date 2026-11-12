@@ -303,6 +303,7 @@ export interface Deployment {
   y: number;
   stock: number; // engagements left before resupply
   reloadRemaining?: number; // hours until a resupply completes
+  transit?: { region: RegionId; x: number; y: number; remaining: number }; // emergency redeploy under way
   deployedAt: number; // sim hour
 }
 
@@ -375,6 +376,7 @@ export interface TacticalState {
   deployments: Deployment[];
   waves: ThreatWave[];
   forecast: RegionId[]; // regions the current briefing warns about
+  alerts?: { region: RegionId; until: number }[]; // raised alerts (sim hour they end)
   stats: TacticalStats;
 }
 
