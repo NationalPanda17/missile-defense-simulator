@@ -16,7 +16,7 @@ defense systems.
 - **Where figures come from:** only official public statements by manufacturers or
   governments. Where no such statement exists, make up a plausible value for the game.
   Never use classified or leaked information of any kind. List the official references
-  you used in the entry's `sources`.
+  you used in the entry's `sources`, with a `url` to the official page where one exists.
 - **No real attacks:** no scenario, wave or event may recreate, be named after, or be dated
   to a real attack or conflict. Threats use generic classes (slow drone, fast drone, cruise
   missile, rocket, ballistic missile), not real missile or drone types.

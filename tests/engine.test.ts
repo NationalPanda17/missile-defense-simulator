@@ -122,7 +122,15 @@ describe('tactical layer: equipment catalog', () => {
 
   it('named products list their official references', () => {
     // The ZU-23-2 is widely built with no single official source, so its figures are game values.
-    for (const e of EQUIPMENT.filter((e) => !e.generic && e.id !== 'zu-23-2')) expect(e.sources.length, e.id).toBeGreaterThan(0);
+    for (const e of EQUIPMENT.filter((e) => !e.generic && e.id !== 'zu-23-2')) {
+      expect(e.sources.length, e.id).toBeGreaterThan(0);
+      for (const src of e.sources) {
+        expect(src.name, e.id).toBeTruthy();
+        if (src.url) expect(src.url, e.id).toMatch(/^https:\/\//);
+      }
+    }
+    // Most named products link at least one official page.
+    expect(EQUIPMENT.filter((e) => e.sources.some((x) => x.url)).length).toBeGreaterThanOrEqual(18);
   });
 
   it('compresses real costs into an affordable credit range', () => {
