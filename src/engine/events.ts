@@ -31,7 +31,7 @@ const monitor = (hours = 8): ResponseSpec => ({
 });
 
 const avgCond = (s: SimState, r: RegionId, role?: AssetRole) => {
-  const l = s.assets.filter((a) => a.region === r && (!role || a.role === role));
+  const l = s.assets.filter((a) => a.region === r && a.role !== 'defense' && (!role || a.role === role));
   return l.length ? l.reduce((x, a) => x + a.condition, 0) / l.length : 80;
 };
 
@@ -279,7 +279,8 @@ export const SEV_FACTOR: Record<Severity, number> = { 1: 0.6, 2: 1, 3: 1.5, 4: 2
 
 function pickTarget(s: SimState, t: EventTemplate, region: RegionId): Asset | undefined {
   if (!t.target) return undefined;
-  const ok = (a: Asset) => t.target!.domains.includes(a.domain) && (!t.target!.roles || t.target!.roles.includes(a.role));
+  const ok = (a: Asset) =>
+    a.role !== 'defense' && t.target!.domains.includes(a.domain) && (!t.target!.roles || t.target!.roles.includes(a.role));
   let list = s.assets.filter((a) => ok(a) && (a.domain === 'space' ? a.coverage.includes(region) : a.region === region));
   if (!list.length) list = s.assets.filter(ok);
   if (!list.length) return undefined;

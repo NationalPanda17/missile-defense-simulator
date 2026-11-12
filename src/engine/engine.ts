@@ -4,6 +4,7 @@ import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './even
 import { isActive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
 import { evaluateObjectives } from './scoring';
+import { scheduleWaves, tickTactical } from './tactical';
 import type { Asset, GameEvent, LogLevel, OneTimeEffects, RegionId, SimState } from './types';
 import { DOMAINS, REGION_IDS } from './types';
 
@@ -400,6 +401,7 @@ export function tick(s: SimState): void {
   if (ne && ne.reportedAt <= s.hour) {
     log(s, ne.severity >= 3 ? 'crit' : 'warn', `NEW ${ne.id}: ${ne.title} — ${s.regions[ne.region].name}.`, ne.region, ne.id);
   }
+  tickTactical(s);
   tickProjects(s);
   tickEconomy(s);
   recomputeMetrics(s);
@@ -429,6 +431,7 @@ export function endPhase(s: SimState) {
   if (s.phaseIndex < s.phases.length - 1) {
     s.phaseIndex += 1;
     s.status = 'briefing';
+    scheduleWaves(s); // forecast the next phase's waves before the player deploys
   } else {
     s.status = 'complete';
     log(s, 'info', 'Scenario complete. After-action review available.');

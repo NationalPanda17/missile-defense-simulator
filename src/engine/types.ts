@@ -6,7 +6,9 @@ export const DOMAINS: Domain[] = ['space', 'air', 'sea', 'ground'];
 export type RegionId = 'NAM' | 'SAM' | 'EUR' | 'AFR' | 'MDE' | 'IPA' | 'POL';
 export const REGION_IDS: RegionId[] = ['NAM', 'SAM', 'EUR', 'AFR', 'MDE', 'IPA', 'POL'];
 
-export type AssetRole = 'sensor' | 'comms' | 'support' | 'command';
+export type AssetRole = 'sensor' | 'comms' | 'support' | 'command' | 'defense'; // defense = tactical layer equipment
+
+export type ThreatClass = 'slowDrone' | 'fastDrone' | 'cruise' | 'rocket' | 'ballistic';
 export type AssetStatus = 'operational' | 'degraded' | 'maintenance' | 'offline' | 'transit';
 
 export interface Asset {
@@ -275,20 +277,83 @@ export interface ScenarioSettings {
   domainCondition: Partial<Record<Domain, number>>;
 }
 
-/** A real-world system placed in a region's theater (tactical layer). Positions are km from the theater's top-left. */
+// ── Tactical layer ─────────────────────────────────────────────────────
+// Each region has a theater map (TACTICAL_CONFIG.theaterKm). Positions are km from the theater's top-left corner.
+
+/** A real-world system placed in a region's theater. Backed by an Asset (role 'defense') for condition and upkeep. */
 export interface Deployment {
   id: string;
   equipmentId: string; // key into EQUIPMENT
+  assetId: string; // the Asset that carries condition, maintenance and upkeep
   region: RegionId;
   x: number;
   y: number;
   stock: number; // engagements left before resupply
+  reloadRemaining?: number; // hours until a resupply completes
   deployedAt: number; // sim hour
+}
+
+export type SiteType = 'city' | 'port' | 'power' | 'comms' | 'command';
+
+/** A fictional place worth defending. */
+export interface Site {
+  id: string;
+  name: string;
+  region: RegionId;
+  type: SiteType;
+  x: number;
+  y: number;
+  importance: number; // relative value, also how often attacks target it
+  integrity: number; // 0-100, lowered by threats that get through
+}
+
+export type ThreatAxis = 'north' | 'south' | 'east' | 'west';
+
+export type TrackOutcome = 'stopped' | 'leaked' | 'decoyStopped' | 'decoyLeaked';
+
+/** One incoming threat in a wave. Resolved in a single tick; the record lets the UI replay it. */
+export interface Track {
+  id: string;
+  cls: ThreatClass;
+  siteId: string;
+  from: [number, number]; // entry point on the theater edge
+  decoy: boolean; // a false track: draws fire, does no damage
+  outcome?: TrackOutcome;
+  stoppedBy?: string; // deployment id
+  shots: number; // engagements fired at it
+  damage?: number; // integrity lost by the target site
+}
+
+export interface ThreatWave {
+  id: string;
+  region: RegionId;
+  phaseIndex: number;
+  atHour: number; // sim hour the wave arrives
+  axis: ThreatAxis;
+  forecast: boolean; // whether the briefing forecast this region
+  tracks: Track[];
+  resolved: boolean;
+}
+
+export interface TacticalStats {
+  tracks: number; // genuine tracks
+  stopped: number;
+  leaked: number;
+  decoysEngaged: number; // decoys that drew at least one shot
+  shots: number;
+  siteDamage: number; // total integrity lost across sites
 }
 
 /** Tactical layer state. Optional on SimState so saves from before the tactical layer still load. */
 export interface TacticalState {
+  enabled: boolean; // campaign only
+  rng: number; // own RNG stream, so the management simulation stays reproducible on its own
+  nextId: number;
+  sites: Site[];
   deployments: Deployment[];
+  waves: ThreatWave[];
+  forecast: RegionId[]; // regions the current briefing warns about
+  stats: TacticalStats;
 }
 
 export interface SimState {

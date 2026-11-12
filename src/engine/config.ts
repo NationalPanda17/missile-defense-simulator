@@ -1,5 +1,5 @@
 // All tunable simulation rules live here so they can be adjusted without touching engine logic.
-import type { Domain, Investment, PhaseConfig, RegionId } from './types';
+import type { Domain, Investment, PhaseConfig, RegionId, SiteType, ThreatClass } from './types';
 
 export const SIM_CONFIG = {
   /** Real milliseconds per simulated hour at 1x speed. */
@@ -177,12 +177,62 @@ export const SCORE_WEIGHTS = {
 
 /** Tactical layer tuning. Real equipment figures live in equipment.ts; these are the game's own choices. */
 export const TACTICAL_CONFIG = {
+  /**
+   * Feature flag: turns the tactical layer on for new and loaded campaigns. Off until the deployment screen ships,
+   * so live players never face waves they have no way to defend against.
+   */
+  enabledInCampaign: false,
   /** Credits = creditsScale × (unit cost in $M) ^ costExponent, at least minCost. Compresses a 0.1–2200 $M spread. */
-  creditsScale: 6,
+  creditsScale: 4,
   costExponent: 0.5,
   minCost: 4,
   /** Hourly upkeep as a fraction of deployment cost. */
-  upkeepRate: 0.004,
+  upkeepRate: 0.0015,
   /** Size of each region's theater map, in km. */
   theaterKm: { width: 600, height: 400 },
+
+  // ── Deployment commands ──
+  deployPersonnel: 2,
+  relocateCost: 10,
+  withdrawRefund: 0.5, // share of deployment cost returned
+  resupplyRate: 0.25, // a full resupply costs this share of the deployment cost
+  minLogisticsForResupply: 25,
+
+  // ── Sites ──
+  /** Site types placed in every theater, with their importance. */
+  siteMix: [
+    { type: 'city', count: 3, importance: 3 },
+    { type: 'port', count: 1, importance: 2 },
+    { type: 'power', count: 2, importance: 2 },
+    { type: 'comms', count: 1, importance: 1.5 },
+    { type: 'command', count: 1, importance: 2.5 },
+  ] as { type: SiteType; count: number; importance: number }[],
+  /** Sites keep this margin (km) from the theater edge so threats have room to be engaged. */
+  siteMarginKm: 80,
+
+  // ── Threats ──
+  /** Threat speed in km per second (game values). Sets how long a threat stays in each system's range. */
+  threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2 } as Record<ThreatClass, number>,
+  /** Site integrity lost when a threat of each class gets through. */
+  threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15 } as Record<ThreatClass, number>,
+  /** Regional infrastructure and stability lost per point of site damage, scaled by site importance / 3. */
+  infraPerDamage: 0.08,
+  stabilityPerDamage: 0.06,
+  /** Most engagements one system makes against one threat (shoot-look-shoot). */
+  maxShotsPerSystem: 2,
+  /** Detection: a threat seen by a covering sensor is engaged at full quality; otherwise at this quality. */
+  unseenDetection: 0.45,
+  /** Magazine size treated as unlimited (jammers, lasers, microwave). */
+  unlimitedMagazine: 999,
+  /** Share of forecast waves that strike a region outside the forecast. */
+  surpriseRate: 0.2,
+  /** Waves per campaign phase (by phase index): count, tracks per wave and threat mix weights. */
+  waves: [
+    { count: 2, tracks: [5, 8], mix: { slowDrone: 6, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 0 } },
+    { count: 3, tracks: [8, 12], mix: { slowDrone: 5, fastDrone: 3, cruise: 2, rocket: 2, ballistic: 1 } },
+    { count: 4, tracks: [12, 18], mix: { slowDrone: 5, fastDrone: 3, cruise: 3, rocket: 2, ballistic: 2 } },
+    { count: 2, tracks: [6, 9], mix: { slowDrone: 5, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 1 } },
+  ] as { count: number; tracks: [number, number]; mix: Record<ThreatClass, number> }[],
+  /** Regions named in each briefing's forecast. */
+  forecastRegions: 2,
 };

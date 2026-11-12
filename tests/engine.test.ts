@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createInitialState, defaultSettings, execute, computeScore, isActive, TEMPLATE_MAP, exportJSON, importJSON,
   EQUIPMENT, THREAT_CLASSES, LAYER_LABELS, equipmentCost, equipmentUpkeep, isEffector, stateShapeError,
+  TACTICAL_CONFIG, EQUIPMENT_MAP, chordInside, ensureTactical,
 } from '../src/engine';
 import type { SimState } from '../src/engine';
 
@@ -119,9 +120,21 @@ describe('tactical layer: equipment catalog', () => {
 });
 
 describe('tactical layer: state and saves', () => {
-  it('new games start with an empty tactical state', () => {
+  it('new games carry a tactical state with a theater per region', () => {
     const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
-    expect(s.tactical).toEqual({ deployments: [] });
+    const t = s.tactical!;
+    expect(t.deployments).toEqual([]);
+    const perRegion = TACTICAL_CONFIG.siteMix.reduce((a, m) => a + m.count, 0);
+    expect(t.sites.length).toBe(perRegion * 7);
+    for (const site of t.sites) expect(site.integrity).toBe(100);
+  });
+
+  it('is switched off by default, so campaigns play exactly as before', () => {
+    expect(TACTICAL_CONFIG.enabledInCampaign).toBe(false);
+    const s = runCampaign(passive, 11);
+    expect(s.tactical!.enabled).toBe(false);
+    expect(s.tactical!.waves).toEqual([]);
+    expect(s.assets.some((a) => a.role === 'defense')).toBe(false);
   });
 
   it('loads a save made before the tactical layer', () => {
@@ -129,17 +142,183 @@ describe('tactical layer: state and saves', () => {
     delete s.tactical;
     const t = importJSON(exportJSON(s))!;
     expect(t).not.toBeNull();
-    expect(t.tactical).toEqual({ deployments: [] });
+    expect(t.tactical!.sites.length).toBeGreaterThan(0);
+    expect(t.tactical!.deployments).toEqual([]);
+  });
+
+  it('upgrades the first-release tactical shape', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
+    s.tactical = { deployments: [] } as never;
+    const t = ensureTactical(s);
+    expect(t.sites.length).toBeGreaterThan(0);
+    expect(t.stats.tracks).toBe(0);
   });
 
   it('rejects malformed tactical state', () => {
     const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
-    const dep = { id: 'd1', equipmentId: 'iris-t-slm', region: 'EUR' as const, x: 100, y: 100, stock: 24, deployedAt: 0 };
-    s.tactical = { deployments: [dep] };
+    const dep = { id: 'd1', equipmentId: 'iris-t-slm', assetId: 'TAC-1', region: 'EUR' as const, x: 100, y: 100, stock: 24, deployedAt: 0 };
+    s.tactical!.deployments = [dep];
     expect(stateShapeError(s)).toBeNull();
-    s.tactical = { deployments: [{ ...dep, equipmentId: 'not-real' }] };
+    s.tactical!.deployments = [{ ...dep, equipmentId: 'not-real' }];
     expect(stateShapeError(s)).toMatch(/unknown equipment/);
-    s.tactical = { deployments: [{ ...dep, x: 9999 }] };
+    s.tactical!.deployments = [{ ...dep, x: 9999 }];
     expect(stateShapeError(s)).toMatch(/outside the theater/);
+  });
+});
+
+describe('tactical layer: engine', () => {
+  beforeAll(() => { TACTICAL_CONFIG.enabledInCampaign = true; });
+  afterAll(() => { TACTICAL_CONFIG.enabledInCampaign = false; });
+
+  const centroid = (s: SimState, r: string) => {
+    const sites = s.tactical!.sites.filter((x) => x.region === r);
+    return { x: sites.reduce((a, x) => a + x.x, 0) / sites.length, y: sites.reduce((a, x) => a + x.y, 0) / sites.length };
+  };
+
+  /** Area defense in every forecast region: a long-range system at the centre and point defense at the top site. */
+  const areaDefense = (s: SimState) => {
+    const t = s.tactical!;
+    for (const r of t.forecast) {
+      if (t.deployments.some((d) => d.region === r)) continue;
+      const c = centroid(s, r);
+      const top = t.sites.filter((x) => x.region === r).sort((a, b) => b.importance - a.importance)[0];
+      execute(s, { type: 'deploy', equipmentId: 'davids-sling', region: r, x: c.x, y: c.y });
+      execute(s, { type: 'deploy', equipmentId: 'coyote', region: r, x: top.x, y: top.y });
+    }
+  };
+  const resupplyLow = (s: SimState) => {
+    for (const d of s.tactical!.deployments) {
+      if (d.stock < EQUIPMENT_MAP.get(d.equipmentId)!.magazine / 2) execute(s, { type: 'resupply', deploymentId: d.id });
+    }
+  };
+
+  function runTactical(seed: number, deploy: boolean) {
+    const s = createInitialState(defaultSettings('campaign', { seed }));
+    let guard = 0;
+    while (s.status !== 'complete' && guard++ < 2000) {
+      if (s.status === 'briefing') {
+        if (deploy) areaDefense(s);
+        execute(s, { type: 'beginPhase' });
+      }
+      active(s);
+      if (deploy) resupplyLow(s);
+      execute(s, { type: 'advance', hours: 1 });
+    }
+    return s;
+  }
+
+  it('forecasts and schedules each phase\'s waves at the briefing', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    const t = s.tactical!;
+    expect(t.enabled).toBe(true);
+    expect(t.forecast.length).toBe(TACTICAL_CONFIG.forecastRegions);
+    expect(t.waves.length).toBe(TACTICAL_CONFIG.waves[0].count);
+    for (const w of t.waves) {
+      expect(w.atHour).toBeGreaterThanOrEqual(6);
+      expect(w.atHour).toBeLessThan(s.phases[0].hours);
+      expect(w.tracks.length).toBeGreaterThan(0);
+      if (w.forecast) expect(t.forecast).toContain(w.region);
+    }
+  });
+
+  it('stays off outside the campaign', () => {
+    const s = createInitialState(defaultSettings('crisis', { seed: 4 }));
+    expect(s.tactical!.enabled).toBe(false);
+    expect(s.tactical!.waves).toEqual([]);
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 100, y: 100 }).ok).toBe(false);
+  });
+
+  it('deploys only during a briefing, charging cost and adding a defense asset', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    const before = s.credits;
+    const readiness = s.metrics.globalReadiness;
+    const regionReady = s.regions.EUR.readiness;
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 300, y: 200 }).ok).toBe(true);
+    expect(s.credits).toBe(before - equipmentCost(EQUIPMENT_MAP.get('nasams')!));
+    const d = s.tactical!.deployments[0];
+    const a = s.assets.find((x) => x.id === d.assetId)!;
+    expect(a.role).toBe('defense');
+    expect(a.capability).toBe(0);
+    // Equipment doesn't inflate readiness metrics.
+    expect(s.metrics.globalReadiness).toBeCloseTo(readiness, 6);
+    expect(s.regions.EUR.readiness).toBeCloseTo(regionReady, 6);
+
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 900, y: 200 }).ok).toBe(false);
+    expect(execute(s, { type: 'deploy', equipmentId: 'no-such-thing', region: 'EUR', x: 1, y: 1 }).ok).toBe(false);
+    expect(execute(s, { type: 'relocate', deploymentId: d.id, x: 50, y: 60 }).ok).toBe(true);
+    expect([d.x, d.y]).toEqual([50, 60]);
+    expect(execute(s, { type: 'redeploy', assetId: a.id, region: 'NAM' }).ok).toBe(false);
+
+    execute(s, { type: 'beginPhase' });
+    expect(execute(s, { type: 'deploy', equipmentId: 'nasams', region: 'EUR', x: 300, y: 200 }).ok).toBe(false);
+    expect(execute(s, { type: 'relocate', deploymentId: d.id, x: 10, y: 10 }).ok).toBe(false);
+
+    const credits = s.credits;
+    expect(execute(s, { type: 'withdraw', deploymentId: d.id }).ok).toBe(true);
+    expect(s.credits).toBe(credits + Math.floor(equipmentCost(EQUIPMENT_MAP.get('nasams')!) * TACTICAL_CONFIG.withdrawRefund));
+    expect(s.assets.some((x) => x.id === a.id)).toBe(false);
+    expect(s.tactical!.deployments).toEqual([]);
+  });
+
+  it('resupplies magazines over time and refuses pointless resupply', () => {
+    const s = createInitialState(defaultSettings('campaign', { seed: 4 }));
+    execute(s, { type: 'deploy', equipmentId: 'iris-t-slm', region: 'EUR', x: 300, y: 200 });
+    execute(s, { type: 'deploy', equipmentId: 'ew-jammer', region: 'EUR', x: 300, y: 200 });
+    const [missiles, jammer] = s.tactical!.deployments;
+    expect(execute(s, { type: 'resupply', deploymentId: missiles.id }).ok).toBe(false); // full
+    expect(execute(s, { type: 'resupply', deploymentId: jammer.id }).ok).toBe(false); // unlimited
+    execute(s, { type: 'beginPhase' });
+    missiles.stock = 3;
+    expect(execute(s, { type: 'resupply', deploymentId: missiles.id }).ok).toBe(true);
+    expect(execute(s, { type: 'resupply', deploymentId: missiles.id }).ok).toBe(false); // already underway
+    execute(s, { type: 'advance', hours: EQUIPMENT_MAP.get('iris-t-slm')!.reloadHours });
+    expect(missiles.stock).toBe(EQUIPMENT_MAP.get('iris-t-slm')!.magazine);
+  });
+
+  it('resolves every wave, and replays identically for the same seed', () => {
+    const a = runTactical(7, true);
+    const b = runTactical(7, true);
+    expect(a.tactical!.waves.every((w) => w.resolved)).toBe(true);
+    expect(a.tactical!.stats).toEqual(b.tactical!.stats);
+    expect(a.tactical!.sites.map((x) => x.integrity)).toEqual(b.tactical!.sites.map((x) => x.integrity));
+    expect(a.tactical!.stats.tracks).toBeGreaterThan(50);
+  });
+
+  it('draws only from its own random stream', () => {
+    TACTICAL_CONFIG.enabledInCampaign = false;
+    const off = createInitialState(defaultSettings('campaign', { seed: 11 }));
+    TACTICAL_CONFIG.enabledInCampaign = true;
+    const on = createInitialState(defaultSettings('campaign', { seed: 11 }));
+    expect(on.rng).toBe(off.rng); // sites and wave scheduling used tactical.rng only
+    const r = on.tactical!.forecast[0];
+    execute(on, { type: 'deploy', equipmentId: 'davids-sling', region: r, x: 300, y: 200 });
+    execute(on, { type: 'beginPhase' });
+    const firstWave = on.tactical!.waves[0].atHour;
+    // Up to the first wave, both runs are identical apart from the deployment.
+    execute(off, { type: 'beginPhase' });
+    execute(on, { type: 'advance', hours: firstWave - 1 });
+    execute(off, { type: 'advance', hours: firstWave - 1 });
+    expect(on.rng).toBe(off.rng);
+    // The wave hour itself: threats resolve with tactical.rng; the main stream advances exactly as without them.
+    execute(on, { type: 'advance', hours: 1 });
+    execute(off, { type: 'advance', hours: 1 });
+    expect(on.tactical!.waves[0].resolved).toBe(true);
+    expect(on.rng).toBe(off.rng);
+  });
+
+  it('sensible area defense protects sites far better than none', () => {
+    for (const seed of [2, 5, 7, 9, 11]) {
+      const none = runTactical(seed, false).tactical!.stats;
+      const defended = runTactical(seed, true).tactical!.stats;
+      expect(none.stopped, `seed ${seed}`).toBe(0);
+      expect(defended.stopped / defended.tracks, `seed ${seed}`).toBeGreaterThan(0.4);
+      expect(defended.siteDamage, `seed ${seed}`).toBeLessThan(none.siteDamage * 0.7);
+    }
+  });
+
+  it('measures the part of a path inside a circle', () => {
+    expect(chordInside([0, 0], [100, 0], [50, 0], 10)).toBeCloseTo(20, 6);
+    expect(chordInside([0, 0], [100, 0], [50, 30], 10)).toBe(0);
+    expect(chordInside([0, 0], [100, 0], [100, 0], 10)).toBeCloseTo(10, 6); // target inside the circle
   });
 });

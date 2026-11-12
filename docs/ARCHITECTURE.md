@@ -124,6 +124,32 @@ event rate:
 An adaptive director scales event frequency (0.8–1.3×) based on recent readiness and
 network health.
 
+## Tactical layer (`engine/tactical.ts`, `engine/equipment.ts`)
+
+Campaign only, behind the `TACTICAL_CONFIG.enabledInCampaign` feature flag (off until the deployment screen
+ships). All tuning lives in `TACTICAL_CONFIG` (`config.ts`); real equipment figures live in `EQUIPMENT`.
+
+- **Own RNG.** `tactical.rng` drives site generation, wave scheduling and resolution, so the management
+  simulation draws the same random numbers whether the layer is on or off.
+- **Theaters.** Each region has a 600 × 400 km theater with fictional sites (cities, a port, power, comms, a
+  command post), generated from the seed. Sites have an importance and an integrity (0–100).
+- **Deployments.** `deploy` (briefing only) places a system and creates a backing `Asset` with role `defense` and
+  capability 0. That gives it condition, maintenance and upkeep for free, without moving readiness metrics.
+  `relocate` (briefing only), `withdraw` (50% refund) and `resupply` (refills the magazine after `reloadHours`,
+  needs logistics) complete the set.
+- **Waves.** When a briefing opens, `scheduleWaves` picks forecast regions (weighted toward low stability) and
+  schedules the phase's waves (`TACTICAL_CONFIG.waves`). 20% strike outside the forecast. Each wave comes from one
+  axis and holds tracks of generic threat classes aimed at sites, weighted by importance.
+- **Resolution** (`tickTactical`, the hour a wave arrives). Poor regional awareness adds decoy tracks. For each
+  track, the path runs from its entry point to its site:
+  1. Detection: any available deployment whose sensor range touches the path sees it. Unseen tracks are engaged
+     at reduced quality and twice the reaction time.
+  2. Systems whose range the path crosses engage, outermost first. Time in range ÷ threat speed, minus reaction
+     time, sets up to 2 shots. Each shot uses stock (jammers, lasers and microwave are unlimited).
+  3. Chance per shot = kill rate × availability (condition, maintenance) × detection × regional comms factor.
+  4. A track that gets through lowers its site's integrity, plus the region's infrastructure and stability.
+- **Stats.** `tactical.stats` counts tracks, stopped, leaked, decoys engaged, shots and site damage, for the AAR.
+
 ## Scoring (`engine/scoring.ts`)
 
 The weighted components (`SCORE_WEIGHTS`) are readiness, network, stability, event response,
