@@ -99,7 +99,7 @@ export function recomputeMetrics(s: SimState): void {
     const sum = sensors.reduce((x, a) => x + a.capability * av.get(a.id)! * effRatio(a.domain), 0);
     r.awareness = clamp(Math.min(100, (sum / 70) * 100) * (0.6 + 0.4 * (r.comms / 100)) - (pen.awareness[id] ?? 0) * mit);
 
-    const home = s.assets.filter((a) => a.region === id && a.domain !== 'space');
+    const home = s.assets.filter((a) => a.region === id && a.domain !== 'space' && a.role !== 'defense');
     const homeR = home.length ? home.reduce((x, a) => x + Math.min(1, av.get(a.id)!) * effRatio(a.domain), 0) / home.length : 0.5;
     r.readiness = clamp(homeR * 100 * (0.6 + 0.4 * (r.infrastructure / 100)));
 

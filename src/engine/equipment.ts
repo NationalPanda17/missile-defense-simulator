@@ -4,9 +4,9 @@
 // governments. Where none exists, the value is made up for the game. Never classified or leaked information.
 // `sources` lists the official references used, for maintainers; it is not shown in the game.
 import { TACTICAL_CONFIG } from './config';
-import type { Domain } from './types';
+import type { Domain, ThreatClass } from './types';
 
-export type ThreatClass = 'slowDrone' | 'fastDrone' | 'cruise' | 'rocket' | 'ballistic';
+export type { ThreatClass } from './types';
 export const THREAT_CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic'];
 export const THREAT_LABELS: Record<ThreatClass, string> = {
   slowDrone: 'Slow drone',

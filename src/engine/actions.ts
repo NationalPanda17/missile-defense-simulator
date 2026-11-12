@@ -1,6 +1,8 @@
 // Player commands. Every command validates, applies costs, mutates state and records itself in the command log.
-import { INVESTMENTS, SIM_CONFIG } from './config';
+import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine';
+import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
+import { addDeployment, ensureTactical, insideTheater, isUnlimited, removeDeployment, theaterToLonLat } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import type { Domain, RegionId, SimState, SpendCategory } from './types';
@@ -13,6 +15,10 @@ export type Command =
   | { type: 'redeploy'; assetId: string; region: RegionId }
   | { type: 'invest'; investmentId: string; region?: RegionId; domain?: Domain }
   | { type: 'cancelMaintenance'; assetId: string }
+  | { type: 'deploy'; equipmentId: string; region: RegionId; x: number; y: number }
+  | { type: 'relocate'; deploymentId: string; x: number; y: number }
+  | { type: 'withdraw'; deploymentId: string }
+  | { type: 'resupply'; deploymentId: string }
   | { type: 'beginPhase' }
   | { type: 'setPaused'; paused: boolean }
   | { type: 'setSpeed'; speed: 1 | 2 | 4 | 8 }
@@ -176,6 +182,7 @@ function run(s: SimState, cmd: Command): CommandResult {
     case 'redeploy': {
       const a = s.assets.find((x) => x.id === cmd.assetId);
       if (!a) return fail('Unknown asset.');
+      if (a.role === 'defense') return fail('Tactical equipment is moved with relocate, during a briefing.');
       if (a.domain !== 'air' && a.domain !== 'sea') return fail('Only air and maritime assets can be redeployed.');
       if (a.status === 'maintenance' || a.status === 'transit') return fail('Asset is busy.');
       if (a.region === cmd.region) return fail('Asset is already assigned there.');
@@ -209,6 +216,71 @@ function run(s: SimState, cmd: Command): CommandResult {
       record(s, 'invest', `Investment: ${inv.label}${target}.`, inv.credits, 'investment');
       log(s, 'info', `Project started: ${inv.label}${target} (${inv.hours}h).`, cmd.region);
       return { ok: true, message: 'Project started' };
+    }
+    case 'deploy': {
+      const t = ensureTactical(s);
+      if (!t.enabled) return fail('The tactical layer is only available in the campaign.');
+      if (s.status !== 'briefing') return fail('Equipment can only be deployed during a briefing.');
+      const spec = EQUIPMENT_MAP.get(cmd.equipmentId);
+      if (!spec) return fail('Unknown equipment.');
+      if (!s.regions[cmd.region]) return fail('Unknown region.');
+      if (!insideTheater(cmd.x, cmd.y)) return fail('Position is outside the theater.');
+      const cost = equipmentCost(spec);
+      const err = canAfford(s, cost, TACTICAL_CONFIG.deployPersonnel, 0);
+      if (err) return fail(err);
+      spend(s, cost, TACTICAL_CONFIG.deployPersonnel, 'investment');
+      const d = addDeployment(s, spec, cmd.region, Math.round(cmd.x), Math.round(cmd.y), equipmentUpkeep(spec));
+      record(s, 'deploy', `Deployed ${spec.name} to ${s.regions[cmd.region].name}.`, cost, 'investment');
+      log(s, 'info', `${spec.name} deployed in ${s.regions[cmd.region].name} (${d.id}).`, cmd.region);
+      return { ok: true, message: `${spec.name} deployed` };
+    }
+    case 'relocate': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      if (s.status !== 'briefing') return fail('Equipment can only be relocated during a briefing.');
+      if (!insideTheater(cmd.x, cmd.y)) return fail('Position is outside the theater.');
+      const err = canAfford(s, TACTICAL_CONFIG.relocateCost, 0, 0);
+      if (err) return fail(err);
+      spend(s, TACTICAL_CONFIG.relocateCost, 0, 'redeploy');
+      d.x = Math.round(cmd.x);
+      d.y = Math.round(cmd.y);
+      const a = s.assets.find((x) => x.id === d.assetId);
+      if (a) a.pos = theaterToLonLat(s, d.region, d.x, d.y);
+      const name = EQUIPMENT_MAP.get(d.equipmentId)?.name ?? d.equipmentId;
+      record(s, 'relocate', `Relocated ${name} (${d.id}).`, TACTICAL_CONFIG.relocateCost, 'redeploy');
+      return { ok: true, message: `${name} relocated` };
+    }
+    case 'withdraw': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      const refund = Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund);
+      removeDeployment(s, d);
+      s.credits += refund;
+      s.personnel = Math.min(s.personnelMax, s.personnel + TACTICAL_CONFIG.deployPersonnel);
+      record(s, 'withdraw', `Withdrew ${spec.name} (${d.id}), +${refund} credits recovered.`, 0, 'investment');
+      log(s, 'info', `${spec.name} withdrawn from ${s.regions[d.region].name}.`, d.region);
+      return { ok: true, message: `${spec.name} withdrawn` };
+    }
+    case 'resupply': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      if (isUnlimited(spec)) return fail(`${spec.name} does not need resupply.`);
+      if (d.reloadRemaining !== undefined) return fail('A resupply is already underway.');
+      if (d.stock >= spec.magazine) return fail('Magazine is already full.');
+      if (s.logistics < TACTICAL_CONFIG.minLogisticsForResupply) return fail('Logistics capacity is too low to resupply.');
+      const cost = Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (1 - d.stock / spec.magazine));
+      const err = canAfford(s, cost, 0, 0);
+      if (err) return fail(err);
+      spend(s, cost, 0, 'maintenance');
+      d.reloadRemaining = spec.reloadHours;
+      record(s, 'resupply', `Resupply ordered: ${spec.name} (${d.id}), ${spec.reloadHours}h.`, cost, 'maintenance');
+      log(s, 'info', `${spec.name} resupplying (${spec.reloadHours}h).`, d.region);
+      return { ok: true, message: 'Resupply ordered' };
     }
   }
 }
