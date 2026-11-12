@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { SIM_CONFIG, saveGame } from '../engine';
+import { SIM_CONFIG, lessonOf, saveGame } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
+import { AcademyModal } from './training/Academy';
+import { Coach } from './training/Coach';
 import { UIProvider, useUI } from './uiState';
 import { AARView } from './views/AARView';
 import { CampaignView, ScenarioEditor } from './views/CampaignViews';
@@ -35,7 +37,7 @@ function Root() {
     lastStatus.current = s.status;
     if (lastMode.current !== s.settings.name + s.settings.seed) {
       lastMode.current = s.settings.name + s.settings.seed;
-      ui.setTutorial(s.settings.mode === 'training');
+      ui.setTutorial(s.settings.mode === 'training' && !lessonOf(s));
     }
   });
 
@@ -83,10 +85,12 @@ function Root() {
       <>
         <StartScreen onSandbox={() => setEditorFirst(true)} />
         {ui.accountOpen && <AccountModal />}
+        {ui.academyOpen && <AcademyModal />}
       </>
     );
   }
 
+  const lesson = lessonOf(s);
   const view = (() => {
     switch (ui.view) {
       case 'global': return <GlobalOps s={s} />;
@@ -124,8 +128,9 @@ function Root() {
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <HelpModal />}
-      {ui.tutorial && <TutorialPanel />}
+      {lesson ? <Coach key={s.campaignId ?? s.settings.name} s={s} lesson={lesson} /> : ui.tutorial && <TutorialPanel />}
       {ui.accountOpen && <AccountModal />}
+      {ui.academyOpen && <AcademyModal />}
     </div>
   );
 }

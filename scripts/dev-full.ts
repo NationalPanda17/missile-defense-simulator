@@ -8,9 +8,11 @@ const db = await startEmbedded({ dir: DIR, port: PORT, quiet: true }).catch((e: 
 });
 console.log(`[dev-full] PostgreSQL on :${PORT}`);
 const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? `postgres://mds:mds@localhost:${PORT}/mds`, SERVE_STATIC: '0' };
+// On Windows npm is npm.cmd and has to be started through a shell.
+const shell = process.platform === 'win32';
 const kids: ChildProcess[] = [
-  spawn('npm', ['run', 'server'], { stdio: 'inherit', env }),
-  spawn('npm', ['run', 'dev'], { stdio: 'inherit', env }),
+  spawn('npm', ['run', 'server'], { stdio: 'inherit', env, shell }),
+  spawn('npm', ['run', 'dev'], { stdio: 'inherit', env, shell }),
 ];
 let stopping = false;
 async function stop() {

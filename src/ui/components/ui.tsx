@@ -163,7 +163,7 @@ export function Modal({ title, onClose, children, wide = false, footer }: { titl
   // Portalled to <body>: a `fixed` element inside a panel with backdrop-filter would be positioned relative to
   // that panel instead of the viewport.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div className={`panel fadein flex max-h-full w-full flex-col ${wide ? 'max-w-5xl' : 'max-w-2xl'} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
         <header className="panel-title">
           <span className="truncate">{title}</span>

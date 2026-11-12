@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { useRef, useState } from 'react';
 import {
-  REGION_IDS, SIM_CONFIG, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
+  LESSONS, REGION_IDS, SIM_CONFIG, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, importJSON, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -10,6 +10,7 @@ import { useUI, type ViewId } from './uiState';
 import { statusColor } from './map/GlobalMap';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { DeployPanel } from './views/TacticalDeploy';
+import { loadProgress } from './training/progress';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -228,7 +229,7 @@ export function BriefingModal({ s }: { s: SimState }) {
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const [step, setStep] = useState<'brief' | 'deploy'>('brief');
   return (
-    <Modal wide title={`CAMPAIGN BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
+    <Modal wide title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => dispatch({ type: 'beginPhase' })}>Assume command — begin phase ▶</button>
@@ -257,9 +258,9 @@ export function BriefingModal({ s }: { s: SimState }) {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <div><div className="label mb-1">Strategic situation</div><p className="leading-relaxed">{phase.situation}</p></div>
-            <div><div className="label mb-1">Objectives</div>
+            {phase.objectives.length > 0 && <div><div className="label mb-1">Objectives</div>
               <ul className="space-y-1">{phase.objectives.map((o) => <li key={o.id} className="flex justify-between gap-2"><span>▸ {o.text}</span>{o.reward > 0 && <span className="shrink-0 text-ops-green">+{o.reward} cr</span>}</li>)}</ul>
-            </div>
+            </div>}
             <div><div className="label mb-1">Special conditions</div><div className="flex flex-wrap gap-1">{phase.special.map((x) => <Chip key={x} t="amber">{x}</Chip>)}</div></div>
             <div><div className="label mb-1">Current resources</div>
               <div className="grid grid-cols-4 gap-2 text-white">
@@ -300,8 +301,21 @@ export function BriefingModal({ s }: { s: SimState }) {
   );
 }
 
+function AcademyProgressLine() {
+  const p = loadProgress();
+  const total = LESSONS.length - 1;
+  const done = p.done.filter((id) => id !== 'exam').length;
+  if (!done && !p.bestExam) return null;
+  return (
+    <div className="mt-2 text-[10px] text-ops-dim">
+      {done}/{total} lessons done{p.bestExam?.passed ? <span className="text-ops-green"> · CERTIFIED</span> : ''}
+    </div>
+  );
+}
+
 export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   useStoreVersion();
+  const ui = useUI();
   const fileRef = useRef<HTMLInputElement>(null);
   const saves = listSaves();
   const [scenario, setScenario] = useState<ChosenScenario>(loadChosenScenario);
@@ -315,7 +329,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
     { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours.', cta: 'Enter crisis' },
-    { id: 'training' as const, title: 'Training', desc: 'Guided familiarization with the command interface, information quality, events and resources. Slow and forgiving.', cta: 'Start training' },
+    { id: 'training' as const, title: 'Training Academy', desc: `${LESSONS.length - 1} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.`, cta: 'Open the Academy' },
   ];
   return (
     <div className="flex min-h-full items-center justify-center p-4">
@@ -333,7 +347,8 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
               {m.id === 'campaign' && tacticalOn && (
                 <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
               )}
-              <button className="btn btn-primary mt-3" onClick={() => start(m.id)}>{m.cta}</button>
+              {m.id === 'training' && <AcademyProgressLine />}
+              <button className="btn btn-primary mt-3" onClick={() => (m.id === 'training' ? ui.setAcademyOpen(true) : start(m.id))}>{m.cta}</button>
             </div>
           ))}
           <div className="panel flex flex-col p-4">
