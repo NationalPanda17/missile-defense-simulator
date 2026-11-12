@@ -371,7 +371,7 @@ export default function GlobalMap({ s }: { s: SimState }) {
         {/* history layer */}
         {layers.history && s.events.filter((e) => !isActive(e) && e.resolvedAt !== undefined).slice(-80).map((e) => {
           const [x, y] = eventPoint(s, e);
-          const col = e.status === 'resolved' ? TONE_HEX.green : e.status === 'escalated' ? TONE_HEX.red : '#5d7391';
+          const col = e.status === 'resolved' ? TONE_HEX.green : e.status === 'escalated' ? TONE_HEX.red : '#7088a8';
           const sc = Math.max(0.4, k);
           return (
             <g key={`h${e.id}`} transform={`translate(${x},${y}) scale(${sc})`} opacity={0.75} className="cursor-pointer" onClick={clickGuard(() => ui.openEvent(e.id))}>
@@ -496,7 +496,7 @@ function LegendPanel({ open, setOpen }: { open: boolean; setOpen: (b: boolean) =
   const LAYER_LIST: [keyof Layers, string, string][] = [
     ['space', 'Space', DOMAIN_COLOR.space], ['air', 'Air', DOMAIN_COLOR.air], ['sea', 'Maritime', DOMAIN_COLOR.sea],
     ['ground', 'Ground sensors', DOMAIN_COLOR.ground], ['infrastructure', 'Infrastructure', '#34d399'], ['comms', 'Comms network', '#38d6f5'],
-    ['sensors', 'Sensor coverage', '#38d6f5'], ['events', 'Intel events', '#f2545b'], ['history', 'Event history', '#5d7391'], ['labels', 'Labels', '#c9d8ec'],
+    ['sensors', 'Sensor coverage', '#38d6f5'], ['events', 'Intel events', '#f2545b'], ['history', 'Event history', '#7088a8'], ['labels', 'Labels', '#c9d8ec'],
   ];
   return (
     <div className="absolute bottom-2 left-2 max-h-[calc(100%-1rem)] w-56 overflow-y-auto rounded border border-ops-line bg-ops-bg/90 text-[11px] backdrop-blur">
@@ -523,7 +523,7 @@ function LegendPanel({ open, setOpen }: { open: boolean; setOpen: (b: boolean) =
           <div className="border-t border-ops-line pt-2">
             <div className="label mb-1">Asset condition</div>
             <div className="grid grid-cols-2 gap-1 text-[10px]">
-              {[['#34d399', 'Healthy'], ['#f5b13d', 'Degraded'], ['#f2545b', 'Offline / critical'], ['#e0f7ff', 'Restored (<12h)'], ['#5d7391', 'Maintenance'], ['#a78bfa', 'In transit']].map(([c, l]) => (
+              {[['#34d399', 'Healthy'], ['#f5b13d', 'Degraded'], ['#f2545b', 'Offline / critical'], ['#e0f7ff', 'Restored (<12h)'], ['#7088a8', 'Maintenance'], ['#a78bfa', 'In transit']].map(([c, l]) => (
                 <span key={l} className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>
               ))}
             </div>

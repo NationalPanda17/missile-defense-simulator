@@ -10,6 +10,7 @@ import { useUI, type ViewId } from './uiState';
 import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { loadProgress } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
+import { DisplayControl, DisplaySettings } from './a11y/DisplayControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -363,7 +364,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   return (
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
-        <div className="-mb-3 flex justify-end sm:absolute sm:right-3 sm:top-3 sm:mb-0"><SoundControl /></div>
+        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
           <h1 className="mt-2 font-sans text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl">MISSILE DEFENSE SIMULATOR</h1>
@@ -431,6 +432,10 @@ export function HelpModal() {
     <Modal title="COMMAND REFERENCE" onClose={() => ui.setHelp(false)}>
       <div className="space-y-4">
         <table className="table-ops w-full"><tbody>{keys.map(([k, d]) => <tr key={k}><td className="w-36"><kbd className="rounded border border-ops-line px-1.5 text-ops-cyan">{k}</kbd></td><td>{d}</td></tr>)}</tbody></table>
+        <div className="rounded border border-ops-line p-3">
+          <div className="label mb-2">Display & accessibility</div>
+          <DisplaySettings />
+        </div>
         <div className="space-y-2 text-[11px] leading-relaxed text-ops-dim">
           <p><b className="text-white">How the network works.</b> Each domain's raw readiness comes from its assets' condition. Effective readiness is then reduced by weaknesses in the domains it depends on (e.g. Air and Maritime depend on Space relays) and by global network health. Regional awareness comes from sensor coverage and comms; it controls how reliable incoming reports are.</p>
           <p><b className="text-white">Events.</b> Each report has a confidence level and a decision window. Some reports are spurious. Task a confirmation when unsure, respond when confident, or dismiss — but dismissed genuine events keep developing out of sight. Unresolved events escalate, causing lasting damage and sometimes follow-on events.</p>

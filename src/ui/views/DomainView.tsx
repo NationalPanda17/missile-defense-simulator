@@ -107,7 +107,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
       <Panel className="xl:col-span-2" title="Historical Performance">
         <LineChart series={[
           { name: 'Effective', color, data: s.history.map((h) => h.domains[domain]) },
-          { name: 'Global readiness', color: '#5d7391', data: s.history.map((h) => h.readiness) },
+          { name: 'Global readiness', color: '#7088a8', data: s.history.map((h) => h.readiness) },
           { name: 'Network', color: '#38d6f5', data: s.history.map((h) => h.network) },
         ]} />
       </Panel>

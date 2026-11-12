@@ -7,7 +7,7 @@ import type { Asset, Domain, Severity } from '../../engine';
 export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
 
 export const tone = (v: number) => (v >= 75 ? 'green' : v >= 55 ? 'cyan' : v >= 35 ? 'amber' : 'red');
-export const TONE_HEX = { green: '#34d399', cyan: '#38d6f5', amber: '#f5b13d', red: '#f2545b', dim: '#5d7391', violet: '#a78bfa', blue: '#3b82f6' };
+export const TONE_HEX = { green: '#34d399', cyan: '#38d6f5', amber: '#f5b13d', red: '#f2545b', dim: '#7088a8', violet: '#a78bfa', blue: '#3b82f6' };
 export const TONE_TEXT = { green: 'text-ops-green', cyan: 'text-ops-cyan', amber: 'text-ops-amber', red: 'text-ops-red', dim: 'text-ops-dim' };
 export const TONE_CHIP = {
   green: 'border-ops-green/50 text-ops-green bg-ops-green/10',
@@ -114,12 +114,12 @@ export function LineChart({ series, height = 140, xLabels, yMax = 100, startHour
           return (
             <g key={g}>
               <line x1={pad.l} x2={w - pad.r} y1={y(v)} y2={y(v)} stroke="#1b2c47" strokeDasharray="2 4" />
-              <text x={pad.l - 4} y={y(v) + 3} textAnchor="end" fontSize={9} fill="#5d7391">{Math.round(v)}</text>
+              <text x={pad.l - 4} y={y(v) + 3} textAnchor="end" fontSize={9} fill="#7088a8">{Math.round(v)}</text>
             </g>
           );
         })}
         {[...new Set([0, Math.floor((n - 1) / 2), n - 1])].map((i) => (
-          <text key={i} x={x(i)} y={height - 4} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={9} fill="#5d7391">{label(i)}</text>
+          <text key={i} x={x(i)} y={height - 4} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} fontSize={9} fill="#7088a8">{label(i)}</text>
         ))}
         {series.map((s) => (
           <polyline key={s.name} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" points={s.data.map((v, i) => `${x(i)},${y(v)}`).join(' ')} style={{ filter: `drop-shadow(0 0 3px ${s.color}66)` }} />
@@ -199,7 +199,7 @@ export function simClock(start: number, hour: number) {
 
 /** Map/list colour for an asset's status. */
 export function statusColor(a: Asset, hour: number) {
-  if (a.status === 'maintenance') return '#5d7391';
+  if (a.status === 'maintenance') return '#7088a8';
   if (a.status === 'transit') return '#a78bfa';
   if (a.restoredAt !== undefined && hour - a.restoredAt < 12) return '#e0f7ff';
   if (a.status === 'offline') return TONE_HEX.red;

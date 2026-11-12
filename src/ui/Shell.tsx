@@ -1,6 +1,7 @@
 // Top bar, left navigation, right sidebar and bottom panel.
 import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
+import { DisplayControl } from './a11y/DisplayControl';
 import { DOMAINS, SIM_CONFIG, isActive, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
@@ -81,6 +82,7 @@ export function TopBar({ s }: { s: SimState }) {
           <Chip t={ALERT_TONE[m.alert]}><span className={m.alert === 'SEVERE' ? 'blink' : ''}>{m.alert}</span></Chip>
         </div>
         <ServerStatusChip />
+        <DisplayControl />
         <SoundControl />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Help & shortcuts (?)">?</button>
         <button className="btn" onClick={() => ui.setTutorial(!ui.tutorial)} title="Training guide">Guide</button>
@@ -326,7 +328,7 @@ function EventTimeline({ s }: { s: SimState }) {
   const evs = s.events.filter((e) => isKnown(s, e) && (e.resolvedAt ?? s.hour) >= start).slice(-40);
   const x = (h: number) => `${((h - start) / (span - start)) * 100}%`;
   const color = (e: (typeof evs)[number]) =>
-    e.status === 'resolved' ? '#34d399' : e.status === 'escalated' ? '#f2545b' : e.status === 'expired' || e.status === 'dismissed' ? '#5d7391' : e.status === 'responding' ? '#38d6f5' : '#f5b13d';
+    e.status === 'resolved' ? '#34d399' : e.status === 'escalated' ? '#f2545b' : e.status === 'expired' || e.status === 'dismissed' ? '#7088a8' : e.status === 'responding' ? '#38d6f5' : '#f5b13d';
   if (!evs.length) return <div className="text-ops-dim">No events yet. The timeline fills as reports arrive.</div>;
   return (
     <div className="relative min-w-[600px]" style={{ height: evs.length * 14 + 18 }}>

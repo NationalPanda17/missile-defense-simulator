@@ -6,7 +6,7 @@ import { trackPhase } from '../threatTimeline';
 import { TheaterMap } from './theater/TheaterMap';
 
 const CAT_COLOR: Record<CommandEntry['category'], string> = {
-  response: '#38d6f5', maintenance: '#34d399', investment: '#a78bfa', redeploy: '#f5b13d', confirmation: '#7dd3fc', control: '#5d7391',
+  response: '#38d6f5', maintenance: '#34d399', investment: '#a78bfa', redeploy: '#f5b13d', confirmation: '#7dd3fc', control: '#7088a8',
 };
 const CAT_LABEL: Record<CommandEntry['category'], string> = {
   response: 'Response / alert', maintenance: 'Maintenance / resupply', investment: 'Investment / deployment', redeploy: 'Redeploy / move', confirmation: 'Confirmation', control: 'Control',
@@ -122,7 +122,7 @@ export function MissionReplay({ s }: { s: SimState }) {
           <line x1={0} y1={14} x2={1000} y2={14} stroke="#1b2c47" strokeWidth={10} />
           {waves.map((w) => (
             <rect key={w.id} x={X(launchOf(w))} y={w.region === region ? 9 : 12} width={Math.max(3, X(w.atHour) - X(launchOf(w)))} height={w.region === region ? 10 : 4}
-              fill={w.region === region ? '#f2545b' : '#5d7391'} opacity={w.region === region ? 0.9 : 0.5} className="cursor-pointer" onClick={() => setT(launchOf(w))}>
+              fill={w.region === region ? '#f2545b' : '#7088a8'} opacity={w.region === region ? 0.9 : 0.5} className="cursor-pointer" onClick={() => setT(launchOf(w))}>
               <title>{`${w.id} · ${s.regions[w.region].name} · launch T+${launchOf(w)}h, impact T+${w.atHour}h`}</title>
             </rect>
           ))}
@@ -135,7 +135,7 @@ export function MissionReplay({ s }: { s: SimState }) {
         </svg>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ops-dim">
           <span><span className="text-ops-red">■</span> waves in {s.regions[region].name}</span>
-          <span><span style={{ color: '#5d7391' }}>■</span> waves elsewhere</span>
+          <span><span style={{ color: '#7088a8' }}>■</span> waves elsewhere</span>
           {(Object.keys(CAT_LABEL) as CommandEntry['category'][]).filter((k) => k !== 'control' && decisions.some((c) => c.category === k)).map((k) => (
             <span key={k}><span style={{ color: CAT_COLOR[k] }}>■</span> {CAT_LABEL[k]}</span>
           ))}

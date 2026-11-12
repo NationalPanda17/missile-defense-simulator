@@ -5,6 +5,7 @@ import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar } from './Shell';
 import { sound } from './audio/sound';
+import { installA11y } from './a11y/settings';
 import { applyUpdate, onUpdateReady, updateReady } from './pwa';
 
 import { UIProvider, useUI } from './uiState';
@@ -34,6 +35,7 @@ function Loading() {
 }
 
 sound.install();
+installA11y();
 
 function UpdateBanner() {
   const [ready, setReady] = useState(updateReady);

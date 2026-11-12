@@ -73,7 +73,7 @@ function WaveReplay({ s, wave }: { s: SimState; wave: ThreatWave }) {
         const y = tr.from[1] + (target[1] - tr.from[1]) * f;
         const done = local >= 1;
         const hit = tr.outcome === 'leaked';
-        const col = tr.decoy ? '#5d7391' : hit ? '#f2545b' : '#f5b13d';
+        const col = tr.decoy ? '#7088a8' : hit ? '#f2545b' : '#f5b13d';
         return (
           <g key={tr.id}>
             <line x1={tr.from[0]} y1={tr.from[1]} x2={x} y2={y} stroke={col} strokeOpacity={0.35} strokeDasharray={tr.decoy ? '2 4' : undefined} />
