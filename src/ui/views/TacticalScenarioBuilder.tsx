@@ -158,6 +158,9 @@ export function CampaignScenarioPicker({ value, onChange }: { value: ChosenScena
           <option value="custom">{presetId === 'custom' ? `Custom: ${value.name}` : 'Custom…'}</option>
         </select>
       </label>
+      <p className="text-[11px] leading-relaxed text-ops-dim" aria-live="polite">
+        {TACTICAL_PRESETS.find((p) => p.id === presetId)?.description ?? 'Your own scenario: every wave, threat and budget setting as you built or imported it.'}
+      </p>
       <button className="btn w-full" onClick={() => setOpen(true)} title="Build, import or export a tactical scenario">Customize…</button>
       {open && <TacticalScenarioBuilder initial={value} onClose={() => setOpen(false)} onUse={(c) => { onChange(c); setOpen(false); }} />}
     </div>

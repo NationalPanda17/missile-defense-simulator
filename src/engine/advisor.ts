@@ -150,15 +150,19 @@ export function advise(s: SimState): Advice[] {
     });
   }
 
-  // Phase objectives heading for a miss, from a third of the way through the phase.
+  // Phase objectives heading for a miss.
   if (s.status === 'running') {
     const phase = s.phases[s.phaseIndex];
     const elapsed = s.hour - s.phaseStartHour;
     const left = phase.hours - elapsed;
-    if (phase.objectives.length && elapsed >= phase.hours / 3) {
+    if (phase.objectives.length) {
       for (const o of phase.objectives) {
         const v = objectiveValue(s, o.metric);
         if (objectiveMet(o.metric, v, o.target) && !(o.metric === 'escalationsMax' && v === o.target)) continue;
+        // Counts and gains start at zero, so they are only "at risk" once a third of the phase has gone; a level below
+        // its target (network, readiness, stability...) is worth saying at once.
+        const isCount = ['maintenanceDone', 'confirmations', 'resolved', 'falseDismissed', 'readinessGain', 'infrastructureGain'].includes(o.metric);
+        if (isCount && elapsed < phase.hours / 3) continue;
         const shown = Number.isInteger(o.target) && ['maintenanceDone', 'confirmations', 'resolved', 'falseDismissed', 'escalationsMax'].includes(o.metric)
           ? `${Math.round(v)} of ${o.target}` : `${formatObjective(o.metric, v)} vs ${formatObjective(o.metric, o.target)}`;
         out.push({

@@ -110,7 +110,8 @@ export function EventModal({ s }: { s: SimState }) {
               <div className="label">Management responses</div>
               <div className="space-y-2">
                 {t.responses.map((resp) => {
-                  const p = responseSuccessChance(s, e, resp.id);
+                  const locked = e.status === 'responding' && e.responseId === resp.id && e.responseChance !== undefined;
+                  const p = locked ? e.responseChance! : responseSuccessChance(s, e, resp.id);
                   const err = resp.passive ? (e.monitored ? 'Already used' : null) : canAfford(s, resp.credits, resp.personnel, resp.crews);
                   const busy = e.status === 'responding';
                   return (
@@ -129,7 +130,7 @@ export function EventModal({ s }: { s: SimState }) {
                           <span className={s.personnel < resp.personnel ? 'text-ops-red' : ''}>{resp.personnel} personnel</span>
                           {resp.crews > 0 && <span className={crewsFree(s) < resp.crews ? 'text-ops-red' : ''}>{resp.crews} crew</span>}
                           <span>{resp.hours}h</span>
-                          <span className={TONE_TEXT[tone(p * 100)]}>{Math.round(p * 100)}% success</span>
+                          <span className={TONE_TEXT[tone(p * 100)]} title={locked ? 'Fixed when you gave the order.' : 'Changes with regional comms and the readiness of the domain it depends on, until you order it.'}>{Math.round(p * 100)}% success{locked ? ' (locked when ordered)' : ''}</span>
                           {resp.domainDependency && <span>depends on {DOMAIN_LABEL[resp.domainDependency]}</span>}
                           {resp.networkDependent && <span>depends on regional comms</span>}
                         </div>

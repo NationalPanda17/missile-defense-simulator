@@ -196,7 +196,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   }
 
   const start = s.status === 'running' ? s.phaseStartHour : s.hour; // in a briefing, the phase starts at s.hour
-  const first = Math.max((fromHour ?? 0) + 3, start + 6); // leaves room for the longest flight before impact
+  // The campaign's opening wave comes after a settling-in period, so the first hours are for reading the situation.
+  const opening = s.settings.mode === 'campaign' && s.phaseIndex === 0;
+  const first = Math.max((fromHour ?? 0) + 3, start + (opening ? 12 : 6)); // leaves room for the longest flight before impact
   const last = start + phase.hours - 2;
   if (last <= first) return;
   const hours = Array.from({ length: profile.count }, () => first + Math.floor(rand(t) * (last - first + 1))).sort((a, b) => a - b);
@@ -221,7 +223,10 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     // night: to the closest dark hour, earlier or later, so night raids don't pile up at the end of a phase.
     if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = nearestNightHour(s, region, scheduled - 3, first - 3, last - 3) + 3;
     const axis = AXES[Math.floor(rand(t) * AXES.length)];
-    const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
+    let n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
+    // Ramp up: the campaign's first wave is never bigger than the standard scenario's largest opening wave, whatever
+    // the difficulty and scenario multipliers, so the danger builds instead of arriving all at once.
+    if (opening && k === 0) n = Math.min(profile.tracks[0], base.tracks[1]);
     const tracks: Track[] = [];
     for (let i = 0; i < n; i++) {
       const cls = weighted(t, CLASSES.map((c) => ({ item: c, w: profile.mix[c] })));
@@ -862,7 +867,8 @@ export function resupplyCost(d: Deployment, rounds?: number): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
   const n = rounds ?? spec.magazine - d.stock;
-  return Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine));
+  if (n <= 0) return 0;
+  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine)));
 }
 
 export type ProtectionLevel = 'protected' | 'thin' | 'exposed';

@@ -104,7 +104,7 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
             Pause for {KIND_LABEL[first.kind]}
           </label>
         )}
-        {pacing && (pacing.deadline || pacing.report) && (
+        {pacing && (pacing.deadline || pacing.report) && s.tactical?.enabled && (
           <button className="underline hover:text-white" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Pause only for waves</button>
         )}
       </div>
@@ -132,10 +132,10 @@ export function PacingSettings() {
         <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: true })}>Everything</button>
         <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: false, deadline: false, report: false })}>Never</button>
       </div>
-      <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together.</p>
+      <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together. “Waves only” also stops before escalations in scenarios that have no waves.</p>
       <p className="text-[10px] text-ops-dim">
         {store.pacing ? <>Your choice, for every difficulty. <button className="underline" onClick={() => store.setPacing(null)}>Use the defaults</button></>
-          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate.'}
+          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate. Scenarios without waves (Crisis, Sandbox) always stop before a report escalates.'}
       </p>
     </div>
   );

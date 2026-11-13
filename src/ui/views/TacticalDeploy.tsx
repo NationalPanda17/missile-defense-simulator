@@ -52,7 +52,7 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
           </button>
         ))}
       </div>
-      <ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[30rem]">
+      <ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[max(16rem,calc(100dvh-22rem-var(--coach-h,0px)))]">
         {list.map((e) => {
           const cost = equipmentCost(e);
           const sel = e.id === selected;
@@ -309,8 +309,9 @@ export function DeployPanel({ s }: { s: SimState }) {
       </div>
       {/* Wider screens: map and coverage on the left, catalog on the right. */}
       <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
-        {/* The map stays put while the catalog scrolls, so a click after picking a system lands where it looks. */}
-        <div className={`min-w-0 space-y-2 md:sticky md:top-0 md:z-10 md:col-start-1 md:row-start-1 md:block md:self-start md:bg-ops-panel md:pb-2 ${pane === 'map' ? '' : 'hidden'}`} data-coach="deploy-map">
+        {/* The map stays put while the catalog scrolls in its own box, so a click after picking a system lands where it
+            looks. (A pinned map column would cover the site list beneath it.) The catalog's box fits the screen. */}
+        <div className={`min-w-0 space-y-2 md:col-start-1 md:row-start-1 md:block ${pane === 'map' ? '' : 'hidden'}`} data-coach="deploy-map">
           {/* Always the same height, so picking a system never moves the map under the pointer. */}
           <div className={`flex min-h-[30px] items-center justify-between gap-2 rounded border px-2 py-1 text-[11px] ${spec || (moving && depSpec) ? 'border-ops-cyan/60 bg-ops-cyan/10' : 'border-ops-line'}`} role="status">
             <span className={spec || (moving && depSpec) ? 'text-white' : 'text-ops-dim'}>
@@ -324,7 +325,7 @@ export function DeployPanel({ s }: { s: SimState }) {
           <div className="-mx-1 overflow-x-auto px-1 md:mx-0 md:overflow-visible md:px-0">
             <div className="min-w-[560px] md:min-w-0">
               <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
-                fitClass="md:max-h-[max(15rem,calc(100dvh-24rem))]"
+                fitClass="md:max-h-[max(15rem,calc(100dvh-24rem-var(--coach-h,0px)))]"
                 highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
                 onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
             </div>

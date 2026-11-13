@@ -65,10 +65,22 @@ export function pauseReasons(prev: PauseMemo | null, s: SimState): { reasons: Pa
 export interface AutoPauseSettings { launch: boolean; deadline: boolean; report: boolean }
 
 /**
+ * The player's saved choice applied to a scenario. "Waves only" means "only the urgent moments": where there are no
+ * waves it stops before escalations instead of never stopping at all. "Never" (nothing ticked) is respected.
+ */
+export function applyPacing(p: AutoPauseSettings, hasWaves: boolean): AutoPauseSettings {
+  if (!hasWaves && p.launch && !p.deadline && !p.report) return { ...p, deadline: true };
+  return p;
+}
+
+/**
  * Defaults by difficulty. Launch warnings pause on every difficulty (the decision window is too short in real time
  * otherwise); Recruit also stops for every report, Officer for reports about to escalate, Commander for launches only.
+ * Scenarios without threat waves (Crisis, Sandbox) never have a launch to stop for, so they always stop before a
+ * report escalates.
  */
-export function defaultAutoPause(level: CommandLevel | undefined): AutoPauseSettings {
+export function defaultAutoPause(level: CommandLevel | undefined, hasWaves = true): AutoPauseSettings {
+  if (!hasWaves) return { launch: true, deadline: true, report: level === 'recruit' };
   if (level === 'commander') return { launch: true, deadline: false, report: false };
   if (level === 'recruit') return { launch: true, deadline: true, report: true };
   return { launch: true, deadline: true, report: false };
