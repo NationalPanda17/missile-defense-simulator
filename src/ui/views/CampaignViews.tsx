@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   DOMAINS, REGION_IDS, SLOTS, autosaveSlot, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
-  objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
+  formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
 import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, Stat, ConfirmDelete } from '../components/ui';
@@ -48,7 +48,7 @@ export function CampaignView({ s }: { s: SimState }) {
             const look = OBJECTIVE_LOOK[objectiveProgress(s, o)];
             return (
               <div key={o.id} className="rounded border border-ops-line p-2" title={look.title}>
-                <div className="flex justify-between gap-2"><span className={look.cls}>{look.icon} {o.text}</span><span className="shrink-0 text-ops-dim">{Math.round(v)} / {o.target}{o.reward ? ` · +${o.reward} cr` : ''}</span></div>
+                <div className="flex justify-between gap-2"><span className={look.cls}>{look.icon} {o.text}</span><span className="shrink-0 text-ops-dim">{formatObjective(o.metric, v)} / {formatObjective(o.metric, o.target)}{o.reward ? ` · +${o.reward} cr` : ''}</span></div>
                 {o.metric !== 'escalationsMax' && <div className="mt-1"><Bar value={Math.min(v, o.target)} max={o.target} height={4} color={look.bar} /></div>}
               </div>
             );

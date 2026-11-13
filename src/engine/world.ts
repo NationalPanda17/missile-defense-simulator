@@ -117,7 +117,9 @@ export function withLevel(settings: ScenarioSettings, level: CommandLevel): Scen
 function levelNote(lv: (typeof COMMAND_LEVELS)[CommandLevel], baseFalse: number, falseRate: number) {
   const pct = (x: number) => Math.round(x * 100);
   const more = (m: number, up: string, down: string) => (m > 1 ? `${pct(m - 1)}% ${up}` : `${pct(1 - m)}% ${down}`);
-  return `${lv.label} difficulty: ${more(lv.eventFrequency, 'more', 'fewer')} incidents, ${pct(falseRate)}% of reports false (Officer ${pct(baseFalse)}%), ${lv.waveSize > 1 ? 'bigger' : 'smaller'} attack waves`;
+  const time = lv.deadlineMult === 1 ? '' : `, ${more(lv.deadlineMult, 'more', 'less')} time before reports escalate`;
+  const income = lv.incomeMult === 1 ? '' : `, ${more(lv.incomeMult, 'more', 'less')} income`;
+  return `${lv.label} difficulty: ${more(lv.eventFrequency, 'more', 'fewer')} incidents, ${pct(falseRate)}% of reports false (Officer ${pct(baseFalse)}%)${time}${income}, ${lv.waveSize > 1 ? 'bigger' : 'smaller'} attack waves`;
 }
 
 export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {

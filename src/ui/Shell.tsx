@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -168,7 +168,7 @@ function ObjectivesSection({ s }: { s: SimState }) {
             <li key={o.id} title={look.title}>
               <div className="flex justify-between gap-2">
                 <span className={look.cls}>{look.icon} {o.text}</span>
-                <span className="shrink-0 tabular-nums text-ops-dim">{Math.round(v)}/{o.target}</span>
+                <span className="shrink-0 tabular-nums text-ops-dim">{formatObjective(o.metric, v)}/{formatObjective(o.metric, o.target)}</span>
               </div>
               <Bar value={pct} height={3} color={look.bar} />
             </li>

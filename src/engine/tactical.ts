@@ -684,6 +684,44 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   };
 }
 
+/** A site the current phase's forecast waves are aimed at, with how much of that threat nothing deployed can reach. */
+export interface ForecastTarget {
+  site: Site;
+  /** Expected damage aimed at the site (threat damage × site importance). */
+  threat: number;
+  /** The part of `threat` from threat classes no deployed system can engage at the site. */
+  uncovered: number;
+  classes: ThreatClass[];
+}
+
+/**
+ * Where this phase's forecast waves are headed in a region, most threatened first. Briefings show it so that a
+ * player defends the sites that will actually be attacked, not just the most valuable ones. Surprise waves are not
+ * included, like the forecast itself.
+ */
+export function forecastTargets(s: SimState, region: RegionId): ForecastTarget[] {
+  const t = s.tactical;
+  if (!t?.enabled) return [];
+  const by = new Map<string, ForecastTarget>();
+  const cover = new Map<string, Record<ThreatClass, number>>();
+  for (const w of t.waves) {
+    if (w.region !== region || w.phaseIndex !== s.phaseIndex || w.resolved || !w.forecast) continue;
+    for (const tr of w.tracks) {
+      if (tr.decoy) continue;
+      const site = t.sites.find((x) => x.id === tr.siteId);
+      if (!site) continue;
+      if (!cover.has(site.id)) cover.set(site.id, coverageAt(s, region, site.x, site.y));
+      const v = TACTICAL_CONFIG.threatDamage[tr.cls] * site.importance;
+      const e = by.get(site.id) ?? { site, threat: 0, uncovered: 0, classes: [] };
+      e.threat += v;
+      if (!(cover.get(site.id)![tr.cls] > 0)) e.uncovered += v;
+      if (!e.classes.includes(tr.cls)) e.classes.push(tr.cls);
+      by.set(site.id, e);
+    }
+  }
+  return [...by.values()].sort((a, b) => b.threat - a.threat || b.site.importance - a.site.importance);
+}
+
 /** Share (0-1) of a region's site value lost to threat waves so far; it carries over from phase to phase. */
 export function siteDamageShare(s: SimState, region: RegionId): number {
   const sites = s.tactical?.sites.filter((x) => x.region === region) ?? [];

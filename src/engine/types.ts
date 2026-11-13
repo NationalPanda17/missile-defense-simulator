@@ -215,7 +215,9 @@ export interface Objective {
     | 'escalationsMax'
     | 'resolved'
     | 'falseDismissed'
-    | 'credits';
+    | 'credits'
+    | 'readinessGain' // points gained since the phase began
+    | 'infrastructureGain';
   target: number;
   /** Campaign only: the target at other difficulty levels (`target` is Officer's). Resolved when the run is built. */
   byLevel?: Partial<Record<CommandLevel, number>>;
@@ -448,6 +450,8 @@ export interface SimState {
   // Derived metrics (recomputed each tick)
   metrics: Metrics;
   baseline: { infrastructure: number; readiness: number };
+  /** Metrics when the current phase began, for objectives that measure improvement (absent in older saves). */
+  phaseStart?: { readiness: number; infrastructure: number };
   minReadiness: number;
 }
 

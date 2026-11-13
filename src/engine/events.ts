@@ -1,5 +1,6 @@
 // Event template library and generation. Templates are data; behaviour is driven by the engine.
 import { clamp, rand, randInt, randRange, weightedPick, pick } from './rng';
+import { levelOf } from './config';
 import type {
   Asset, AssetRole, Domain, EffectSpec, EventCategory, GameEvent, OneTimeEffects, Region, RegionId,
   ResponseSpec, Severity, SimState,
@@ -396,7 +397,7 @@ export function spawnEvent(
   let reportedAt = s.hour;
   if (phase.delayedInfo && r.comms < 70 && !opts.scripted) reportedAt = s.hour + Math.round((70 - r.comms) / 10 + rand(s) * 3);
 
-  const duration = randRange(s, t.duration[0], t.duration[1]) * (sev === 4 ? 0.8 : 1);
+  const duration = randRange(s, t.duration[0], t.duration[1]) * (sev === 4 ? 0.8 : 1) * levelOf(s.settings).deadlineMult;
   const sf = SEV_FACTOR[sev];
   const effects = t.effects.map((f) => ({ ...f, value: f.kind === 'maintenanceCostMult' ? f.value : f.value * sf }));
 
