@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, previewDefense, stockpileRules, stormWindows, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  equipmentCost, isEffector, isUnlimited, previewDefense, forecastTargets, stockpileRules, stormWindows, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Chip, TONE_HEX } from '../components/ui';
@@ -115,12 +115,22 @@ const setGuideHidden = (v: boolean) => { try { if (v) localStorage.setItem(GUIDE
 
 interface GuideStep { id: string; text: string; done: boolean; pick?: string; pickLabel?: string }
 
+/**
+ * Where the guide sends the player first: the site the forecast waves aim the most damage at (falling back to the
+ * most important site when nothing is forecast here). The most valuable site is often not the one attacked.
+ */
+export function guideSites(s: SimState, region: RegionId): Site[] {
+  const targets = forecastTargets(s, region).map((x) => x.site);
+  const rest = s.tactical!.sites.filter((x) => x.region === region && !targets.includes(x)).sort((a, b) => b.importance - a.importance);
+  return [...targets, ...rest];
+}
+
 /** Steps of the first-deployment guide, ticked off from the actual state. */
 export function guideSteps(s: SimState, region: RegionId): GuideStep[] {
   const t = s.tactical!;
   const here = t.deployments.filter((d) => d.region === region);
   const specOf = (id: string) => EQUIPMENT_MAP.get(id)!;
-  const top = t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0];
+  const [top, second] = guideSites(s, region);
   const coversTop = here.some((d) => {
     const sp = specOf(d.equipmentId);
     return (sp.layer === 'shortMedium' || sp.layer === 'long') && top && Math.hypot(d.x - top.x, d.y - top.y) <= Math.min(sp.rangeKm, 60);
@@ -128,8 +138,8 @@ export function guideSteps(s: SimState, region: RegionId): GuideStep[] {
   const axis = t.waves.find((w) => w.phaseIndex === s.phaseIndex && w.region === region && w.forecast)?.axis;
   return [
     { id: 'region', done: t.forecast.includes(region), text: `Open a forecast region (red dot).${axis ? ` Threats here are expected from the ${axis}.` : ''}` },
-    { id: 'cover', done: coversTop, pick: 'iris-t-slm', pickLabel: 'Pick IRIS-T SLM', text: `Put a medium-range system on or near ${top?.name ?? 'the most important city'} (highlighted). Low-flying threats are only engaged within about ${TACTICAL_CONFIG.lowAltitude.horizonKm} km, so keep it close.` },
-    { id: 'close', done: here.some((d) => ['pointDefense', 'directedEnergy'].includes(specOf(d.equipmentId).layer)), pick: 'skynex', pickLabel: 'Pick Skynex', text: 'Add close-in defense against drone swarms at a key site.' },
+    { id: 'cover', done: coversTop, pick: 'iris-t-slm', pickLabel: 'Pick IRIS-T SLM', text: `Put a medium-range system on or near ${top?.name ?? 'the most important city'} (highlighted): the forecast waves aim the most damage at it. Low-flying threats are only engaged within about ${TACTICAL_CONFIG.lowAltitude.horizonKm} km, so keep it close.` },
+    { id: 'close', done: here.some((d) => ['pointDefense', 'directedEnergy'].includes(specOf(d.equipmentId).layer)), pick: 'skynex', pickLabel: 'Pick Skynex', text: `Add close-in defense against drone swarms at ${second && second !== top ? `${second.name}, the next site the waves aim at` : 'a targeted site'}. Gun systems only reach a few km, so place them on the site itself.` },
     { id: 'sense', done: here.some((d) => specOf(d.equipmentId).layer === 'detection'), pick: 'acoustic-net', pickLabel: 'Pick acoustic sensors', text: 'Add a sensor toward the threat. Cheap acoustic and RF sensors catch low drones that radars miss; airborne radar (E-7) sees past the horizon.' },
     { id: 'all', done: t.forecast.every((r) => t.deployments.some((d) => d.region === r && isEffector(specOf(d.equipmentId)))), text: 'Do the same in the other forecast region, then begin the phase. During the phase, use the Tactical Theater (X) to resupply, raise alerts and redeploy.' },
   ];
@@ -184,6 +194,8 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}`).join('|');
   // Recomputed only when this region's layout (or the phase) changes.
   const p = useMemo(() => previewDefense(s, region), [key, region, s.phaseIndex, s.hour]);
+  const targets = useMemo(() => forecastTargets(s, region), [key, region, s.phaseIndex, s.hour]);
+  const exposed = targets.filter((x) => x.uncovered >= x.threat / 2);
   if (!p) {
     return t.forecast.includes(region) ? null : (
       <p className="text-[11px] text-ops-dim">{s.regions[region].name} is not in this phase’s forecast. Surprise attacks are possible in later phases.</p>
@@ -193,19 +205,29 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   const tone = pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red';
   const classes = (Object.entries(p.mix) as [ThreatClass, number][]).sort((a, b) => b[1] - a[1]);
   return (
-    <details className="rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
+    // The details open as a drop-down over the map instead of pushing it down, so a click aimed at the map lands
+    // where it looks.
+    <details className="relative rounded border border-ops-line px-2 py-1 text-[11px]" aria-live="polite">
       <summary className="cursor-pointer list-none">
         <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
         Simulated outcome with this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
         <span className="text-ops-dim">(likely {Math.round(p.range[0] * 100)}–{Math.round(p.range[1] * 100)}%; {Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+        {exposed.length > 0 && (
+          <span className="mt-0.5 block text-ops-amber">
+            ⚠ Targeted sites outside your coverage: {exposed.slice(0, 4).map((x) => x.site.name).join(', ')}{exposed.length > 4 ? ` +${exposed.length - 4} more` : ''}
+          </span>
+        )}
       </summary>
-      <ul className="mt-1 space-y-0.5 text-ops-dim">
+      <div className="absolute inset-x-0 top-full z-20 mt-1 rounded border border-ops-line bg-ops-panel p-2 shadow-2xl">
+      <ul className="space-y-0.5 text-ops-dim">
+        {targets.length > 0 && <li>▸ Likely targets, most threatened first: {targets.slice(0, 5).map((x) => x.site.name).join(', ')}</li>}
         {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
         <li>▸ {weatherOutlook(s, region)}</li>
       </ul>
       <div className="mt-1 text-[10px] text-ops-dim">
         An estimate from replaying the forecast waves against your layout many times. Luck matters: the real result can land anywhere in the likely range, and sometimes outside it. Surprise attacks are not included.
         Site coverage (on the map) is different: it only measures which sites sit inside some system’s reach.
+      </div>
       </div>
     </details>
   );
@@ -227,7 +249,7 @@ export function DeployPanel({ s }: { s: SimState }) {
   const spentNow = s.commands.filter((c) => c.t === s.hour && (c.kind === 'deploy' || c.kind === 'relocate')).reduce((a, c) => a + c.credits, 0);
   const showGuide = s.phaseIndex === 0 && !hideGuide && s.settings.mode === 'campaign'; // training lessons have their own coach
   const guideTarget = showGuide && !guideSteps(s, region).find((x) => x.id === 'cover')!.done
-    ? t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance)[0] : undefined;
+    ? guideSites(s, region)[0] : undefined;
 
   useEffect(() => {
     if (!equipment && !moving) return;
@@ -288,7 +310,7 @@ export function DeployPanel({ s }: { s: SimState }) {
       {/* Wider screens: map and coverage on the left, catalog on the right. */}
       <div className="order-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_19rem]">
         {/* The map stays put while the catalog scrolls, so a click after picking a system lands where it looks. */}
-        <div className={`min-w-0 space-y-2 md:sticky md:top-0 md:col-start-1 md:row-start-1 md:block md:self-start ${pane === 'map' ? '' : 'hidden'}`} data-coach="deploy-map">
+        <div className={`min-w-0 space-y-2 md:sticky md:top-0 md:z-10 md:col-start-1 md:row-start-1 md:block md:self-start md:bg-ops-panel md:pb-2 ${pane === 'map' ? '' : 'hidden'}`} data-coach="deploy-map">
           {/* Always the same height, so picking a system never moves the map under the pointer. */}
           <div className={`flex min-h-[30px] items-center justify-between gap-2 rounded border px-2 py-1 text-[11px] ${spec || (moving && depSpec) ? 'border-ops-cyan/60 bg-ops-cyan/10' : 'border-ops-line'}`} role="status">
             <span className={spec || (moving && depSpec) ? 'text-white' : 'text-ops-dim'}>
@@ -302,6 +324,7 @@ export function DeployPanel({ s }: { s: SimState }) {
           <div className="-mx-1 overflow-x-auto px-1 md:mx-0 md:overflow-visible md:px-0">
             <div className="min-w-[560px] md:min-w-0">
               <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
+                fitClass="md:max-h-[max(15rem,calc(100dvh-24rem))]"
                 highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
                 onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
             </div>

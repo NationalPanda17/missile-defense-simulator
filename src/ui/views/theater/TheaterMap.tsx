@@ -39,8 +39,10 @@ export const effectorsCovering = (s: SimState, region: RegionId, x: number, y: n
 
 const box = (x: number, y: number, r: number): Box => ({ x: x - r, y: y - r, w: r * 2, h: r * 2 });
 
-export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, highlight, children, replayAt }: {
+export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPick, highlight, children, replayAt, fitClass = '' }: {
   s: SimState;
+  /** Extra classes for the map, e.g. a max height so the whole theater fits on screen (it letterboxes, keeping its shape). */
+  fitClass?: string;
   region: RegionId;
   ghost?: EquipmentSpec | null;
   selectedId: string | null;
@@ -156,7 +158,7 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
     <svg
       ref={svg}
       viewBox={`0 0 ${W} ${H}`}
-      className={`block h-auto w-full select-none rounded border border-ops-line bg-[#0d1712] outline-none focus-visible:ring-2 focus-visible:ring-ops-cyan ${onPoint ? 'cursor-crosshair' : ''}`}
+      className={`block h-auto w-full select-none rounded border ${fitClass} border-ops-line bg-[#0d1712] outline-none focus-visible:ring-2 focus-visible:ring-ops-cyan ${onPoint ? 'cursor-crosshair' : ''}`}
       role={onPoint ? 'application' : 'img'}
       tabIndex={onPoint ? 0 : undefined}
       aria-label={`Theater map of ${s.regions[region].name}.${onPoint ? ' Arrow keys move the placement cursor, Shift for larger steps, Enter places or moves.' : ''}`}
