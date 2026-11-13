@@ -113,10 +113,30 @@ export function withLevel(settings: ScenarioSettings, level: CommandLevel): Scen
   };
 }
 
+/** One line for the briefing: what the difficulty level changes, with this phase's real false-report rate. */
+function levelNote(lv: (typeof COMMAND_LEVELS)[CommandLevel], baseFalse: number, falseRate: number) {
+  const pct = (x: number) => Math.round(x * 100);
+  const more = (m: number, up: string, down: string) => (m > 1 ? `${pct(m - 1)}% ${up}` : `${pct(1 - m)}% ${down}`);
+  return `${lv.label} difficulty: ${more(lv.eventFrequency, 'more', 'fewer')} incidents, ${pct(falseRate)}% of reports false (Officer ${pct(baseFalse)}%), ${lv.waveSize > 1 ? 'bigger' : 'smaller'} attack waves`;
+}
+
 export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
   if (settings.mode === 'campaign') {
     const lv = levelOf(settings);
-    return CAMPAIGN_PHASES.map((p) => ({ ...p, falseRate: lv.falseMult === 1 ? p.falseRate : Math.min(0.6, p.falseRate * lv.falseMult) }));
+    const level = settings.level && settings.level in COMMAND_LEVELS ? settings.level : 'officer';
+    return CAMPAIGN_PHASES.map((p) => {
+      const falseRate = lv.falseMult === 1 ? p.falseRate : Math.min(0.6, p.falseRate * lv.falseMult);
+      return {
+        ...p,
+        falseRate,
+        objectives: p.objectives.map(({ byLevel, ...o }) => {
+          const target = byLevel?.[level] ?? o.target;
+          return target === o.target ? o : { ...o, target, text: o.text.replace(String(o.target), String(target)) };
+        }),
+        // The phase notes compare phases with each other; say plainly how the difficulty shifts all of them.
+        special: level === 'officer' ? p.special : [levelNote(lv, p.falseRate, falseRate), ...p.special],
+      };
+    });
   }
   if (settings.mode === 'crisis') {
     const p3 = CAMPAIGN_PHASES[2];

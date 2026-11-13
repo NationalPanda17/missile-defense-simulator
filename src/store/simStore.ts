@@ -43,6 +43,8 @@ class SimStore {
   pacing: AutoPauseSettings | null = loadPacing();
   private pMemo: PauseMemo | null = null;
   private held: PauseReason[] = [];
+  /** True while the clock is stopped because the player is in a planning view (not by the player's own order). */
+  viewHold = false;
   private warnedStorage = false;
   private lastBatchPause = -Infinity;
   version = 0;
@@ -73,6 +75,7 @@ class SimStore {
     this.pMemo = pauseMemo(this.state);
     this.pausePrompt = null;
     this.held = [];
+    this.viewHold = false;
     this.lastBatchPause = -Infinity;
     this.toast('info', `New scenario: ${settings.name}`);
     this.ensureLoop();
@@ -86,6 +89,7 @@ class SimStore {
     this.pMemo = pauseMemo(state);
     this.pausePrompt = null;
     this.held = [];
+    this.viewHold = false;
     this.lastBatchPause = -Infinity;
     this.ensureLoop();
     this.notify();
@@ -101,6 +105,7 @@ class SimStore {
     const before = this.state.hour;
     const r = cmd.type === 'advance' ? this.advanceWatched(cmd.hours) : execute(this.state, cmd);
     if (cmd.type === 'setPaused' && !cmd.paused) this.pausePrompt = null;
+    if (cmd.type === 'setPaused' || cmd.type === 'setTurnBased') this.viewHold = false; // the player has taken over
     if (!r.ok) this.toast('err', r.message);
     else if (!['setPaused', 'setSpeed', 'advance', 'beginPhase'].includes(cmd.type)) this.toast('ok', r.message);
     if (this.state.hour !== before) this.afterHours(before);
@@ -148,6 +153,27 @@ class SimStore {
       }
     }
     return r;
+  }
+
+  /**
+   * Planning views (Campaign Management, the Scenario Editor, the AAR) are not where a running crisis can be handled,
+   * so the clock stops while one is open and restarts on the way back to operations, unless the player paused or
+   * resumed it themselves meanwhile. Like the auto-pause, this is the game's pause and is not written to the log.
+   */
+  holdForPlanning(planning: boolean) {
+    const s = this.state;
+    if (!s) return;
+    if (planning) {
+      if (s.status !== 'running' || s.paused || s.turnBased || this.viewHold) return;
+      s.paused = true;
+      this.acc = 0;
+      this.viewHold = true;
+      this.notify();
+    } else if (this.viewHold) {
+      this.viewHold = false;
+      if (s.status === 'running' && s.paused && !this.pausePrompt) s.paused = false;
+      this.notify();
+    }
   }
 
   dismissPausePrompt() {

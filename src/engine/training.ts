@@ -18,6 +18,20 @@ export interface StepContext {
   assetId: string | null;
   /** Command-log length and sim hour when the step began, so a step only counts what was done after it opened. */
   since: { cmd: number; hour: number };
+  /**
+   * What the UI has shown since the lesson began (left out for `fresh` steps). Lets a step that asks the player to
+   * open a view, region, report or asset count it when the player did so before the step came up.
+   */
+  seen?: StepSeen;
+}
+
+export interface StepSeen {
+  views: string[];
+  region: boolean;
+  event: boolean;
+  asset: boolean;
+  /** Fastest clock speed picked so far. */
+  maxSpeed: number;
 }
 
 export interface Quiz {
@@ -103,6 +117,10 @@ const cmdsSince = (c: StepContext, kind: string, text?: string) =>
   c.s.commands.slice(c.since.cmd).filter((x) => x.kind === kind && (!text || x.text.includes(text)));
 const did = (c: StepContext, kind: string, text?: string) => cmdsSince(c, kind, text).length > 0;
 const running = (c: StepContext) => c.s.status !== 'briefing';
+/** One of these views is open now, or was opened earlier in the lesson. */
+const viewed = (c: StepContext, ...views: string[]) => views.includes(c.view) || !!c.seen?.views.some((v) => views.includes(v));
+const opened = (c: StepContext, what: 'region' | 'event' | 'asset') =>
+  (what === 'region' ? c.region : what === 'event' ? c.eventId : c.assetId) !== null || !!c.seen?.[what];
 const DOMAIN_VIEWS = ['space', 'air', 'sea', 'ground'];
 const deployedIn = (s: SimState, region: RegionId, pred: (spec: NonNullable<ReturnType<typeof EQUIPMENT_MAP.get>>) => boolean) =>
   (s.tactical?.deployments ?? []).some((d) => d.region === region && pred(EQUIPMENT_MAP.get(d.equipmentId)!));
@@ -145,17 +163,17 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'speed', target: ['speed'], title: 'Change speed',
         text: 'Pick 4x or 8x in the top bar (keys 3 and 4) so quiet periods pass quickly.',
         hint: 'The speed buttons sit next to the Pause button and read 1x 2x 4x 8x.',
-        check: (c) => c.s.speed >= 4 },
+        check: (c) => c.s.speed >= 4 || (c.seen?.maxSpeed ?? 0) >= 4 },
       { id: 'turns', target: ['turn'], title: 'Switch to turn mode',
         text: 'Prefer to play step by step? Turn on Turn mode in the top bar. The clock stops and moves only when you advance it.',
-        check: (c) => c.s.turnBased },
+        check: (c) => c.s.turnBased || did(c, 'control', 'Turn-based mode enabled') },
       { id: 'advance', fresh: true, target: ['advance'], title: 'Advance one turn',
         text: 'Press Next turn +6h in the top bar (or the T key) to move the clock forward six hours.',
         check: (c) => c.s.hour >= c.since.hour + 6 },
       { id: 'region', target: ['map'], title: 'Open a region', view: 'global',
         text: 'Click any region on the world map to open its dashboard: readiness, communications, awareness and stability for that area.',
         hint: 'Regions are the coloured shapes on the map in Global Operations (key G).',
-        check: (c) => c.region !== null },
+        check: (c) => opened(c, 'region') },
       { id: 'realtime', target: ['turn'], title: 'Back to real time',
         text: 'Turn Turn mode off again. You can switch between the two at any time; the lessons that follow work with either.',
         check: (c) => !c.s.turnBased },
@@ -174,7 +192,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase from the briefing.', check: running },
       { id: 'space', target: ['nav-space'], title: 'Open the Space domain', view: 'space',
         text: 'Open the Space dashboard from the left menu (key S). It lists every orbital asset with its condition and service clock.',
-        check: (c) => c.view === 'space' },
+        check: (c) => viewed(c, 'space') },
       { id: 'rawEff', title: 'Raw and effective readiness',
         text: 'Each domain shows two readiness numbers. Raw readiness comes from the condition of its own assets. Effective readiness is lower when a domain it depends on is weak: Air and Sea rely on Space relays, and Space relies on Ground control.',
         why: 'Fixing the right domain first can lift several others at once.' },
@@ -185,16 +203,16 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Pick one answer.' },
       { id: 'air', target: ['nav-air'], title: 'See the knock-on effect', view: 'air',
         text: 'Open the Air dashboard (key A) and compare its raw and effective readiness.',
-        check: (c) => c.view === 'air' },
+        check: (c) => viewed(c, 'air') },
       { id: 'intel', target: ['nav-intel'], title: 'Intelligence', view: 'intel',
         text: 'Open Intelligence (key I). This is where reports land, with their confidence level. You will use it a lot in the next lesson.',
-        check: (c) => c.view === 'intel' },
+        check: (c) => viewed(c, 'intel') },
       { id: 'comms', target: ['nav-comms'], title: 'Communications', view: 'comms',
         text: 'Open Communications (key C). Network health feeds every domain. Watch for the relay problem that appears in Africa.',
-        check: (c) => c.view === 'comms' },
+        check: (c) => viewed(c, 'comms') },
       { id: 'logistics', target: ['nav-logistics'], title: 'Logistics', view: 'logistics',
         text: 'Open Logistics (key L): credits, personnel, maintenance crews and long-term investments.',
-        check: (c) => c.view === 'logistics' },
+        check: (c) => viewed(c, 'logistics') },
       { id: 'quizWeak', title: 'Spot the weakest region',
         quiz: (s) => {
           const ids = Object.keys(s.regions) as RegionId[];
@@ -226,7 +244,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'open', target: ['events'], title: 'Open a report',
         text: 'Wait for the first report (the South America contact), then click it in the Active Events list on the right, or in Intelligence.',
         hint: 'If nothing is listed yet, unpause or advance an hour.',
-        check: (c) => c.eventId !== null },
+        check: (c) => opened(c, 'event') },
       { id: 'confirm', target: ['confirm', 'events'], title: 'Task a confirmation',
         text: 'In the report window, press “Task confirmation”. An independent source checks the report for a small fee and a few hours.',
         check: (c) => did(c, 'confirm') },
@@ -262,7 +280,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
       { id: 'open', target: ['events'], title: 'Open an incident',
         text: 'Open the Africa relay degradation from the Active Events list.',
-        check: (c) => c.eventId !== null },
+        check: (c) => opened(c, 'event') },
       { id: 'compare', title: 'Compare the options',
         text: 'Each response shows its cost, time, crews needed and chance of success. Some depend on another domain (the orbital reroute needs a healthy Space domain) or on regional communications.',
         why: 'The cheapest option is not always the best value: a failed response wastes the money and the time.' },
@@ -297,10 +315,10 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
       { id: 'domain', target: ['nav-air', 'nav-sea'], title: 'Open a domain', view: 'air',
         text: 'Open the Air dashboard (key A). Look at each asset’s condition and its service clock; negative numbers mean service is overdue.',
-        check: (c) => DOMAIN_VIEWS.includes(c.view) },
+        check: (c) => viewed(c, ...DOMAIN_VIEWS) },
       { id: 'asset', target: ['asset'], title: 'Inspect an asset',
         text: 'Click an asset in the list to open its details.',
-        check: (c) => c.assetId !== null },
+        check: (c) => opened(c, 'asset') },
       { id: 'maintain', target: ['maintain', 'asset'], title: 'Schedule maintenance',
         text: 'Pick a worn asset and schedule maintenance. It leaves service for a while, costs credits and needs one crew.',
         why: 'An asset that is never serviced loses condition faster and eventually fails, which costs far more than a planned service.',
@@ -332,7 +350,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
       { id: 'logistics', target: ['nav-logistics'], title: 'Open Logistics', view: 'logistics',
         text: 'Open Logistics (key L). Credits come in every hour from stable regions and go out on upkeep for every asset.',
-        check: (c) => c.view === 'logistics' },
+        check: (c) => viewed(c, 'logistics') },
       { id: 'quizIncome', title: 'Check your understanding',
         quiz: (s) => quizFrom('Where does your hourly income come from?',
           'Regional stability: stable regions fund the network', ['A fixed grant that never changes', 'Selling equipment', 'Dismissing reports'],
@@ -377,7 +395,7 @@ export const LESSONS: TrainingLesson[] = [
       { id: 'begin', target: ['begin'], title: 'Begin the phase', text: 'Assume command and start the phase.', check: running },
       { id: 'theater', target: ['nav-theater'], title: 'Open the Tactical Theater', view: 'theater',
         text: 'Open the Tactical Theater (key X) and choose Europe. When the wave launches you’ll see each threat fly in from the map edge towards its target.',
-        check: (c) => c.view === 'theater' },
+        check: (c) => viewed(c, 'theater') },
       { id: 'watch', wait: true, title: 'Watch the wave',
         text: 'Let time run until the wave has arrived. Green crosses are interceptions; red bursts are hits on a site.',
         check: (c) => wavesDone(c.s) },
@@ -450,7 +468,7 @@ export const LESSONS: TrainingLesson[] = [
         check: (c) => c.s.status === 'complete' },
       { id: 'aar', target: ['nav-aar'], title: 'Open the after-action review', view: 'aar',
         text: 'Open the After-Action Review (key R): score breakdown, regional and domain performance, every decision you made and lessons learned.',
-        check: (c) => c.view === 'aar' },
+        check: (c) => viewed(c, 'aar') },
       { id: 'quiz', title: 'Check your understanding',
         quiz: (s) => quizFrom('Which of these does the score reward?',
           'Sustained readiness, timely responses and efficient spending',
