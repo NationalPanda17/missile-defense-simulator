@@ -115,11 +115,11 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
     ], grant: 0,
     situation:
       'The Integrated Defense Network has just been placed under unified command. Domain components were operated separately until today and several assets are behind on servicing. Expect routine disruptions while the network settles.',
-    special: ['Low event tempo', 'Reports are mostly reliable', 'No event chains'],
+    special: ['Quietest phase of the campaign', 'Fewest false reports of the campaign', 'No event chains'],
     objectives: [
-      { id: 'p1_net', text: 'Raise network health to 80% or higher', metric: 'network', target: 80, reward: 150 },
+      { id: 'p1_net', text: 'End the phase with network health at 80% or higher', metric: 'network', target: 80, byLevel: { recruit: 76, commander: 83 }, reward: 150 },
       { id: 'p1_maint', text: 'Complete at least 3 maintenance cycles', metric: 'maintenanceDone', target: 3, reward: 100 },
-      { id: 'p1_ready', text: 'Hold global readiness at or above 72%', metric: 'readiness', target: 72, reward: 120 },
+      { id: 'p1_ready', text: 'End the phase with global readiness at 72% or higher', metric: 'readiness', target: 72, byLevel: { recruit: 68, commander: 75 }, reward: 120 },
     ],
   },
   {
@@ -160,7 +160,7 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
     delayedInfo: false, conflicting: false, chains: true, categories: baseCats, scripted: [], grant: 600,
     situation:
       'The crisis has passed. Reconstruction funding has been released. Restore readiness, repair infrastructure and leave the network in a sustainable state.',
-    special: ['Reconstruction grant released', 'Low event tempo', 'Final evaluation at end of phase'],
+    special: ['Reconstruction grant released', 'Quieter than the crisis', 'Final evaluation at end of phase'],
     objectives: [
       { id: 'p4_ready', text: 'Restore global readiness to 78% or higher', metric: 'readiness', target: 78, reward: 0 },
       { id: 'p4_infra', text: 'Restore average infrastructure to 70 or higher', metric: 'infrastructure', target: 70, reward: 0 },

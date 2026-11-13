@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, objectiveMet, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, isActive, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
+import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { ServerStatusChip } from './views/ServerPanels';
 
@@ -85,6 +85,7 @@ export function TopBar({ s }: { s: SimState }) {
           title={s.turnBased ? 'Turn mode is on: the clock only moves when you advance a turn. Click to switch back to real time.' : 'Turn mode: stop the clock and advance it 6 hours at a time when you are ready.'}>
           Turn mode{s.turnBased ? ': on' : ''}
         </button>
+        {store.viewHold && s.paused && <span className="max-w-[9rem] text-[10px] leading-tight text-ops-amber" title="The clock stops while you plan and restarts when you go back to an operations view. Press Resume to keep it running here.">Clock held while you plan</span>}
         {s.turnBased && (
           <button data-coach="advance" className="btn btn-primary" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn: 6 hours (T)">Next turn +{SIM_CONFIG.turnHours}h ⏭</button>
         )}
@@ -156,24 +157,25 @@ function ObjectivesSection({ s }: { s: SimState }) {
   if (!phase?.objectives.length || s.status === 'complete') return null;
   const left = s.status === 'running' ? phase.hours - (s.hour - s.phaseStartHour) : phase.hours;
   return (
-    <Section title="Objectives" count={phase.objectives.filter((o) => !objectiveMet(o.metric, objectiveValue(s, o.metric), o.target)).length}>
+    <Section title="Objectives" count={phase.objectives.filter((o) => objectiveProgress(s, o) !== 'done').length}>
       <ul className="space-y-1.5 text-[11px]">
         {phase.objectives.map((o) => {
           const v = objectiveValue(s, o.metric);
-          const met = objectiveMet(o.metric, v, o.target);
+          const st = objectiveProgress(s, o);
           const pct = o.metric === 'escalationsMax' ? (v > o.target ? 100 : 100 - (v / Math.max(1, o.target)) * 100) : Math.min(100, (v / Math.max(1, o.target)) * 100);
+          const look = OBJECTIVE_LOOK[st];
           return (
-            <li key={o.id}>
+            <li key={o.id} title={look.title}>
               <div className="flex justify-between gap-2">
-                <span className={met ? 'text-ops-green' : 'text-white'}>{met ? '✔' : '○'} {o.text}</span>
+                <span className={look.cls}>{look.icon} {o.text}</span>
                 <span className="shrink-0 tabular-nums text-ops-dim">{Math.round(v)}/{o.target}</span>
               </div>
-              <Bar value={pct} height={3} color={met ? '#34d399' : '#f5b13d'} />
+              <Bar value={pct} height={3} color={look.bar} />
             </li>
           );
         })}
       </ul>
-      <div className="mt-1 text-[10px] text-ops-dim">{left}h left in this phase. Briefings explain how to meet each one.</div>
+      <div className="mt-1 text-[10px] text-ops-dim">{left}h left in this phase. ◐ on track = measured when the phase ends.</div>
     </Section>
   );
 }

@@ -217,6 +217,8 @@ export interface Objective {
     | 'falseDismissed'
     | 'credits';
   target: number;
+  /** Campaign only: the target at other difficulty levels (`target` is Officer's). Resolved when the run is built. */
+  byLevel?: Partial<Record<CommandLevel, number>>;
   reward: number; // credits granted when met
 }
 

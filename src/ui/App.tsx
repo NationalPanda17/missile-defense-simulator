@@ -91,6 +91,9 @@ export default function App() {
   );
 }
 
+/** Views for planning rather than running operations: the clock is held while one is open. */
+const PLANNING_VIEWS: string[] = ['campaign', 'editor', 'aar'];
+
 function Root() {
   useStoreVersion();
   const ui = useUI();
@@ -108,6 +111,10 @@ function Root() {
       ui.setTutorial(s.settings.mode === 'training' && !lessonOf(s));
     }
   });
+
+  // Hold the clock while a planning view is open (see store.holdForPlanning).
+  const planning = PLANNING_VIEWS.includes(ui.view);
+  useEffect(() => { store.holdForPlanning(planning); }, [planning, s?.campaignId, s?.status]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -194,7 +201,7 @@ function Root() {
       </div>
       <BottomPanel s={s} />
       {s.status === 'briefing' && <BriefingModal s={s} />}
-      <PausePrompt s={s} />
+      <PausePrompt s={s} docked={PLANNING_VIEWS.includes(ui.view)} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <HelpModal />}
