@@ -86,7 +86,7 @@ export interface TrainingLesson {
   id: string;
   title: string;
   summary: string;
-  minutes: number; // rough real-time length
+  minutes: number; // rough real-time length: planning plus play at 1x
   skills: string[];
   /** Lessons that should be done first (advisory: every lesson can be started any time). */
   after?: string[];
@@ -537,7 +537,7 @@ function triageScore(s: SimState): number {
 
 export const DRILLS: TrainingLesson[] = [
   {
-    id: 'drill-swarm', title: 'Drone swarm', minutes: 8, skills: ['Counter-drone', 'Magazines', 'Resupply'],
+    id: 'drill-swarm', title: 'Drone swarm', minutes: 4, skills: ['Counter-drone', 'Magazines', 'Resupply'],
     summary: 'Three growing swarms hit Europe from different directions on a tight budget. Stop as much of the damage as you can.',
     settings: { durationHours: 32, seed: 3101, startCredits: 900 },
     phase: { ...QUIET, name: 'Drone Swarm', scripted: [], situation: 'Three drone swarms are expected against Europe, eight hours apart. You have 900 credits.' },
@@ -550,7 +550,7 @@ export const DRILLS: TrainingLesson[] = [
     steps: drillSteps('Prevent as much threat damage in Europe as possible.', 'Cheap counter-drone systems go further than big interceptors here, and magazines run dry: resupply between waves.'),
   },
   {
-    id: 'drill-triage', title: 'Report triage', minutes: 10, skills: ['Confirmation', 'Dismissal', 'Response'],
+    id: 'drill-triage', title: 'Report triage', minutes: 6, skills: ['Confirmation', 'Dismissal', 'Response'],
     summary: 'Eight reports in quick succession, some false. Resolve the real ones and expose the false ones without wasting money.',
     settings: { durationHours: 48, seed: 3202, startCredits: 1400 },
     phase: { ...QUIET, name: 'Report Triage', situation: 'A busy watch: eight reports arrive over the first day. Not all of them are real.',
@@ -564,7 +564,7 @@ export const DRILLS: TrainingLesson[] = [
     steps: drillSteps('Handle every report correctly.', 'Real reports should end resolved; false ones exposed by confirmation or dismissed, with no response spent on them. Escalations and dismissing a real report cost points.'),
   },
   {
-    id: 'drill-budget', title: 'Thin budget', minutes: 12, skills: ['Prioritising', 'Maintenance', 'Reserves'],
+    id: 'drill-budget', title: 'Thin budget', minutes: 6, skills: ['Prioritising', 'Maintenance', 'Reserves'],
     summary: 'Three days with 700 credits and worn equipment. Keep global readiness as high as you can.',
     settings: { durationHours: 72, seed: 3303, startCredits: 700, domainCondition: { air: 64, sea: 66, space: 70 } },
     phase: { ...QUIET, name: 'Thin Budget', eventRate: 0.07, maxSeverity: 3, categories: ['sensor', 'comms', 'aircraft', 'maritime', 'ground', 'weather', 'logistics'],
@@ -578,7 +578,7 @@ export const DRILLS: TrainingLesson[] = [
     steps: drillSteps('Keep average global readiness high.', 'Your score is the average readiness over the drill, minus 3 per escalation. Maintenance on the right assets pays off; keep a reserve for incidents.'),
   },
   {
-    id: 'drill-higharc', title: 'High arc', minutes: 8, skills: ['Upper-tier defense', 'Placement'],
+    id: 'drill-higharc', title: 'High arc', minutes: 4, skills: ['Upper-tier defense', 'Placement'],
     summary: 'Ballistic missiles and rockets against the Middle East. Only the right systems can reach them.',
     settings: { durationHours: 30, seed: 3404, startCredits: 2800 },
     phase: { ...QUIET, name: 'High Arc', scripted: [], situation: 'Ballistic missile and rocket salvos are expected against the Middle East.' },
@@ -590,7 +590,7 @@ export const DRILLS: TrainingLesson[] = [
     steps: drillSteps('Prevent as much threat damage in the Middle East as possible.', 'Check each system’s altitude ceiling: ballistic missiles fly far above most short-range systems.'),
   },
   {
-    id: 'drill-surprise', title: 'Surprise attack', minutes: 10, skills: ['Emergency redeploy', 'Alerts', 'Reading warnings'],
+    id: 'drill-surprise', title: 'Surprise attack', minutes: 5, skills: ['Emergency redeploy', 'Alerts', 'Reading warnings'],
     summary: 'The forecast says Europe. Not every wave will agree. Watch the warnings and move fast.',
     settings: { durationHours: 40, seed: 3505, startCredits: 2600 },
     phase: { ...QUIET, name: 'Surprise Attack', scripted: [], situation: 'Intelligence expects attacks on Europe. Be ready to move.' },

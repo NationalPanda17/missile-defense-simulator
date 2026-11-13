@@ -133,6 +133,8 @@ export interface GameEvent {
   responseId?: string;
   responseStarted?: number;
   responseHours?: number;
+  /** Success chance shown when the response was ordered; the roll uses it, so the odds never change underneath. */
+  responseChance?: number;
   progress: number; // 0-100
   confirmProgress: number; // 0-100
   parentId?: string;

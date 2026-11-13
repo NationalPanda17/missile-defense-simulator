@@ -189,7 +189,7 @@ function completeResponse(s: SimState, e: GameEvent) {
     e.log.push({ t: s.hour, text: 'Response complete. No issue found — report spurious.' });
     return;
   }
-  const p = responseSuccessChance(s, e, resp.id);
+  const p = e.responseChance ?? responseSuccessChance(s, e, resp.id); // older saves have no locked chance
   if (rand(s) < p) {
     e.status = 'resolved';
     e.resolvedAt = s.hour;

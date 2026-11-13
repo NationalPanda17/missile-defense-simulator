@@ -218,7 +218,8 @@ export const TACTICAL_CONFIG = {
   deployPersonnel: 2,
   relocateCost: 10,
   withdrawRefund: 0.5, // share of deployment cost returned
-  resupplyRate: 0.25, // a full resupply costs this share of the deployment cost
+  resupplyRate: 0.8, // a full resupply costs this share of the deployment cost
+  resupplyMinCost: 5, // every resupply run costs at least this (transport and handling)
   minLogisticsForResupply: 25,
 
   // ── In-phase orders ──

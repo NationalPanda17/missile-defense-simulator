@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
-  BATCH_HOURS, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
+  BATCH_HOURS, applyPacing, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
 } from '../engine';
 import type { AccountInfo, CampaignSummary, SaveSummary } from '../shared/api';
 import { api, ApiError, forgetLegacyPlayerId, legacyPlayerId, newId } from './remote';
@@ -117,7 +117,8 @@ class SimStore {
   autoPause(): AutoPauseSettings | null {
     const s = this.state;
     if (!s || s.settings.mode === 'training') return null;
-    return this.pacing ?? defaultAutoPause(s.settings.level);
+    const waves = !!s.tactical?.enabled;
+    return this.pacing ? applyPacing(this.pacing, waves) : defaultAutoPause(s.settings.level, waves);
   }
 
   setPacing(p: AutoPauseSettings | null) {

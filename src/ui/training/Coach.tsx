@@ -19,13 +19,31 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();
   const [i, setI] = useState(() => Math.min(loadStep(s.campaignId), lesson.steps.length - 1));
   const [since, setSince] = useState(() => ({ cmd: s.commands.length, hour: s.hour }));
-  const [open, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  const [userOpen, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  // While a dialog is open the coach folds to its one-line bar so the dialog gets the screen, unless this step is
+  // about something inside that dialog (or the player opened the coach again on purpose).
+  const [modal, setModal] = useState<'none' | 'other' | 'step'>('none');
+  const [reopened, setReopened] = useState(false);
   const [hint, setHint] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
   const [justDone, setJustDone] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const step = lesson.steps[i];
   const last = i === lesson.steps.length - 1;
+  const stepTargets = (step.target ?? []).join(' ');
+  useEffect(() => {
+    const check = () => {
+      const dialog = document.querySelector('.modal-overlay [role="dialog"]');
+      const next = !dialog ? 'none' : (step.target ?? []).some((n) => dialog.querySelector(`[data-coach="${n}"]`)) ? 'step' : 'other';
+      setModal(next);
+    };
+    check();
+    const id = window.setInterval(check, 400);
+    return () => window.clearInterval(id);
+  }, [stepTargets]);
+  useEffect(() => { if (modal === 'none') setReopened(false); }, [modal]);
+  // Lessons start in the briefing and the coach walks through it, so it never folds for the briefing itself.
+  const open = userOpen && (modal !== 'other' || reopened || s.status === 'briefing');
   const quiz = step.quiz ? step.quiz(s) : null;
   // Freeze the quiz once it is shown: its options come from the state, which keeps moving.
   const quizRef = useRef<{ step: string; q: NonNullable<typeof quiz> } | null>(null);
@@ -117,7 +135,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     return (
       <div ref={ref} className={`fixed bottom-2 left-2 right-2 z-[55] sm:right-auto sm:w-[380px] ${DOCK}`}>
         {spot}
-        <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => setOpen(true)} aria-expanded={false}>
+        <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => { setOpen(true); if (modal === 'other') setReopened(true); }} aria-expanded={false}>
           <span className="label shrink-0 text-ops-cyan">Coach {i + 1}/{lesson.steps.length}</span>
           <span className="min-w-0 flex-1 truncate text-white">{step.title}</span>
           <span className="text-ops-cyan">▴</span>
@@ -133,7 +151,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
         <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
           <button className="btn px-2" onClick={academy} title="Training Academy">Academy</button>
-          <button className="btn px-2" onClick={() => setOpen(false)} aria-label="Minimise coach">▾</button>
+          <button className="btn px-2" onClick={() => { setOpen(false); setReopened(false); }} aria-label="Minimise coach">▾</button>
         </span>
       </div>
       {/* Docked wide on large screens: instruction on the left, the rest beside it, so nothing scrolls in a short strip. */}
