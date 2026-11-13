@@ -1,5 +1,5 @@
 // The simulation tick. Advances one simulated hour. Pure state mutation — no UI dependencies.
-import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
+import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
 import { restockStockpiles, siteDamageShare } from './tactical';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, recomputeMetrics } from './metrics';
@@ -189,7 +189,7 @@ function completeResponse(s: SimState, e: GameEvent) {
     e.log.push({ t: s.hour, text: 'Response complete. No issue found — report spurious.' });
     return;
   }
-  const p = responseSuccessChance(s, e, resp.id);
+  const p = e.responseChance ?? responseSuccessChance(s, e, resp.id); // older saves have no locked chance
   if (rand(s) < p) {
     e.status = 'resolved';
     e.resolvedAt = s.hour;
@@ -344,7 +344,7 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
 
 function tickEconomy(s: SimState) {
   const upkeep = s.assets.reduce((x, a) => x + a.upkeep, 0);
-  const income = SIM_CONFIG.baseIncomePerHour * (0.5 + s.metrics.stability / 200);
+  const income = SIM_CONFIG.baseIncomePerHour * levelOf(s.settings).incomeMult * (0.5 + s.metrics.stability / 200);
   s.credits = Math.max(0, s.credits + income - upkeep);
   const drain = reserveDrain(s);
   if (drain > 0) {
@@ -472,6 +472,8 @@ export function beginPhase(s: SimState) {
     sample(s);
   }
   s.phaseStartHour = s.hour;
+  recomputeMetrics(s);
+  s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
   if (s.phaseIndex > 0) restockStockpiles(s);
   s.status = 'running';
   s.paused = false;

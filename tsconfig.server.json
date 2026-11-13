@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM"],
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "jsx": "react-jsx"
   },
   "include": ["server", "scripts", "desktop/main.ts", "src/engine", "src/shared", "tests"]

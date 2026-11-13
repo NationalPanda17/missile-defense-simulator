@@ -133,6 +133,8 @@ export interface GameEvent {
   responseId?: string;
   responseStarted?: number;
   responseHours?: number;
+  /** Success chance shown when the response was ordered; the roll uses it, so the odds never change underneath. */
+  responseChance?: number;
   progress: number; // 0-100
   confirmProgress: number; // 0-100
   parentId?: string;
@@ -215,8 +217,12 @@ export interface Objective {
     | 'escalationsMax'
     | 'resolved'
     | 'falseDismissed'
-    | 'credits';
+    | 'credits'
+    | 'readinessGain' // points gained since the phase began
+    | 'infrastructureGain';
   target: number;
+  /** Campaign only: the target at other difficulty levels (`target` is Officer's). Resolved when the run is built. */
+  byLevel?: Partial<Record<CommandLevel, number>>;
   reward: number; // credits granted when met
 }
 
@@ -459,6 +465,8 @@ export interface SimState {
   // Derived metrics (recomputed each tick)
   metrics: Metrics;
   baseline: { infrastructure: number; readiness: number };
+  /** Metrics when the current phase began, for objectives that measure improvement (absent in older saves). */
+  phaseStart?: { readiness: number; infrastructure: number };
   minReadiness: number;
 }
 

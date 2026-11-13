@@ -1,7 +1,7 @@
 // The in-game coach for Training Academy lessons: one step at a time, ticked off automatically as the player acts.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LESSONS, examResult, examStandards, starsFor, type SimState, type TrainingLesson } from '../../engine';
+import { LESSONS, examResult, examStandards, starsFor, type SimState, type StepSeen, type TrainingLesson } from '../../engine';
 import { dispatch, store } from '../../store/simStore';
 import { useUI, type ViewId } from '../uiState';
 import { sound } from '../audio/sound';
@@ -13,19 +13,37 @@ import { loadProgress, loadStep, markLessonDone, recordDrill, recordExam, saveSt
  * (20rem), so it never covers either; wide and short, it leaves dialogs most of the screen's height.
  */
 const DOCK = 'lg:left-[calc(14rem+0.75rem)]';
-const DOCK_OPEN = 'lg:right-[calc(20rem+0.75rem)] lg:w-auto lg:max-h-[28vh]';
+const DOCK_OPEN = 'lg:right-[calc(20rem+0.75rem)] lg:w-auto lg:max-h-[38vh]';
 
 export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();
   const [i, setI] = useState(() => Math.min(loadStep(s.campaignId), lesson.steps.length - 1));
   const [since, setSince] = useState(() => ({ cmd: s.commands.length, hour: s.hour }));
-  const [open, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  const [userOpen, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  // While a dialog is open the coach folds to its one-line bar so the dialog gets the screen, unless this step is
+  // about something inside that dialog (or the player opened the coach again on purpose).
+  const [modal, setModal] = useState<'none' | 'other' | 'step'>('none');
+  const [reopened, setReopened] = useState(false);
   const [hint, setHint] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
   const [justDone, setJustDone] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const step = lesson.steps[i];
   const last = i === lesson.steps.length - 1;
+  const stepTargets = (step.target ?? []).join(' ');
+  useEffect(() => {
+    const check = () => {
+      const dialog = document.querySelector('.modal-overlay [role="dialog"]');
+      const next = !dialog ? 'none' : (step.target ?? []).some((n) => dialog.querySelector(`[data-coach="${n}"]`)) ? 'step' : 'other';
+      setModal(next);
+    };
+    check();
+    const id = window.setInterval(check, 400);
+    return () => window.clearInterval(id);
+  }, [stepTargets]);
+  useEffect(() => { if (modal === 'none') setReopened(false); }, [modal]);
+  // Lessons start in the briefing and the coach walks through it, so it never folds for the briefing itself.
+  const open = userOpen && (modal !== 'other' || reopened || s.status === 'briefing');
   const quiz = step.quiz ? step.quiz(s) : null;
   // Freeze the quiz once it is shown: its options come from the state, which keeps moving.
   const quizRef = useRef<{ step: string; q: NonNullable<typeof quiz> } | null>(null);
@@ -55,11 +73,20 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     }
   }, [i]);
 
+  // Everything the player has opened since the lesson began, so a step they ran ahead of is ticked off on arrival.
+  const seen = useRef<StepSeen>({ views: [], region: false, event: false, asset: false, maxSpeed: 0 }).current;
+  if (!seen.views.includes(ui.view)) seen.views.push(ui.view);
+  if (ui.region) seen.region = true;
+  if (ui.eventId) seen.event = true;
+  if (ui.assetId) seen.asset = true;
+  seen.maxSpeed = Math.max(seen.maxSpeed, s.speed);
+
   // Tick a step off as soon as its check passes.
   const passed = !!step.check?.({
     s, view: ui.view, region: ui.region, eventId: ui.eventId, assetId: ui.assetId,
     // Work done before the step opened counts too (players run ahead), except for steps that must happen now.
     since: step.fresh ? since : { cmd: 0, hour: 0 },
+    seen: step.fresh ? undefined : seen,
   });
   useEffect(() => {
     if (!passed || last) return;
@@ -108,7 +135,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     return (
       <div ref={ref} className={`fixed bottom-2 left-2 right-2 z-[55] sm:right-auto sm:w-[380px] ${DOCK}`}>
         {spot}
-        <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => setOpen(true)} aria-expanded={false}>
+        <button className="panel flex w-full items-center gap-2 border-ops-cyan/50 bg-ops-panel px-3 py-2 text-left" onClick={() => { setOpen(true); if (modal === 'other') setReopened(true); }} aria-expanded={false}>
           <span className="label shrink-0 text-ops-cyan">Coach {i + 1}/{lesson.steps.length}</span>
           <span className="min-w-0 flex-1 truncate text-white">{step.title}</span>
           <span className="text-ops-cyan">▴</span>
@@ -124,21 +151,26 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
         <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
           <button className="btn px-2" onClick={academy} title="Training Academy">Academy</button>
-          <button className="btn px-2" onClick={() => setOpen(false)} aria-label="Minimise coach">▾</button>
+          <button className="btn px-2" onClick={() => { setOpen(false); setReopened(false); }} aria-label="Minimise coach">▾</button>
         </span>
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-        <div className="flex gap-0.5" aria-label={`Step ${i + 1} of ${lesson.steps.length}`}>
+      {/* Docked wide on large screens: instruction on the left, the rest beside it, so nothing scrolls in a short strip. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="mb-2 flex gap-0.5" aria-label={`Step ${i + 1} of ${lesson.steps.length}`}>
           {lesson.steps.map((x, k) => (
             <span key={x.id} title={x.title} className={`h-1.5 flex-1 rounded ${k < i ? 'bg-ops-green' : k === i ? 'bg-ops-cyan' : 'bg-ops-line'}`} />
           ))}
         </div>
+        <div className="space-y-2 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-x-4 lg:space-y-0">
+        <div className="space-y-2">
         {justDone && <div className="fadein text-[11px] text-ops-green" aria-live="polite">✔ {justDone}</div>}
         <div className="flex items-baseline justify-between gap-2">
           <div className="font-sans text-lg font-semibold leading-tight text-white">{step.title}</div>
           <span className="shrink-0 text-[10px] text-ops-dim">{i + 1}/{lesson.steps.length}</span>
         </div>
         <p className="text-[12px] leading-relaxed">{step.text}</p>
+        </div>
+        <div className="space-y-2">
         {step.why && <p className="border-l-2 border-ops-cyan/50 pl-2 text-[11px] leading-relaxed text-ops-dim"><b className="text-ops-cyan">Why it matters: </b>{step.why}</p>}
 
         {q && (
@@ -183,6 +215,8 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
         )}
         {step.hint && !hint && <button className="btn text-[11px]" onClick={() => setHint(true)}>Show hint</button>}
         {step.hint && hint && <p className="rounded border border-ops-line p-2 text-[11px] leading-relaxed text-ops-dim"><b className="text-white">Hint: </b>{step.hint}</p>}
+        </div>
+        </div>
       </div>
       {/* Always visible: never scrolled away or clipped by the screen edge. */}
       <div className="shrink-0 border-t border-ops-line px-3 py-2">

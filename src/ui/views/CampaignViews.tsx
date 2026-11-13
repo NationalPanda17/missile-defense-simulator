@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import {
   DOMAINS, REGION_IDS, SLOTS, autosaveSlot, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
-  objectiveMet, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
+  formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
-import { Bar, Chip, DOMAIN_LABEL, Panel, Stat, ConfirmDelete } from '../components/ui';
+import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, Stat, ConfirmDelete } from '../components/ui';
 import { useUI } from '../uiState';
 import { ServerSavesPanel, ServiceRecord } from './ServerPanels';
 
@@ -45,11 +45,11 @@ export function CampaignView({ s }: { s: SimState }) {
         <div className="space-y-2">
           {phase.objectives.map((o) => {
             const v = objectiveValue(s, o.metric);
-            const met = objectiveMet(o.metric, v, o.target);
+            const look = OBJECTIVE_LOOK[objectiveProgress(s, o)];
             return (
-              <div key={o.id} className="rounded border border-ops-line p-2">
-                <div className="flex justify-between gap-2"><span className={met ? 'text-ops-green' : 'text-white'}>{met ? '✔' : '○'} {o.text}</span><span className="shrink-0 text-ops-dim">{Math.round(v)} / {o.target}{o.reward ? ` · +${o.reward} cr` : ''}</span></div>
-                {o.metric !== 'escalationsMax' && <div className="mt-1"><Bar value={Math.min(v, o.target)} max={o.target} height={4} color={met ? '#34d399' : '#38d6f5'} /></div>}
+              <div key={o.id} className="rounded border border-ops-line p-2" title={look.title}>
+                <div className="flex justify-between gap-2"><span className={look.cls}>{look.icon} {o.text}</span><span className="shrink-0 text-ops-dim">{formatObjective(o.metric, v)} / {formatObjective(o.metric, o.target)}{o.reward ? ` · +${o.reward} cr` : ''}</span></div>
+                {o.metric !== 'escalationsMax' && <div className="mt-1"><Bar value={Math.min(v, o.target)} max={o.target} height={4} color={look.bar} /></div>}
               </div>
             );
           })}
@@ -59,7 +59,7 @@ export function CampaignView({ s }: { s: SimState }) {
           {s.phases.map((p, i) => (
             <div key={p.id} className={`rounded border p-2 ${i === s.phaseIndex && s.status !== 'complete' ? 'border-ops-cyan/60 bg-ops-cyan/5' : 'border-ops-line'}`}>
               <div className="text-white">P{p.id} {p.name}</div>
-              <div className="text-[10px] text-ops-dim">{p.hours}h · events {p.eventRate}/h · max severity {p.maxSeverity}</div>
+              <div className="text-[10px] text-ops-dim">{p.hours}h · events {+(p.eventRate * s.settings.eventFrequency).toFixed(2)}/h · max severity {p.maxSeverity}</div>
               <div className="mt-1 flex flex-wrap gap-1">{p.delayedInfo && <Chip t="amber">Delays</Chip>}{p.conflicting && <Chip t="amber">Conflicts</Chip>}{p.chains && <Chip>Chains</Chip>}</div>
               <div className="mt-1 text-[10px]">
                 {s.objectiveResults.filter((r) => r.phase === p.id).map((r) => <div key={r.objectiveId} className={r.met ? 'text-ops-green' : 'text-ops-red'}>{r.met ? '✔' : '✘'} {r.text}</div>)}

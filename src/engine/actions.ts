@@ -1,6 +1,6 @@
 // Player commands. Every command validates, applies costs, mutates state and records itself in the command log.
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
-import { log, maintenanceCostMult, beginPhase as begin, advance } from './engine';
+import { log, maintenanceCostMult, beginPhase as begin, advance, responseSuccessChance } from './engine';
 import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
   addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
@@ -120,6 +120,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       e.responseId = r.id;
       e.responseStarted = s.hour;
       e.responseHours = r.hours;
+      e.responseChance = responseSuccessChance(s, e, r.id);
       e.progress = 0;
       e.spent += r.credits;
       s.counters.responsesTotal++;

@@ -16,11 +16,37 @@ export function objectiveValue(s: SimState, metric: PhaseConfig['objectives'][nu
     case 'resolved': return s.counters.resolved;
     case 'falseDismissed': return s.counters.falseDismissed;
     case 'credits': return s.credits;
+    case 'readinessGain': return s.metrics.globalReadiness - (s.phaseStart?.readiness ?? s.metrics.globalReadiness);
+    case 'infrastructureGain': return s.metrics.infrastructure - (s.phaseStart?.infrastructure ?? s.metrics.infrastructure);
   }
 }
 
 export function objectiveMet(metric: string, value: number, target: number) {
   return metric === 'escalationsMax' ? value <= target : value >= target;
+}
+
+/** An objective's value or target for display: gains are signed (+3, -2). */
+export function formatObjective(metric: string, v: number): string {
+  const n = Math.round(v);
+  return metric.endsWith('Gain') ? `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}` : String(n);
+}
+
+/** Counts that only go up: once reached, the objective is done for good. Everything else is judged at phase end. */
+const COUNT_METRICS = new Set(['maintenanceDone', 'confirmations', 'resolved', 'falseDismissed']);
+
+export type ObjectiveProgress = 'done' | 'on-track' | 'behind' | 'missed';
+
+/**
+ * Live progress for the sidebar and Campaign Management. A level (readiness, network, credits...) above its target
+ * is only "on track": it is measured, and the reward paid, when the phase ends. A count is done once reached; an
+ * escalation limit, once exceeded, is missed for good.
+ */
+export function objectiveProgress(s: SimState, o: PhaseConfig['objectives'][number]): ObjectiveProgress {
+  const v = objectiveValue(s, o.metric);
+  const met = objectiveMet(o.metric, v, o.target);
+  if (COUNT_METRICS.has(o.metric)) return met ? 'done' : 'behind';
+  if (o.metric === 'escalationsMax') return met ? 'on-track' : 'missed';
+  return met ? 'on-track' : 'behind';
 }
 
 export function evaluateObjectives(s: SimState, phase: PhaseConfig): ObjectiveResult[] {

@@ -199,7 +199,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   }
 
   const start = s.status === 'running' ? s.phaseStartHour : s.hour; // in a briefing, the phase starts at s.hour
-  const first = Math.max((fromHour ?? 0) + 3, start + 6); // leaves room for the longest flight before impact
+  // The campaign's opening wave comes after a settling-in period, so the first hours are for reading the situation.
+  const opening = s.settings.mode === 'campaign' && s.phaseIndex === 0;
+  const first = Math.max((fromHour ?? 0) + 3, start + (opening ? 12 : 6)); // leaves room for the longest flight before impact
   const last = start + phase.hours - 2;
   if (last <= first) return;
   const hours = Array.from({ length: profile.count }, () => first + Math.floor(rand(t) * (last - first + 1))).sort((a, b) => a - b);
@@ -216,11 +218,11 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     const j = Math.floor(rand(t) * (i + 1));
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
-  const addWave = (region: RegionId, surprise: boolean, atHour: number) => {
+  const addWave = (region: RegionId, surprise: boolean, atHour: number, maxTracks = Infinity) => {
     let axis = AXES[Math.floor(rand(t) * AXES.length)];
     const preferred = plan?.axis[region];
     if (preferred && hash01(s.settings.seed, s.phaseIndex, atHour, 0x41) < ADAPTATION.axisPreference) axis = preferred;
-    const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
+    const n = Math.min(maxTracks, profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1)));
     const tracks: Track[] = [];
     for (let i = 0; i < n; i++) {
       const cls = weighted(t, CLASSES.map((c) => ({ item: c, w: profile.mix[c] })));
@@ -244,7 +246,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the
     // night: to the closest dark hour, earlier or later, so night raids don't pile up at the end of a phase.
     if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = nearestNightHour(s, region, scheduled - 3, first - 3, last - 3) + 3;
-    addWave(region, surprise, atHour);
+    // Ramp up: the campaign's first wave is never bigger than the standard scenario's largest opening wave, whatever
+    // the difficulty and scenario multipliers, so the danger builds instead of arriving all at once.
+    addWave(region, surprise, atHour, opening && k === 0 ? Math.min(profile.tracks[0], base.tracks[1]) : Infinity);
   }
   // Commander: a region whose magazines ran low gets a second wave soon after its first, before reloads finish.
   if (plan?.doubleTap && fromHour === undefined) {
@@ -700,6 +704,44 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   };
 }
 
+/** A site the current phase's forecast waves are aimed at, with how much of that threat nothing deployed can reach. */
+export interface ForecastTarget {
+  site: Site;
+  /** Expected damage aimed at the site (threat damage × site importance). */
+  threat: number;
+  /** The part of `threat` from threat classes no deployed system can engage at the site. */
+  uncovered: number;
+  classes: ThreatClass[];
+}
+
+/**
+ * Where this phase's forecast waves are headed in a region, most threatened first. Briefings show it so that a
+ * player defends the sites that will actually be attacked, not just the most valuable ones. Surprise waves are not
+ * included, like the forecast itself.
+ */
+export function forecastTargets(s: SimState, region: RegionId): ForecastTarget[] {
+  const t = s.tactical;
+  if (!t?.enabled) return [];
+  const by = new Map<string, ForecastTarget>();
+  const cover = new Map<string, Record<ThreatClass, number>>();
+  for (const w of t.waves) {
+    if (w.region !== region || w.phaseIndex !== s.phaseIndex || w.resolved || !w.forecast) continue;
+    for (const tr of w.tracks) {
+      if (tr.decoy) continue;
+      const site = t.sites.find((x) => x.id === tr.siteId);
+      if (!site) continue;
+      if (!cover.has(site.id)) cover.set(site.id, coverageAt(s, region, site.x, site.y));
+      const v = TACTICAL_CONFIG.threatDamage[tr.cls] * site.importance;
+      const e = by.get(site.id) ?? { site, threat: 0, uncovered: 0, classes: [] };
+      e.threat += v;
+      if (!(cover.get(site.id)![tr.cls] > 0)) e.uncovered += v;
+      if (!e.classes.includes(tr.cls)) e.classes.push(tr.cls);
+      by.set(site.id, e);
+    }
+  }
+  return [...by.values()].sort((a, b) => b.threat - a.threat || b.site.importance - a.site.importance);
+}
+
 /** Share (0-1) of a region's site value lost to threat waves so far; it carries over from phase to phase. */
 export function siteDamageShare(s: SimState, region: RegionId): number {
   const sites = s.tactical?.sites.filter((x) => x.region === region) ?? [];
@@ -840,7 +882,8 @@ export function resupplyCost(d: Deployment, rounds?: number): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
   const n = rounds ?? spec.magazine - d.stock;
-  return Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine));
+  if (n <= 0) return 0;
+  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine)));
 }
 
 export type ProtectionLevel = 'protected' | 'thin' | 'exposed';

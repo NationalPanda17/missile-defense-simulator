@@ -110,7 +110,8 @@ export function EventModal({ s }: { s: SimState }) {
               <div className="label">Management responses</div>
               <div className="space-y-2">
                 {t.responses.map((resp) => {
-                  const p = responseSuccessChance(s, e, resp.id);
+                  const locked = e.status === 'responding' && e.responseId === resp.id && e.responseChance !== undefined;
+                  const p = locked ? e.responseChance! : responseSuccessChance(s, e, resp.id);
                   const err = resp.passive ? (e.monitored ? 'Already used' : null) : canAfford(s, resp.credits, resp.personnel, resp.crews);
                   const busy = e.status === 'responding';
                   return (
@@ -129,7 +130,7 @@ export function EventModal({ s }: { s: SimState }) {
                           <span className={s.personnel < resp.personnel ? 'text-ops-red' : ''}>{resp.personnel} personnel</span>
                           {resp.crews > 0 && <span className={crewsFree(s) < resp.crews ? 'text-ops-red' : ''}>{resp.crews} crew</span>}
                           <span>{resp.hours}h</span>
-                          <span className={TONE_TEXT[tone(p * 100)]}>{Math.round(p * 100)}% success</span>
+                          <span className={TONE_TEXT[tone(p * 100)]} title={locked ? 'Fixed when you gave the order.' : 'Changes with regional comms and the readiness of the domain it depends on, until you order it.'}>{Math.round(p * 100)}% success{locked ? ' (locked when ordered)' : ''}</span>
                           {resp.domainDependency && <span>depends on {DOMAIN_LABEL[resp.domainDependency]}</span>}
                           {resp.networkDependent && <span>depends on regional comms</span>}
                         </div>
@@ -237,6 +238,8 @@ const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
   escalationsMax: 'act on reports before their timer runs out: respond, or use Monitor Only once to buy time.',
   resolved: 'open a report, pick a response and execute it. It counts when the response succeeds.',
   falseDismissed: 'expose false reports: task a confirmation, or dismiss a report you are sure is false.',
+  readinessGain: 'service the most worn assets early so they are back before the phase ends, and fix events that hurt a domain.',
+  infrastructureGain: 'fund Harden Regional Infrastructure (+18) or Regional Recovery (+8) projects in the weakest regions, and keep sites defended.',
   credits: 'keep this much in hand at the end of the phase; above the reserve level, idle money is reclaimed.',
 };
 
@@ -314,12 +317,19 @@ export function BriefingModal({ s }: { s: SimState }) {
           </div>
         </div>
       )}
-      {advice.length > 0 && (
-        // On phones the deploy step needs every pixel; the begin check repeats anything urgent.
-        <div className={`mb-3 ${step === 'deploy' ? 'hidden md:block' : ''}`}>
+      {advice.length > 0 && step === 'brief' && (
+        <div className="mb-3">
           <div className="label mb-1">Adjutant</div>
           <AdviceList s={s} items={advice} compact onDeploy={tactical ? () => setStep('deploy') : undefined} />
         </div>
+      )}
+      {advice.length > 0 && step === 'deploy' && (
+        // The deploy step needs the map on screen: the adjutant folds into one line (the begin check repeats anything
+        // urgent).
+        <details className="mb-2 text-[11px]">
+          <summary className="cursor-pointer text-ops-dim hover:text-white">Adjutant · {advice.length} note{advice.length === 1 ? '' : 's'} ▸</summary>
+          <div className="mt-1"><AdviceList s={s} items={advice} compact /></div>
+        </details>
       )}
       {tactical && (
         <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">

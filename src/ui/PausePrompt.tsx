@@ -44,7 +44,11 @@ export function WaveActions({ s, region, compact }: { s: SimState; region: Regio
 
 const KIND_LABEL: Record<PauseReason['kind'], string> = { launch: 'launch warnings', deadline: 'reports about to escalate', report: 'every new report' };
 
-export function PausePrompt({ s }: { s: SimState }) {
+/**
+ * `docked`: the player is in a planning view (Campaign Management, the editor, the AAR). The prompt then sits in a
+ * corner without taking focus, so it never covers or swallows clicks on the form underneath.
+ */
+export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
   useSyncExternalStore(store.subscribe, version);
   const ui = useUI();
   const reasons = store.pausePrompt;
@@ -52,6 +56,21 @@ export function PausePrompt({ s }: { s: SimState }) {
   const first = reasons[0];
   const pacing = store.autoPause();
   const resume = () => { store.dismissPausePrompt(); if (!s.turnBased) dispatch({ type: 'setPaused', paused: false }); };
+  if (docked) {
+    const back = () => {
+      if (first.kind === 'launch' && first.region) { ui.setTheaterFocus(first.region); ui.setView('theater'); } else ui.setView('global');
+    };
+    return (
+      <div className="fixed bottom-2 right-2 z-[56] w-[min(22rem,calc(100vw-1rem))] rounded border border-ops-amber/60 bg-ops-panel p-2 shadow-2xl" role="status" aria-live="polite" aria-label="Paused: your decision">
+        <div className="label text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>
+        <p className="mt-0.5 text-[11px] text-white">{first.text}{reasons.length > 1 ? ` (+${reasons.length - 1} more)` : ''}</p>
+        <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+          <button className="btn" onClick={() => store.dismissPausePrompt()}>Dismiss</button>
+          <button className="btn btn-primary" onClick={back}>{first.kind === 'launch' ? 'Go to the theater' : 'Back to operations'}</button>
+        </div>
+      </div>
+    );
+  }
   const stopFor = (kind: PauseReason['kind'], on: boolean) => { if (pacing) store.setPacing({ ...pacing, [kind]: on }); };
   return (
     <div className="fixed inset-x-2 top-16 z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:top-20" role="alertdialog" aria-label="Paused: your decision">
@@ -85,7 +104,7 @@ export function PausePrompt({ s }: { s: SimState }) {
             Pause for {KIND_LABEL[first.kind]}
           </label>
         )}
-        {pacing && (pacing.deadline || pacing.report) && (
+        {pacing && (pacing.deadline || pacing.report) && s.tactical?.enabled && (
           <button className="underline hover:text-white" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Pause only for waves</button>
         )}
       </div>
@@ -113,10 +132,10 @@ export function PacingSettings() {
         <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: true })}>Everything</button>
         <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: false, deadline: false, report: false })}>Never</button>
       </div>
-      <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together.</p>
+      <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together. “Waves only” also stops before escalations in scenarios that have no waves.</p>
       <p className="text-[10px] text-ops-dim">
         {store.pacing ? <>Your choice, for every difficulty. <button className="underline" onClick={() => store.setPacing(null)}>Use the defaults</button></>
-          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate.'}
+          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate. Scenarios without waves (Crisis, Sandbox) always stop before a report escalates.'}
       </p>
     </div>
   );

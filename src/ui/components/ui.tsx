@@ -227,3 +227,11 @@ export function ConfirmDelete({ onConfirm, label, text = '✕', confirmText = 'D
     </button>
   );
 }
+
+/** How each live objective state is drawn. "On track" is not "met": levels are measured, and paid, at phase end. */
+export const OBJECTIVE_LOOK = {
+  done: { icon: '✔', cls: 'text-ops-green', bar: '#34d399', title: 'Done: counts toward the phase result.' },
+  'on-track': { icon: '◐', cls: 'text-ops-cyan', bar: '#38d6f5', title: 'On track: meets the target now, but it is measured when the phase ends.' },
+  behind: { icon: '○', cls: 'text-white', bar: '#f5b13d', title: 'Not there yet.' },
+  missed: { icon: '✘', cls: 'text-ops-red', bar: '#f87171', title: 'Missed: this one can no longer be met this phase.' },
+} as const;
