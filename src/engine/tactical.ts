@@ -9,6 +9,7 @@ import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
 import { LESSON_MAP, type ScriptedWave } from './training';
 import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
+import { ADAPTATION, enemyPlan } from './adaptation';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -179,7 +180,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const lv = levelOf(s.settings);
   if (lv.waveSize !== 1) sc.waveSize *= lv.waveSize;
   if (lv.surpriseMult !== 1) sc.surpriseRate = Math.min(0.9, sc.surpriseRate * lv.surpriseMult);
-  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c]])) as Record<ThreatClass, number>;
+  // Commander: the enemy adapts to what it saw in earlier phases.
+  const plan = enemyPlan(s);
+  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c] * (plan?.mix[c] ?? 1)])) as Record<ThreatClass, number>;
   const profile = {
     count: Math.max(1, Math.round(base.count * sc.waveCount)),
     tracks: [Math.max(1, Math.round(base.tracks[0] * sc.waveSize)), Math.max(1, Math.round(base.tracks[1] * sc.waveSize))] as const,
@@ -190,7 +193,7 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const pool = [...REGION_IDS];
   for (let i = 0; i < sc.forecastRegions && pool.length; i++) {
     // Strained and badly damaged regions are likelier targets: attackers press where defenses already failed.
-    const id = weighted(t, pool.map((r) => ({ item: r, w: 20 + (100 - s.regions[r].stability) + TACTICAL_CONFIG.consequences.targeting * siteDamageShare(s, r) })));
+    const id = weighted(t, pool.map((r) => ({ item: r, w: Math.max(5, 20 + (100 - s.regions[r].stability) + TACTICAL_CONFIG.consequences.targeting * siteDamageShare(s, r) + (plan?.target[r] ?? 0)) })));
     t.forecast.push(id);
     pool.splice(pool.indexOf(id), 1);
   }
@@ -213,14 +216,10 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     const j = Math.floor(rand(t) * (i + 1));
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
-  for (const [k, scheduled] of hours.entries()) {
-    const { region, surprise } = targets[k];
-    // Some raids are timed to arrive in the dark (decided from the seed, not the game's random stream).
-    let atHour = scheduled;
-    // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the
-    // night: to the closest dark hour, earlier or later, so night raids don't pile up at the end of a phase.
-    if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = nearestNightHour(s, region, scheduled - 3, first - 3, last - 3) + 3;
-    const axis = AXES[Math.floor(rand(t) * AXES.length)];
+  const addWave = (region: RegionId, surprise: boolean, atHour: number) => {
+    let axis = AXES[Math.floor(rand(t) * AXES.length)];
+    const preferred = plan?.axis[region];
+    if (preferred && hash01(s.settings.seed, s.phaseIndex, atHour, 0x41) < ADAPTATION.axisPreference) axis = preferred;
     const n = profile.tracks[0] + Math.floor(rand(t) * (profile.tracks[1] - profile.tracks[0] + 1));
     const tracks: Track[] = [];
     for (let i = 0; i < n; i++) {
@@ -231,10 +230,27 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
       if (turnChance > 0 && TACTICAL_CONFIG.turning.classes.includes(cls) && rand(t) < turnChance) tr.via = turnPoint(t, tr);
       tracks.push(tr);
     }
-    t.waves.push({
+    const w: ThreatWave = {
       id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis, forecast: !surprise, tracks,
       resolved: false,
-    });
+    };
+    t.waves.push(w);
+    return w;
+  };
+  for (const [k, scheduled] of hours.entries()) {
+    const { region, surprise } = targets[k];
+    // Some raids are timed to arrive in the dark (decided from the seed, not the game's random stream).
+    let atHour = scheduled;
+    // Combat is decided at launch, which comes up to ~3h before arrival, so it is the launch that is moved into the
+    // night: to the closest dark hour, earlier or later, so night raids don't pile up at the end of a phase.
+    if (hash01(s.settings.seed, s.phaseIndex, k, 0x4e) < WEATHER.nightRaids) atHour = nearestNightHour(s, region, scheduled - 3, first - 3, last - 3) + 3;
+    addWave(region, surprise, atHour);
+  }
+  // Commander: a region whose magazines ran low gets a second wave soon after its first, before reloads finish.
+  if (plan?.doubleTap && fromHour === undefined) {
+    const firstThere = t.waves.filter((w) => w.phaseIndex === s.phaseIndex && w.region === plan.doubleTap).sort((a, b) => a.atHour - b.atHour)[0];
+    const at = firstThere ? firstThere.atHour + 3 : Math.round((first + last) / 2);
+    if (at <= last) addWave(plan.doubleTap, !t.forecast.includes(plan.doubleTap), at);
   }
 }
 
@@ -606,7 +622,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   const region = s.regions[w.region];
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
-  const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult;
+  const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult * (t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.decoys ?? 1);
   const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * 0.6 * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
+  DOMAINS, EQUIPMENT_MAP, adaptiveEnemy, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type ScoreKey, type SimState,
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
@@ -158,6 +158,7 @@ export function AARView({ s }: { s: SimState }) {
             </div>
           </div>
           <FixSuggestions s={s} />
+          <EnemyAdaptation s={s} />
           <CostExchange s={s} />
           <WaveBreakdowns s={s} />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -266,6 +267,28 @@ export function AARView({ s }: { s: SimState }) {
 }
 
 /** Per wave: interceptor credits spent against the attacker cost of what was stopped. */
+/** Commander: how the enemy adapted each phase, and whether the briefing's intel called it. */
+function EnemyAdaptation({ s }: { s: SimState }) {
+  const plans = s.tactical?.enemy ?? [];
+  if (!adaptiveEnemy(s) || !plans.length) return null;
+  return (
+    <div className="mt-4">
+      <div className="label mb-1">How the enemy adapted</div>
+      <ul className="space-y-2 text-[11px]">
+        {plans.map((p) => (
+          <li key={p.phaseIndex}>
+            <div className="text-white">Phase {p.phaseIndex + 1}</div>
+            <ul className="ml-3 list-disc text-ops-dim">{p.learned.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            <div className={p.intel.accurate ? 'text-ops-green' : 'text-ops-amber'}>
+              Intel {p.intel.accurate ? 'called it' : 'got it wrong'}: “{p.intel.text}”{p.intel.actual ? ` ${p.intel.actual}` : ''}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function CostExchange({ s }: { s: SimState }) {
   const rows = costExchange(s);
   if (!rows.length) return null;

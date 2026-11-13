@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -263,6 +263,19 @@ function CarriedOver({ s }: { s: SimState }) {
   );
 }
 
+/** Commander: what intelligence expects the adapting enemy to do. It is right most of the time, not always. */
+function EnemyIntel({ s }: { s: SimState }) {
+  if (!adaptiveEnemy(s)) return null;
+  const plan = s.tactical?.enemy?.find((p) => p.phaseIndex === s.phaseIndex);
+  return (
+    <div className="mt-1.5 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1">
+      <span className="label text-ops-amber">Enemy intel</span>{' '}
+      {plan ? <>{plan.intel.text} <span className="text-ops-dim">Assessments are usually right, not always.</span></>
+        : <span className="text-ops-dim">This enemy adapts: from the next phase on, it shifts toward whatever gets through your defenses this time.</span>}
+    </div>
+  );
+}
+
 export function BriefingModal({ s }: { s: SimState }) {
   const phase = s.phases[s.phaseIndex];
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
@@ -376,6 +389,7 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <div className="label mb-1 text-ops-red">Threat forecast</div>
                 Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
+                <EnemyIntel s={s} />
                 <ul className="mt-1 space-y-0.5">
                   {tactical.forecast.map((r) => {
                     const p = previewDefense(s, r, 12);

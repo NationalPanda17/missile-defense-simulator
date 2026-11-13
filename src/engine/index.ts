@@ -18,3 +18,4 @@ export * from './advisor';
 export * from './challenge';
 export * from './autopause';
 export * from './weather';
+export * from './adaptation';
