@@ -1,6 +1,6 @@
 // The simulation tick. Advances one simulated hour. Pure state mutation — no UI dependencies.
-import { INVESTMENTS, SIM_CONFIG } from './config';
-import { restockStockpiles } from './tactical';
+import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
+import { restockStockpiles, siteDamageShare } from './tactical';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
@@ -321,6 +321,12 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
     case 'recalibrate':
       for (const a of s.assets) if (a.role === 'sensor' && a.domain === domain) a.condition = clamp(a.condition + 20);
       break;
+    case 'rebuild':
+      if (region && s.tactical) {
+        for (const site of s.tactical.sites) if (site.region === region) site.integrity = Math.min(100, site.integrity + 35);
+        log(s, 'success', `Damaged sites in ${s.regions[region].name} rebuilt.`, region);
+      }
+      break;
     case 'recovery':
       if (region) {
         s.regions[region].stability = clamp(s.regions[region].stability + 20);
@@ -353,7 +359,8 @@ function tickEconomy(s: SimState) {
 function tickRegions(s: SimState) {
   for (const id of REGION_IDS) {
     const r = s.regions[id];
-    const target = 30 + 0.25 * r.readiness + 0.2 * r.awareness + 0.2 * r.infrastructure + 0.1 * r.comms - r.threatLevel * 0.8;
+    const target = 30 + 0.25 * r.readiness + 0.2 * r.awareness + 0.2 * r.infrastructure + 0.1 * r.comms - r.threatLevel * 0.8
+      - TACTICAL_CONFIG.consequences.stability * siteDamageShare(s, id); // damaged sites keep weighing on the region
     r.stability = clamp(r.stability + (target - r.stability) * SIM_CONFIG.stabilityInertia);
     if (r.stability > 60) r.infrastructure = clamp(r.infrastructure + 0.015);
   }

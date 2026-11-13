@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DOMAINS, EQUIPMENT_MAP, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type ScoreKey, type SimState,
@@ -333,8 +333,14 @@ function WaveBreakdowns({ s }: { s: SimState }) {
 /** Specific, tested advice: a system that would have stopped more of what got through, found by replaying the waves. */
 function FixSuggestions({ s }: { s: SimState }) {
   const key = `${s.hour}:${s.tactical?.waves.filter((w) => w.resolved).length}`;
-  const fixes = useMemo(() => suggestFixes(s), [key]);
-  if (!fixes.length) return null;
+  // Replaying waves takes a moment on a phone: show the report first, then work this out.
+  const [fixes, setFixes] = useState<ReturnType<typeof suggestFixes> | null>(null);
+  useEffect(() => {
+    setFixes(null);
+    const id = window.setTimeout(() => setFixes(suggestFixes(s)), 60);
+    return () => window.clearTimeout(id);
+  }, [key]);
+  if (!fixes?.length) return null;
   return (
     <div className="mt-4 min-w-0">
       <div className="label mb-1">What would have helped</div>

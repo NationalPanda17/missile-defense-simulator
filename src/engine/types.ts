@@ -351,8 +351,10 @@ export interface Track {
   cost?: number; // credits of interceptor rounds fired at it (absent in older saves)
   detected?: boolean; // seen by a sensor (or cued by airborne radar) before it arrived
   fired?: { dep: string; shots: number }[]; // systems that engaged it, in order
-  why?: { dep: string; reason: string }[]; // systems in the region that did not engage it, and why
-  leak?: string; // why it got through, in plain words (genuine threats that leaked)
+  /** Systems in the region that did not engage it: [deployment id, reason code] (see tactical.ts REASONS). Saves made
+   *  before codes existed hold { dep, reason } with the reason written out. */
+  why?: ([string, string] | { dep: string; reason: string })[];
+  leak?: string; // older saves only: why it got through, written out (now built on demand by leakText)
   via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
 }
 

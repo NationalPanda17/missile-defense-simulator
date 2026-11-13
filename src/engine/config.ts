@@ -64,6 +64,11 @@ export const REGION_DEFS: { id: RegionId; name: string; short: string; center: [
 
 export const INVESTMENTS: Investment[] = [
   {
+    id: 'rebuild', label: 'Rebuild Damaged Sites', category: 'recovery', scope: 'region',
+    description: 'Repairs the region\'s sites hit by threat waves (+35 integrity each). Damaged sites drag stability down and make the region a likelier target.',
+    credits: 160, personnel: 6, hours: 18,
+  },
+  {
     id: 'harden', label: 'Harden Regional Infrastructure', category: 'infrastructure', scope: 'region',
     description: '+18 infrastructure resilience in the region on completion. Slows infrastructure drift from events.',
     credits: 220, personnel: 8, hours: 24,
@@ -287,6 +292,11 @@ export const TACTICAL_CONFIG = {
   forecastRegions: 2,
   /** Warning before a wave arrives: base hours plus extra hours at full regional awareness. */
   warningHours: { base: 2, atFullAwareness: 6 },
+  /**
+   * Damage carries over: a region's damaged sites (share of site value lost, 0-1) pull its stability target down by
+   * up to `stability` points, and add up to `targeting` to its weight when forecasts pick where attacks come.
+   */
+  consequences: { stability: 35, targeting: 60 },
   /** Share of a region's site value that must be covered to count as protected, or thin. */
   protection: { protected: 0.7, thin: 0.3 },
 };
