@@ -394,6 +394,18 @@ export interface TheaterTerrain {
 }
 
 /** Tactical layer state. Optional on SimState so saves from before the tactical layer still load. */
+/** Commander only: how the enemy adapted this phase to what it saw in earlier ones (see adaptation.ts). */
+export interface EnemyPlan {
+  phaseIndex: number;
+  mix: Record<ThreatClass, number>; // multipliers on the phase's weapon mix
+  target: Partial<Record<RegionId, number>>; // added forecast weight
+  axis: Partial<Record<RegionId, ThreatAxis>>; // preferred approach per region
+  doubleTap?: RegionId; // a region whose magazines ran low: two waves close together
+  decoys: number; // decoy multiplier
+  learned: string[]; // what it noticed, for the debrief
+  intel: { text: string; accurate: boolean; actual?: string }; // actual: what was really true, when intel was wrong
+}
+
 export interface TacticalState {
   enabled: boolean; // campaign only
   rng: number; // own RNG stream, so the management simulation stays reproducible on its own
@@ -404,6 +416,7 @@ export interface TacticalState {
   waves: ThreatWave[];
   forecast: RegionId[]; // regions the current briefing warns about
   alerts?: { region: RegionId; until: number }[]; // raised alerts (sim hour they end)
+  enemy?: EnemyPlan[]; // Commander: the enemy's plan for each phase after the first
   stockpile?: Record<string, number>; // national reserve of interceptor rounds per equipment type (Officer/Commander)
   stats: TacticalStats;
 }

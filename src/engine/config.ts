@@ -320,7 +320,7 @@ export const COMMAND_LEVELS: Record<CommandLevel, {
     credits: 0, eventFrequency: 1, falseMult: 1, waveSize: 1, surpriseMult: 1, decoyMult: 1, incomeMult: 1, deadlineMult: 1,
   },
   commander: {
-    label: 'Commander', description: 'A tighter budget (less to start with and 10% less income), more incidents and false reports with less time to act, and bigger attacks that strike outside the forecast more often. Interceptor stockpiles are thinner. The adjutant starts off.',
+    label: 'Commander', description: 'A tighter budget (less to start with and 10% less income), more incidents and false reports with less time to act, and bigger attacks that strike outside the forecast more often, from an enemy that adapts to how you defend. Interceptor stockpiles are thinner. The adjutant starts off.',
     credits: -250, eventFrequency: 1.3, falseMult: 1.3, waveSize: 1.3, surpriseMult: 1.6, decoyMult: 1.4, incomeMult: 0.9, deadlineMult: 0.9,
   },
 };
