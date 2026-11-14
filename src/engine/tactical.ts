@@ -2,7 +2,7 @@
 //
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
-import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, enemyStyleOf, levelOf } from './config';
+import { SIM_CONFIG, STOCKPILES, STORIES, TACTICAL_CONFIG, enemyStyleOf, levelOf } from './config';
 import { EQUIPMENT, EQUIPMENT_MAP, RADAR_BAND_IDS, channelsOf, equipmentCost, isEffector, loadoutOf, sensorTraits, type EquipmentSpec, type RadarBand } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
@@ -275,7 +275,7 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   t.waves = t.waves.filter((w) => w.phaseIndex !== s.phaseIndex);
   t.forecast = [];
   const lesson = tacticalLesson(s);
-  const lessonWaves = lesson?.makeWaves?.(s.settings.seed) ?? lesson?.waves;
+  const lessonWaves = lesson?.makeWaves?.(s.settings.seed, s.phaseIndex, s.settings) ?? lesson?.waves;
   if (lessonWaves) return scheduleLessonWaves(s, t, lessonWaves);
   if (!base || !phase) return;
   // Apply the scenario's multipliers. The standard scenario (all 1s) reproduces the base profile exactly.
@@ -296,11 +296,13 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     mix: CLASSES.some((c) => scaledMix[c] > 0) ? scaledMix : base.mix, // never leave a phase with no possible threat
   };
 
+  // A written campaign is fought where its story is set.
+  const storyRegions = s.settings.story ? STORIES[s.settings.story]?.regions : undefined;
   // Forecast: regions under the most strain are the likeliest targets.
   const pool = [...REGION_IDS];
   for (let i = 0; i < sc.forecastRegions && pool.length; i++) {
     // Strained and badly damaged regions are likelier targets: attackers press where defenses already failed.
-    const id = weighted(t, pool.map((r) => ({ item: r, w: Math.max(5, 20 + (100 - s.regions[r].stability) + TACTICAL_CONFIG.consequences.targeting * siteDamageShare(s, r) + (plan?.target[r] ?? 0)) })));
+    const id = weighted(t, pool.map((r) => ({ item: r, w: Math.max(5, 20 + (100 - s.regions[r].stability) + TACTICAL_CONFIG.consequences.targeting * siteDamageShare(s, r) + (plan?.target[r] ?? 0) + (storyRegions?.includes(r) ? 150 : 0)) })));
     t.forecast.push(id);
     pool.splice(pool.indexOf(id), 1);
   }
@@ -646,7 +648,7 @@ function strikeShare(s: SimState, w: ThreatWave): number {
   return Math.min(0.5, base * style.strike * (s.settings.level === 'commander' ? 1.5 : s.settings.level === 'recruit' ? 0.5 : 1));
 }
 
-function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[], load?: Map<string, number>) {
+export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[], load?: Map<string, number>) {
   const target = trackTarget(t, tr);
   if (!target) return;
   const region = s.regions[w.region];
@@ -750,7 +752,10 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
       const quality = trackQuality(d);
       if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
-      if (rand(t) < Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
+      const need = Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark;
+      const roll = rand(t);
+      if (t.recordRolls) (tr.rolls ??= []).push({ dep: d.id, need, roll, window: Math.round(window), reaction: Math.round(reaction), quality });
+      if (roll < need) {
         stopped = true;
         tr.stoppedBy = d.id;
         if (missed) tr.handoff = true;
@@ -893,7 +898,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave, live = false)
     for (const tr of w.tracks) {
       if (tr.decoy || tr.depTarget || !emitters.length || !TACTICAL_CONFIG.strikes.classes.includes(tr.cls) || rand(t) >= share) continue;
       // The farther a radar reaches, the brighter it shines.
-      const d = weighted(t, emitters.map((x) => { const sp = EQUIPMENT_MAP.get(x.equipmentId)!; return { item: x, w: sp.lure ? 600 : 20 + (sp.radar?.rangeKm ?? 0) }; }));
+      const d = weighted(t, emitters.map((x) => { const sp = EQUIPMENT_MAP.get(x.equipmentId)!; return { item: x, w: sp.lure ? 2500 : 20 + (sp.radar?.rangeKm ?? 0) }; }));
       tr.depTarget = d.id;
       tr.aim = [d.x, d.y];
       if (tr.via) tr.via = undefined; // it flies straight down the beam
@@ -1346,7 +1351,7 @@ export interface FixSuggestion {
 const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles', hypersonic: 'hypersonic gliders' };
 
 /** A legal spot near a point, searching outwards (for placing a suggested system). */
-function spotNear(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number): [number, number] | null {
+export function spotNear(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number): [number, number] | null {
   for (let r = 0; r <= 120; r += 6) {
     for (let a = 0; a < 16; a++) {
       const p: [number, number] = [Math.round(x + Math.cos((a / 16) * Math.PI * 2) * r), Math.round(y + Math.sin((a / 16) * Math.PI * 2) * r)];

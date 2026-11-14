@@ -438,6 +438,38 @@ export const enemyStyleOf = (settings: { mode: string; enemy?: EnemyStyle }) =>
   ENEMY_STYLES[settings.mode === 'campaign' && settings.enemy && settings.enemy in ENEMY_STYLES ? settings.enemy : 'planner'];
 
 /**
+ * Written campaigns: fictional scenarios with their own setting, opponent, weather and chapter text. Each plays by
+ * the campaign's rules; the story decides where the fighting is and what it is like.
+ */
+export const STORIES: Record<string, {
+  name: string; blurb: string; enemy: EnemyStyle; regions: RegionId[];
+  /** × the chance of storms. */
+  storms: number;
+  chapters: { name: string; situation: string }[];
+}> = {
+  winter: {
+    name: 'The Long Winter', enemy: 'fox', regions: ['POL', 'EUR', 'NAM'], storms: 2,
+    blurb: 'A northern war fought in storms and long nights against Admiral Sorrel, who comes round the side. Radars that see through weather earn their keep.',
+    chapters: [
+      { name: 'First Snow', situation: 'The northern sea lanes have frozen early and the first probing raids have come across the ice. The network is new, the nights are lengthening, and the forecast is for worse weather than anyone planned for.' },
+      { name: 'The Dark Months', situation: 'Daylight is down to a few hours. Admiral Sorrel has learned where your radars are and has stopped coming straight at them. Storm fronts roll through every other day and take the short-wave radars’ range with them.' },
+      { name: 'Whiteout', situation: 'The worst storm of the winter is sitting over the north and Sorrel means to use it. Raids come from two sides at once, low, under the weather. Whatever still sees in a blizzard is what stands between the cities and the dark.' },
+      { name: 'Thaw', situation: 'The ice is breaking up and the raids are thinning. What is left is to rebuild what was hit, bring the network back to strength, and count what the winter cost.' },
+    ],
+  },
+  islands: {
+    name: 'The Island Chain', enemy: 'swarm', regions: ['IPA', 'SAM'], storms: 1.4,
+    blurb: 'A chain of coastal cities and harbours under General Halvard’s drone swarms. Ships, guns and a tight budget of interceptors decide it.',
+    chapters: [
+      { name: 'Outer Islands', situation: 'The outermost harbours have been buzzed by drones for a week. Now the first real swarm is forming. The coastal cities are close together and close to the sea, and most of what can protect them has to come by ship.' },
+      { name: 'The Strait', situation: 'General Halvard has found that cheap drones empty expensive magazines. The swarms are bigger and they come with decoys. Every interceptor fired at a fake is one that will not be there for the missiles behind it.' },
+      { name: 'Typhoon Season', situation: 'The typhoons have arrived, and so have the missiles Halvard was saving. Swarms go in first to draw fire; the heavy weapons follow an hour behind. Hold the harbours and the chain holds.' },
+      { name: 'Holding the Chain', situation: 'The swarms are spent. Harbours need rebuilding, ships need yard time, and the stockpiles are thin. Leave the chain in a state to stand another season.' },
+    ],
+  },
+};
+
+/**
  * Campaign difficulty. Officer is the campaign as designed (every multiplier 1). Credits are added to the starting
  * budget; the rest scale event frequency, the chance a report is false, wave size, surprise attacks and decoys.
  */

@@ -1,5 +1,5 @@
 // Fictional starting world: regions and asset inventory. All names and figures are invented and abstract.
-import { CAMPAIGN_PHASES, COMMAND_LEVELS, REGION_DEFS, SIM_CONFIG, levelOf } from './config';
+import { STORIES, CAMPAIGN_PHASES, COMMAND_LEVELS, REGION_DEFS, SIM_CONFIG, levelOf } from './config';
 import { LESSON_MAP, lessonPhase } from './training';
 import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
@@ -137,6 +137,8 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
         }),
         // The phase notes compare phases with each other; say plainly how the difficulty shifts all of them.
         special: level === 'officer' ? p.special : [levelNote(lv, p.falseRate, falseRate), ...p.special],
+        // A written campaign renames the chapters and tells its own story.
+        ...(settings.story && STORIES[settings.story]?.chapters[p.id - 1] ? { name: STORIES[settings.story].chapters[p.id - 1].name, situation: STORIES[settings.story].chapters[p.id - 1].situation } : {}),
       };
     });
   }
@@ -162,6 +164,12 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
   }
   if (settings.mode === 'training') {
     const lesson = settings.lesson ? LESSON_MAP.get(settings.lesson) : undefined;
+    if (lesson?.endless) {
+      // Endless Defense: a briefing before every wave, for as long as the region holds.
+      return Array.from({ length: lesson.endless.waves }, (_, i) => ({
+        ...lessonPhase(lesson, settings), id: i + 1, name: `Wave ${i + 1}`, hours: lesson.endless!.hours, grant: i === 0 ? 0 : lesson.endless!.grant + lesson.endless!.grantStep * i,
+      }));
+    }
     if (lesson) return [lessonPhase(lesson, settings)];
     return [{
       id: 1, name: 'Command Familiarization', hours: settings.durationHours, eventRate: 0.05, falseRate: settings.falseReportRate,

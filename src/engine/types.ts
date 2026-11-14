@@ -400,6 +400,8 @@ export interface Track {
   /** Aimed at one of the defender's own systems instead of a site: that deployment's id, and where it stood. */
   depTarget?: string;
   aim?: [number, number];
+  /** Practice range only: every shot's dice (the chance needed and the number rolled). */
+  rolls?: { dep: string; need: number; roll: number; window: number; reaction: number; quality: number }[];
   /** Stopped by a later layer after an earlier one fired and missed. */
   handoff?: boolean;
   /** Flew in along a valley. */
@@ -486,6 +488,8 @@ export interface TacticalState {
   repairFirst?: string[];
   /** Resupply is free in this region for this phase (a reinforcement choice). */
   freeResupply?: { region: RegionId; phaseIndex: number };
+  /** Practice range: keep each shot's dice on the track. Never set in a real game. */
+  recordRolls?: boolean;
 }
 
 export interface SimState {

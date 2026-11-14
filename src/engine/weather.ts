@@ -1,5 +1,6 @@
 // Weather and daylight in each theater. Decided from the scenario seed (never from the game's random streams), so the
 // same campaign always has the same storms, and the briefing's forecast check can account for them exactly.
+import { STORIES } from './config';
 import type { RegionId, SimState } from './types';
 
 /** Effects, in the game's own terms. */
@@ -49,7 +50,8 @@ export function isNight(s: SimState, region: RegionId, hour: number): boolean {
 /** A storm over the theater: the region's weather pattern, or a storm event the network is dealing with there. */
 export function isStorm(s: SimState, region: RegionId, hour: number): boolean {
   const block = Math.floor(hour / 12);
-  if (hash01(s.settings.seed, REGION_NUM[region], block, 0x57) < WEATHER.stormChance[region]) return true;
+  const storms = s.settings.story ? STORIES[s.settings.story]?.storms ?? 1 : 1;
+  if (hash01(s.settings.seed, REGION_NUM[region], block, 0x57) < Math.min(0.7, WEATHER.stormChance[region] * storms)) return true;
   return s.events.some((e) => e.templateId === 'storm' && e.region === region && e.isGenuine
     && e.occurredAt <= hour && (e.resolvedAt ?? e.deadline) >= hour && (e.status !== 'dismissed' || !!e.hiddenLive) && e.status !== 'expired');
 }

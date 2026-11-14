@@ -95,7 +95,9 @@ export interface TrainingLesson {
   phase: Pick<PhaseConfig, 'name' | 'situation' | 'scripted'> & Partial<PhaseConfig>;
   waves?: ScriptedWave[];
   /** Waves worked out from the scenario seed instead of written out, so every game is a different battle. */
-  makeWaves?: (seed: number) => ScriptedWave[];
+  makeWaves?: (seed: number, phaseIndex: number, settings: ScenarioSettings) => ScriptedWave[];
+  /** Endless Defense: a wave per phase with a briefing before each, until the region falls. */
+  endless?: { waves: number; hours: number; grant: number; grantStep: number; fallAt: number };
   steps: LessonStep[];
   /** The graded final exercise. */
   exam?: boolean;
@@ -665,7 +667,74 @@ export const QUICK_BATTLE: TrainingLesson = {
   ],
 };
 
-export const LESSON_MAP = new Map([...LESSONS, ...DRILLS, QUICK_BATTLE].map((l) => [l.id, l]));
+// ── Endless Defense ──────────────────────────────────────────────────────
+
+export const ENDLESS_ID = 'endless';
+const ENDLESS_UNLOCK: [ThreatClass, number][] = [['slowDrone', 0], ['fastDrone', 1], ['cruise', 2], ['rocket', 3], ['ballistic', 5], ['hypersonic', 9]];
+
+/** The wave Endless Defense sends in a phase: bigger each time, with a new kind of threat every so often. */
+export function endlessWave(seed: number, phaseIndex: number): ScriptedWave {
+  const region = REGION_IDS[Math.floor(hash01(seed, 0x61) * REGION_IDS.length)];
+  const size = 6 + Math.round(phaseIndex * 2.5);
+  const classes = ENDLESS_UNLOCK.filter(([, from]) => phaseIndex >= from).map(([c]) => c);
+  const tracks: Partial<Record<ThreatClass, number>> = {};
+  for (let i = 0; i < size; i++) {
+    // Drones stay the bulk; heavier weapons take a growing share.
+    const heavy = hash01(seed, phaseIndex, i, 0x62) < Math.min(0.6, 0.12 + phaseIndex * 0.04);
+    const pool = heavy ? classes.filter((c) => c !== 'slowDrone' && c !== 'fastDrone') : classes.filter((c) => c === 'slowDrone' || c === 'fastDrone');
+    const cls = (pool.length ? pool : classes)[Math.floor(hash01(seed, phaseIndex, i, 0x63) * (pool.length || classes.length))];
+    tracks[cls] = (tracks[cls] ?? 0) + 1;
+  }
+  return { region, atHour: 6, axis: BATTLE_AXES[Math.floor(hash01(seed, phaseIndex, 0x64) * 4)], tracks, forecast: true };
+}
+
+/** Waves survived in Endless Defense: those that have landed with the region still standing. */
+export const wavesSurvived = (s: SimState) => (s.tactical?.waves.filter((w) => w.resolved && w.applied !== false).length ?? 0) - (s.status === 'complete' && s.phaseIndex < s.phases.length - 1 ? 1 : 0);
+
+export const ENDLESS: TrainingLesson = {
+  id: ENDLESS_ID, title: 'Endless Defense', minutes: 15, skills: ['Layers', 'Budget', 'Stockpiles'],
+  summary: 'One region, a wave every few hours, each bigger than the last. Rebuild your defense between waves and see how long you can hold.',
+  settings: { durationHours: 2000, startCredits: 700 },
+  phase: { ...QUIET, name: 'Endless Defense', scripted: [],
+    situation: 'One region, attacked again and again. Each wave is bigger than the last and new kinds of threat join as it goes on. Between waves you get a little more money and a briefing to spend it in. It ends when half the region’s site value is gone.' },
+  endless: { waves: 40, hours: 8, grant: 60, grantStep: 8, fallAt: 0.5 },
+  makeWaves: (seed, phaseIndex) => [endlessWave(seed, phaseIndex)],
+  drill: { goal: 'Survive as many waves as you can.', score: (s) => Math.max(0, wavesSurvived(s)), stars: [5, 10, 15] },
+  steps: [
+    { id: 'brief', title: 'Hold the region',
+      text: 'Each wave gets a briefing first. The forecast check shows what is coming; spend what you have, then begin. A new briefing opens after every wave. The run ends when half the region’s site value is gone. Your score is the number of waves survived.',
+      hint: 'Cheap guns go a long way early. Turn on “Auto-resupply here” in the Tactical Theater, send repair crews to damaged sites, and save for a high-ceiling system before wave 6, when ballistic missiles arrive.' },
+    { id: 'finish', wait: true, title: 'Keep going', text: 'Wave after wave. Any speed is fine.', check: (c) => c.s.status === 'complete' },
+    { id: 'result', title: 'Result', view: 'aar', text: 'The run is over: your waves survived and stars are below. Start again for a different region.' },
+  ],
+};
+
+// ── Player-written raids ─────────────────────────────────────────────────
+
+export const RAID_ID = 'raid';
+/** Attack points a raid may spend: each threat costs what the game says it costs the attacker. */
+export const RAID_BUDGET = 600;
+
+const raidWaves = (settings: ScenarioSettings): ScriptedWave[] =>
+  (settings.raid?.waves ?? []).map((w) => ({ region: settings.raid!.region, atHour: w.atHour, axis: w.axis, tracks: w.tracks, forecast: true }));
+
+/** A battle whose waves a player wrote: defended by another player, or by the computer while the author watches. */
+export const RAID: TrainingLesson = {
+  id: RAID_ID, title: 'Custom raid', minutes: 6, skills: ['Placement', 'Layers'],
+  summary: 'A raid designed by a player. Defend it, or watch the computer try.',
+  settings: { durationHours: 34, startCredits: 1400 },
+  phase: { ...QUIET, name: 'Custom Raid', scripted: [], situation: 'A raid written by another commander is on its way. The forecast shows the region; the rest you will have to read from the forecast check.' },
+  makeWaves: (_seed, _phase, settings) => raidWaves(settings),
+  drill: { goal: 'Prevent as much of the raid’s damage as you can.', score: defenseScore, stars: [55, 75, 90] },
+  steps: [
+    { id: 'brief', title: 'Read the raid, build the defense', text: 'Someone designed this attack to get through. Open the forecast check to see what is coming and from where, place your defenses, and keep credits back for resupply.' },
+    { id: 'begin', target: ['begin'], title: 'Begin', text: 'Press “Assume command — begin phase” when ready.', check: running },
+    { id: 'finish', wait: true, title: 'Fight it out', text: 'Watch it in the Tactical Theater (key X). Raise an alert when a launch warning appears.', check: (c) => c.s.status === 'complete' },
+    { id: 'result', title: 'Result', view: 'aar', text: 'The defense score is below: the share of the raid’s damage that was prevented. For the attacker, lower is better.' },
+  ],
+};
+
+export const LESSON_MAP = new Map([...LESSONS, ...DRILLS, QUICK_BATTLE, ENDLESS, RAID].map((l) => [l.id, l]));
 export const lessonOf = (s: SimState | null | undefined): TrainingLesson | undefined =>
   s?.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined;
 
@@ -686,7 +755,8 @@ export function lessonSettings(id: string, base: ScenarioSettings): ScenarioSett
   const l = LESSON_MAP.get(id);
   if (!l) throw new Error(`Unknown lesson ${id}`);
   const merged = { ...base, ...l.settings };
-  return { ...merged, mode: 'training', lesson: id, name: id === QUICK_BATTLE_ID ? `Quick Battle · ${quickBattle(merged.seed).name}` : `Training · ${l.title}` };
+  const name = id === QUICK_BATTLE_ID ? `Quick Battle · ${quickBattle(merged.seed).name}` : id === ENDLESS_ID ? 'Endless Defense' : id === RAID_ID ? 'Custom Raid' : `Training · ${l.title}`;
+  return { ...merged, mode: 'training', lesson: id, name };
 }
 
 // ── Certification grading ────────────────────────────────────────────────
