@@ -190,7 +190,7 @@ export const SCORE_WEIGHTS = {
  * When the tactical layer is active, protection takes this share of the score and the management components share
  * the rest in their usual proportions. Other modes are scored on management alone.
  */
-export const PROTECTION_SCORE_WEIGHT = 0.15;
+export const PROTECTION_SCORE_WEIGHT = 0.2;
 /** Efficiency points lost per false track that drew fire (capped). */
 export const DECOY_EFFICIENCY_PENALTY = { perShot: 0.5, max: 10 };
 
@@ -273,6 +273,11 @@ export const TACTICAL_CONFIG = {
   maxShotsPerSystem: 2,
   /** Detection: a threat seen by a covering sensor is engaged at full quality; otherwise at this quality. */
   unseenDetection: 0.45,
+  /**
+   * Decoys (false tracks) per genuine threat in a wave, before the phase's false-report rate, regional awareness, the
+   * scenario and the difficulty scale it. A sharp radar that tracks a decoy can recognise it (see RADAR_BANDS).
+   */
+  decoysPerTrack: 1.2,
   /** Magazine size treated as unlimited (jammers, lasers, microwave). */
   unlimitedMagazine: 999,
   /** Standard scenario: chance each wave beyond one per forecast region strikes outside the forecast. */

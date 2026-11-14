@@ -3,7 +3,7 @@
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
 import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, levelOf } from './config';
-import { EQUIPMENT, EQUIPMENT_MAP, equipmentCost, isEffector, type EquipmentSpec } from './equipment';
+import { EQUIPMENT, EQUIPMENT_MAP, RADAR_BAND_IDS, equipmentCost, isEffector, sensorTraits, type EquipmentSpec, type RadarBand } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
@@ -439,6 +439,13 @@ export function detectionRange(spec: EquipmentSpec, cls: ThreatClass): number {
 
 export const isUnlimited = (spec: EquipmentSpec) => spec.magazine >= TACTICAL_CONFIG.unlimitedMagazine;
 
+/** The shortest-wave (sharpest) radar band among some systems, or null if none of them has a radar. */
+export function sharpestBand(specs: EquipmentSpec[]): RadarBand | null {
+  let best = -1;
+  for (const sp of specs) if (sp.radar) best = Math.max(best, RADAR_BAND_IDS.indexOf(sp.radar.band));
+  return best < 0 ? null : RADAR_BAND_IDS[best];
+}
+
 // ── Resolution ───────────────────────────────────────────────────────────
 
 function tlog(s: SimState, level: LogLevel, text: string, region?: RegionId) {
@@ -459,19 +466,36 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   // Airborne early warning sees low threats beyond the horizon and over terrain, and cues surface systems.
   // Weather and daylight when the wave launches (when its outcome is decided).
   const wx = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
-  const sense = wx.storm ? WEATHER.stormDetection : 1;
-  const cued = isLowFlying(tr.cls) && working.some((d) => {
-    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return spec.domain === 'air' && reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * sense, true) > 0;
-  });
-  const seen = cued || working.some((d) => {
-    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * sense, false) > 0;
-  });
+  // Every working sensor that tracks it: surface sensors within their horizon and line of sight, aircraft from above.
+  // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
+  const watchers = working
+    .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
+    .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1), false) > 0);
+  const cued = isLowFlying(tr.cls) && watchers.some((x) => x.spec.domain === 'air');
+  const seen = watchers.length > 0;
   const alert = alertActive(s, w.region);
   const A = TACTICAL_CONFIG.alert;
   const unseen = alert ? Math.max(TACTICAL_CONFIG.unseenDetection, A.minDetectionUnseen) : TACTICAL_CONFIG.unseenDetection;
-  const detection = Math.min(1, (seen ? 1 : unseen) * (0.7 + 0.3 * (region.awareness / 100)) * (alert ? 1 + A.detectionBonus : 1));
+  /**
+   * How good a track a system shoots on: its own sensor's track is full quality; otherwise the best track another
+   * sensor can hand it, which depends on that sensor's band; with no track at all, the unseen value.
+   */
+  const trackQuality = (d: Deployment) => {
+    if (!seen) return unseen;
+    if (watchers.some((x) => x.d === d)) return 1;
+    return Math.max(unseen, ...watchers.map((x) => sensorTraits(x.spec).cue));
+  };
+  const awarenessF = (0.7 + 0.3 * (region.awareness / 100)) * (alert ? 1 + A.detectionBonus : 1);
+  tr.detected = seen;
+  if (seen) tr.band = sharpestBand(watchers.map((x) => x.spec)) ?? 'passive';
+  // A sharp radar can tell a decoy from the real thing: recognised decoys are left alone and cost nothing.
+  if (tr.decoy && seen && rand(t) < Math.max(...watchers.map((x) => sensorTraits(x.spec).sharp))) {
+    tr.rejected = true;
+    tr.outcome = 'decoyLeaked';
+    tr.fired = [];
+    t.stats.decoysSpotted = (t.stats.decoysSpotted ?? 0) + 1;
+    return;
+  }
   const commsF = 0.6 + 0.4 * (region.comms / 100);
   const speed = TACTICAL_CONFIG.threatSpeedKmS[tr.cls];
 
@@ -484,7 +508,6 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     .sort((a, b) => b.spec.rangeKm - a.spec.rangeKm);
 
   // Diagnostics only (what happened and why): nothing below changes the outcome or draws random numbers.
-  tr.detected = seen;
   const fired: { dep: string; shots: number }[] = [];
   const why = new Map<string, string>();
   for (const d of deps) {
@@ -520,7 +543,9 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       tr.shots += 1;
       t.stats.shots += 1;
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
-      if (rand(t) < spec.killRate[tr.cls] * avail * detection * commsF * dark) {
+      const quality = trackQuality(d);
+      if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
+      if (rand(t) < spec.killRate[tr.cls] * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
         stopped = true;
         tr.stoppedBy = d.id;
         // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
@@ -582,7 +607,8 @@ export function leakText(tr: Track, deps: Deployment[]): string {
   const shooters = deps.filter((d) => isEffector(EQUIPMENT_MAP.get(d.equipmentId)!));
   if (tr.fired?.length) {
     const shots = tr.fired.reduce((a, f) => a + f.shots, 0);
-    return `Engaged by ${tr.fired.map((f) => name(f.dep)).join(', ')} (${shots} shot${shots === 1 ? '' : 's'}) but not stopped${tr.detected ? '' : '; it was not seen by a sensor, which lowers the chance'}.`;
+    return `Engaged by ${tr.fired.map((f) => name(f.dep)).join(', ')} (${shots} shot${shots === 1 ? '' : 's'}) but not stopped${!tr.detected ? '; it was not seen by a sensor, which lowers the chance'
+      : (tr.cueQ ?? 1) < 0.9 ? `; the shot was guided by another sensor’s ${tr.band === 'passive' ? 'passive' : `${tr.band}-band`} track, which is coarser than the system’s own radar` : ''}.`;
   }
   const reasons = whyEntries(tr);
   if (!reasons.length) return shooters.length ? 'No system engaged it.' : 'Nothing deployed in the region could engage it.';
@@ -627,7 +653,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
   const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult * (t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.decoys ?? 1);
-  const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * 0.6 * decoyScale);
+  const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * TACTICAL_CONFIG.decoysPerTrack * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);
     if (tr) w.tracks.push(tr);
@@ -679,7 +705,7 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
       ...t,
       rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
       deployments: t.deployments.map((d) => ({ ...d })),
-      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined })) })),
+      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined, cueQ: undefined, band: undefined, rejected: undefined })) })),
       stats: emptyStats(),
     };
     const s2 = { ...s, tactical: t2, log: [] } as SimState;

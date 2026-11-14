@@ -217,7 +217,7 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
 The weighted components (`SCORE_WEIGHTS`) are readiness, network, stability, event response,
 infrastructure preservation, resource efficiency, information quality and recovery, plus up
 to +8 for objectives met. When the tactical layer is active, **protection** (share of incoming threat damage
-prevented, weighted by site importance) takes `PROTECTION_SCORE_WEIGHT` (15%) and the other components share the
+prevented, weighted by site importance) takes `PROTECTION_SCORE_WEIGHT` (20%) and the other components share the
 rest in their usual proportions; `computeScore` returns the effective `weights`. False tracks that drew fire cost
 efficiency. `tacticalReport` and the tactical lessons feed the AAR's Tactical Defense panel. Efficiency penalizes **waste**: credits spent on spurious reports,
 failed responses, and large idle reserves. Total spending is never rewarded.
