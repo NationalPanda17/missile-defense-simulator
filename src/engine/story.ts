@@ -61,15 +61,15 @@ export function narrateWave(s: SimState, w: ThreatWave): Caption[] {
   const c = w.conditions;
   out.push({
     tone: 'info',
-    text: `${mixText(real) || 'No threats'} come in from the ${w.axis}${c?.night ? ', at night' : ''}${c?.storm ? ', through a storm' : ''}${decoys.length ? `, with ${decoys.length} decoy${decoys.length === 1 ? '' : 's'} among them` : ''}.`,
+    text: `${mixText(real) || 'No threats'} ${real.length === 1 ? 'comes' : 'come'} in from the ${w.axis}${c?.night ? ', at night' : ''}${c?.storm ? ', through a storm' : ''}${decoys.length ? `, with ${decoys.length} decoy${decoys.length === 1 ? '' : 's'} among them` : ''}.`,
   });
   const unseen = real.filter((x) => x.detected === false);
   if (real.length && unseen.length === real.length) out.push({ tone: 'bad', text: 'No sensor sees any of them: every shot will be late and hurried.' });
-  else if (unseen.length) out.push({ tone: 'bad', text: `Sensors track ${real.length - unseen.length} of ${real.length}; ${mixText(unseen)} slip in unseen.` });
+  else if (unseen.length) out.push({ tone: 'bad', text: `Sensors track ${real.length - unseen.length} of ${real.length}; ${mixText(unseen)} ${unseen.length === 1 ? 'slips' : 'slip'} in unseen.` });
   else if (real.length) out.push({ tone: 'good', text: 'Sensors track every one of them.' });
 
   const hunters = real.filter((x) => x.depTarget);
-  if (hunters.length) out.push({ tone: 'bad', text: `${mixText(hunters)} peel off toward your radars: ${list([...new Set(hunters.map((x) => depName(s, x.depTarget)))])}.` });
+  if (hunters.length) out.push({ tone: 'bad', text: `${mixText(hunters)} ${hunters.length === 1 ? 'peels' : 'peel'} off toward your radars: ${list([...new Set(hunters.map((x) => depName(s, x.depTarget)))])}.` });
 
   // Each shooter's work, busiest first.
   const stops = new Map<string, Track[]>();

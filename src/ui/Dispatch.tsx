@@ -2,7 +2,11 @@
 import { useState } from 'react';
 import { dispatchText, phaseDispatch, type SimState } from '../engine';
 
-export function DispatchCard({ s, phaseIndex, compact = false }: { s: SimState; phaseIndex: number; compact?: boolean }) {
+export function DispatchCard({ s, phaseIndex, compact = false, fold = false }: {
+  s: SimState; phaseIndex: number; compact?: boolean;
+  /** Briefings: show the headline, and keep the stories behind "Read the full report". */
+  fold?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const d = phaseDispatch(s, phaseIndex);
   if (!d) return null;
@@ -13,6 +17,16 @@ export function DispatchCard({ s, phaseIndex, compact = false }: { s: SimState; 
       window.setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable: nothing to do */ }
   };
+  const stories = (
+    <div className={`mt-2 grid gap-x-4 gap-y-2 ${compact ? '' : 'sm:grid-cols-2'}`}>
+      {d.stories.map((x) => (
+        <section key={x.title} className="text-[11px] leading-relaxed">
+          <h4 className="font-semibold text-[#e9dfc4]">{x.title}</h4>
+          <p className="text-ops-dim">{x.text}</p>
+        </section>
+      ))}
+    </div>
+  );
   return (
     <article className="rounded border border-[#cbbf9f]/40 bg-[#efe6cf]/[0.06] p-3" aria-label={`News report for phase ${d.phase}`}>
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#cbbf9f]/30 pb-1">
@@ -24,15 +38,12 @@ export function DispatchCard({ s, phaseIndex, compact = false }: { s: SimState; 
       </header>
       <h3 className="mt-2 font-serif text-[clamp(1.1rem,3vw,1.6rem)] font-bold leading-tight text-white">{d.headline}</h3>
       <p className="mt-1 text-[12px] leading-relaxed text-ops-text">{d.deck}</p>
-      {d.stories.length > 0 && (
-        <div className={`mt-2 grid gap-x-4 gap-y-2 ${compact ? '' : 'sm:grid-cols-2'}`}>
-          {d.stories.map((x) => (
-            <section key={x.title} className="text-[11px] leading-relaxed">
-              <h4 className="font-semibold text-[#e9dfc4]">{x.title}</h4>
-              <p className="text-ops-dim">{x.text}</p>
-            </section>
-          ))}
-        </div>
+      {d.stories.length > 0 && !fold && stories}
+      {d.stories.length > 0 && fold && (
+        <details className="mt-1 text-[11px]">
+          <summary className="cursor-pointer text-ops-dim hover:text-white">Read the full report ({d.stories.length} stories) ▸</summary>
+          {stories}
+        </details>
       )}
     </article>
   );

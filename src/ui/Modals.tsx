@@ -209,7 +209,7 @@ export function AssetModal({ s }: { s: SimState }) {
             <button className="btn" onClick={() => dispatch({ type: 'cancelMaintenance', assetId: a.id })}>Cancel maintenance</button>
           ) : (
             <button data-coach="maintain" className="btn btn-primary" disabled={a.status === 'transit'} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>
-              ⛭ Schedule maintenance ({cost} cr, {SIM_CONFIG.maintenanceHours[a.domain]}h, 1 crew)
+              ⛭ Schedule maintenance ({cost} cr, 2 personnel, {SIM_CONFIG.maintenanceHours[a.domain]}h, 1 crew)
             </button>
           )}
           {mobile && (
@@ -366,7 +366,7 @@ export function BriefingModal({ s }: { s: SimState }) {
           <div className="text-ops-dim">Duration {phase.hours}h · starts T+{s.hour}h{phase.grant ? ` · funding release +${phase.grant} credits` : ''}</div>
         </div>
         <CarriedOver s={s} />
-        {s.phaseIndex > 0 && <DispatchCard s={s} phaseIndex={s.phaseIndex - 1} />}
+        {s.phaseIndex > 0 && <DispatchCard s={s} phaseIndex={s.phaseIndex - 1} fold />}
         {s.settings.mode === 'campaign' && (
           <div className="rounded border border-ops-line px-3 py-2 text-[11px]">
             <span className="label mr-2">Your opponent</span>

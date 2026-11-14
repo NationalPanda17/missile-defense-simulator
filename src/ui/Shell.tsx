@@ -5,7 +5,7 @@ import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
 import { DOMAINS, SIM_CONFIG, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
-import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
+import { SEVERITY_WORD, Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { ServerStatusChip } from './views/ServerPanels';
 
@@ -251,7 +251,7 @@ export function RightSidebar({ s }: { s: SimState }) {
               <li key={e.id}>
                 <button onClick={() => ui.openEvent(e.id)} className="w-full rounded border border-ops-line bg-ops-bg/50 p-2 text-left transition-colors hover:border-ops-cyan/50">
                   <div className="flex items-center gap-1.5">
-                    <Chip t={SEV_TONE[e.severity]}>{e.conflicting ? `S${e.reportedSeverity[0]}–${e.reportedSeverity[1]}` : `S${e.severity}`}</Chip>
+                    <Chip t={SEV_TONE[e.severity]}>{e.conflicting ? `${SEVERITY_WORD[e.reportedSeverity[0]]}–${SEVERITY_WORD[e.reportedSeverity[1]]}` : SEVERITY_WORD[e.severity]}</Chip>
                     <span className="truncate font-semibold text-white">{e.title}</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[10px] text-ops-dim">
