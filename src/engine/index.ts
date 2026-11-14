@@ -22,3 +22,4 @@ export * from './adaptation';
 export * from './story';
 export * from './plan';
 export * from './range';
+export * from './raid';

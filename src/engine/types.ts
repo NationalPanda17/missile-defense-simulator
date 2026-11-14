@@ -306,14 +306,50 @@ export interface ScenarioSettings {
   /** Campaign: a written scenario with its own story (see STORIES). */
   story?: string;
   /** A raid written by a player: the waves a custom battle sends, and where. */
-  raid?: { region: RegionId; waves: RaidWave[]; attacker?: boolean };
+  raid?: Raid;
   /** Campaign: the enemy commander faced (absent: the Planner, the campaign as designed). See ENEMY_STYLES. */
   enemy?: EnemyStyle;
   challenge?: { score: number; grade: string }; // played from a challenge link: the challenger's score (-1 if none)
 }
 
-/** One wave of a player-written raid. Hours are from the start of the battle. */
-export interface RaidWave { atHour: number; axis: ThreatAxis; tracks: Partial<Record<ThreatClass, number>> }
+/** One wave of a player-written raid. Hours are from the start of the battle. Everything optional is an attack
+ *  option the author paid points for (see TACTICAL_CONFIG.raid and raid.ts). */
+export interface RaidWave {
+  atHour: number;
+  axis: ThreatAxis;
+  tracks: Partial<Record<ThreatClass, number>>;
+  /** Half the wave comes from this second side. */
+  axis2?: ThreatAxis;
+  /** The whole wave goes for this one site (absent: spread over the region's sites by their value). */
+  target?: string;
+  /** Some of its missiles and fast drones home on the defender's radars. */
+  hunt?: boolean;
+  /** How it flies in: straight, turning in flight, or along the valleys. */
+  route?: 'direct' | 'turn' | 'valley';
+  /** False tracks sent with it. */
+  decoys?: number;
+  /** Kept out of the defender's forecast. */
+  hidden?: boolean;
+}
+
+export type RaidSize = 'skirmish' | 'standard' | 'major';
+
+/** A raid written by a player. */
+export interface Raid {
+  region: RegionId;
+  waves: RaidWave[];
+  /** The author is watching the computer defend it. */
+  attacker?: boolean;
+  /** The map and weather it was written for (absent in older raid codes: a new map each time). */
+  seed?: number;
+  /** How big a fight it is: the attacker's points and the defender's credits. Absent means 'standard'. */
+  size?: RaidSize;
+  /** A radar band jammed for the whole battle. */
+  jam?: string;
+  /** Shown to the defender in the briefing. */
+  name?: string;
+  note?: string;
+}
 
 export type CommandLevel = 'recruit' | 'officer' | 'commander';
 export type EnemyStyle = 'planner' | 'swarm' | 'fox' | 'hunter';
@@ -428,6 +464,10 @@ export interface ThreatWave {
   axis2?: ThreatAxis;
   /** Missiles timed to arrive just behind a drone wave sent to empty the magazines. */
   follow?: boolean;
+  /** Player-written raids: the number of false tracks sent with it (absent: worked out from the region's awareness). */
+  decoys?: number;
+  /** Player-written raids: the share of its missiles that go for the defender's radars. */
+  hunt?: number;
   tracks: Track[];
   resolved: boolean;
 }

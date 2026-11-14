@@ -398,9 +398,25 @@ function Start() {
         <><B>Campaign.</B> Four phases across seven regions. Choose an open campaign or a written one: {Object.values(STORIES).map((x) => x.name).join(' or ')}.</>,
         <><B>Quick Battle.</B> One region, three waves.</>,
         <><B>Endless Defense.</B> One region, a bigger wave every time, a briefing between each. Your score is the waves survived.</>,
-        <><B>Raid Designer.</B> Play the attacker: write a raid and hand it to a friend (by passing the keyboard or sending a code), or send it against the computer’s defense.</>,
+        <><B>Raid Designer.</B> Play the attacker: write a raid on the map it will be fought on, rehearse it, then send it against the computer’s defense or hand it to a friend (by passing the keyboard or sending a code). See “Writing a raid” below.</>,
         <><B>Crisis</B> and <B>Sandbox.</B> Network management without, or with, the fighting.</>,
       ]} />
+      <H>Writing a raid</H>
+      <P>In the Raid Designer you are the attacker. You have a number of <B>attack points</B> set by the size of the fight ({Object.values(TACTICAL_CONFIG.raid.sizes).map((z) => z.points).join(', ')}); the defender gets credits to match. A raid is up to {TACTICAL_CONFIG.raid.maxWaves} waves on one region. The defender’s score is the share of your raid’s damage they prevented, so a lower score is a better raid.</P>
+      <List items={[
+        <><B>Threats.</B> Each costs what it costs an attacker in the game: drones and rockets are cheap, ballistic missiles and gliders are dear. Many cheap threats empty magazines; a few dear ones need defenses the defender may not have bought.</>,
+        <><B>When.</B> The timeline shows the night and the storms of the day the raid is fought. In the dark, weapons aimed by eye hit less often. In a storm, short-wave radars see less far. Waves an hour apart arrive while launchers are still reloading.</>,
+        <><B>From where.</B> A wave comes from one side, or half from a second side (+{TACTICAL_CONFIG.raid.secondAxis} points), which splits the defender’s fire.</>,
+        <><B>At what.</B> A wave spreads over every site by its value, or goes for one site. One site is easier to overwhelm, but the rest of the region is untouched.</>,
+        <><B>Route.</B> Straight in is free. Turning in flight (+{TACTICAL_CONFIG.raid.turn}) brings drones and cruise missiles in from an angle the defender did not cover. Along the valleys (+{TACTICAL_CONFIG.raid.valley}) hides them from radars that are not in the valley, where the map has one.</>,
+        <><B>Hunt the radars</B> (+{TACTICAL_CONFIG.raid.hunt}). Some of the wave’s missiles go for the defender’s radars instead of the sites. A blinded defense stops less of the next wave.</>,
+        <><B>Decoys</B> ({TACTICAL_CONFIG.raid.decoy} point each). False tracks that draw fire. A defender with a sharp radar (C, X or Ku band) ignores most of them.</>,
+        <><B>Keep a wave out of the forecast</B> (+{Math.round(TACTICAL_CONFIG.raid.hidden * 100)}% of its threats). The defender places a defense from the forecast, and this wave is not in it: they learn of it only from the launch warning a few hours ahead. At least one wave must be forecast.</>,
+        <><B>Jam a radar band</B> (+{TACTICAL_CONFIG.raid.jam}). Every radar on that band sees {Math.round(JAMMING.range * 100)}% as far all battle and spots fewer decoys. The defender is told which band, so it works best against a defense that has no time or credits to change radars.</>,
+        <><B>Rehearse.</B> Flies the raid many times against the computer’s defense without starting a battle, and shows which threats it stops least. Change the raid and try again.</>,
+      ]} />
+      <P><B>Playing with a friend.</B> “Hand to a defender” starts the battle on their briefing: pass the keyboard. Or copy the raid code and send it; they paste it and press “Defend this code”, so they never see what is in it. Their debrief has a button that copies the result to send back. A raid code carries its own map and weather, so both players fight on the same ground.</P>
+      <P><B>Defending a raid.</B> The forecast check shows only the waves the author did not pay to hide. Keep credits back for resupply, cover more than one side, and do not rely on a single radar band.</P>
       <H>How to do well</H>
       <List items={[
         'Defend the regions the briefing forecasts, starting with the sites it says the attack is aimed at.',

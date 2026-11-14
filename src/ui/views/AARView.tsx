@@ -3,6 +3,7 @@ import {
   DOMAINS, EQUIPMENT_MAP, adaptiveEnemy, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type GameEvent, type ScoreKey, type SimState,
 } from '../../engine';
+import { RaidDebrief } from '../RaidDesigner';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, SEVERITY_WORD, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 import { MissionReplay } from './MissionReplay';
@@ -67,7 +68,7 @@ export function AARView({ s }: { s: SimState }) {
           {drill ? (
             // A drill is scored on its own goal; the management score below is context, not the result.
             <div className="text-center">
-              <div className="label">Drill score</div>
+              <div className="label">{s.settings.raid ? 'Defense score' : 'Drill score'}</div>
               <div className="font-sans text-6xl font-bold leading-none text-ops-cyan">{drillScore}</div>
               <div className="text-2xl text-ops-amber" aria-label={`${drillStars} of 3 stars`}>{'★'.repeat(drillStars)}<span className="text-ops-line">{'★'.repeat(3 - drillStars)}</span></div>
               <div className="mt-1 max-w-[12rem] text-[10px] text-ops-dim">{drill.goal} Management score: {score.total.toFixed(1)}.</div>
@@ -98,6 +99,7 @@ export function AARView({ s }: { s: SimState }) {
         {!final && <p className="mt-2 text-[10px] text-ops-dim">Interim report — the scenario is still running. A final report is produced when the last phase ends.</p>}
       </Panel>
 
+      {s.settings.raid && <Panel className="xl:col-span-3" title="The raid, from the attacker’s side"><RaidDebrief s={s} score={drillScore} /></Panel>}
       {s.phases.some((_, i) => i < s.phaseIndex || final) && s.settings.mode !== 'training' && (
         <Panel className="xl:col-span-3" title="In the news" bodyClass="p-3 grid gap-3 lg:grid-cols-2">
           {s.phases.map((p, i) => <DispatchCard key={p.id} s={s} phaseIndex={i} compact />)}

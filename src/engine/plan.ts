@@ -3,7 +3,11 @@
 import { TACTICAL_CONFIG } from './config';
 import { EQUIPMENT_MAP, equipmentCost } from './equipment';
 import { forecastTargets, inCity, placementError, previewDefense, spotNear } from './tactical';
-import type { RegionId, SimState, ThreatClass } from './types';
+import { execute } from './actions';
+import { raidSettings } from './training';
+import { createInitialState, defaultSettings } from './world';
+import type { DefensePreview } from './tactical';
+import type { Raid, RegionId, SimState, ThreatClass } from './types';
 
 export interface Placement { equipmentId: string; x: number; y: number; cost: number; why: string }
 
@@ -62,4 +66,22 @@ export function proposeDefense(s: SimState, region: RegionId, budget: number): P
     crew -= 1;
   }
   return out;
+}
+
+/** Credits the computer keeps back for resupply when it defends a raid. */
+const RAID_RESERVE = 150;
+
+/** The defense the computer builds against a player-written raid: from the forecast alone, as a player would. */
+export const computerDefense = (s: SimState, region: RegionId): Placement[] => proposeDefense(s, region, s.credits - RAID_RESERVE);
+
+/**
+ * A rehearsal for a raid's author: the raid is flown many times against the computer's defense on the raid's own
+ * map, without starting a battle. The estimate counts every wave, including those kept out of the forecast.
+ */
+export function rehearseRaid(raid: Raid, runs = 30): { preview: DefensePreview; systems: number } | null {
+  const s = createInitialState(raidSettings(raid, defaultSettings('training')));
+  const plan = computerDefense(s, raid.region);
+  for (const p of plan) execute(s, { type: 'deploy', equipmentId: p.equipmentId, region: raid.region, x: p.x, y: p.y });
+  const preview = previewDefense(s, raid.region, runs, true);
+  return preview ? { preview, systems: plan.length } : null;
 }

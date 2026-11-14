@@ -1,5 +1,5 @@
 // What happened to every threat in a wave, and why: shared by the after-action review and Mission Replay.
-import { THREAT_LABELS, leakText, targetName, unitName, whyEntries, type SimState, type ThreatWave } from '../../engine';
+import { THREAT_LABELS, jamIn, leakText, targetName, unitName, whyEntries, type SimState, type ThreatWave } from '../../engine';
 
 export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
   const t = s.tactical!;
@@ -24,7 +24,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
     }
   }
   const c = wave.conditions;
-  const jam = t.enemy?.find((p) => p.phaseIndex === wave.phaseIndex)?.jam;
+  const jam = jamIn(s, wave.phaseIndex);
   return (
     <div className="space-y-2 text-[11px]">
       {c && (c.night || c.storm) && (

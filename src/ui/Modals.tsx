@@ -14,7 +14,7 @@ import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
 import { LANGS, lang, setLang, tr, useLang, type Lang } from './i18n';
-import { RaidDesigner } from './Extras';
+import { RaidDesigner } from './RaidDesigner';
 import { Term } from './Term';
 import { MainMenuButton } from './Shell';
 import { loadMedals, subscribeMedals } from './medals';
