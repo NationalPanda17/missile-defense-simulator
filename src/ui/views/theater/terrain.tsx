@@ -85,7 +85,7 @@ export function TerrainLayer({ terrain, sites, w, h }: { terrain: TheaterTerrain
       {/* valleys: corridors low fliers use to come in unseen */}
       {(terrain.valleys ?? []).map((v, i) => (
         <g key={`valley${i}`}>
-          <line x1={v.a[0]} y1={v.a[1]} x2={v.b[0]} y2={v.b[1]} stroke="#1c3324" strokeWidth={v.w * 2} strokeLinecap="round" strokeOpacity={0.9} />
+          <line x1={v.a[0]} y1={v.a[1]} x2={v.b[0]} y2={v.b[1]} stroke="#1c3324" strokeWidth={v.w} strokeLinecap="round" strokeOpacity={0.6} />
           <line x1={v.a[0]} y1={v.a[1]} x2={v.b[0]} y2={v.b[1]} stroke="#7fb58a" strokeOpacity={0.5} strokeWidth={1.2} strokeDasharray="10 6" />
         </g>
       ))}

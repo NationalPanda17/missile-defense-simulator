@@ -656,7 +656,7 @@ export const QUICK_BATTLE: TrainingLesson = {
   makeWaves: (seed) => quickBattle(seed).waves,
   drill: { goal: 'Prevent as much threat damage as you can.', score: defenseScore, stars: [55, 75, 90] },
   steps: [
-    { id: 'brief', title: 'Build your defense',
+    { id: 'brief', title: 'Build your defense', check: running,
       text: 'The forecast names the region and the red arrow on its map shows where the first waves come from. Open the Forecast check line above the map to see what is coming, pick systems from the catalog and click the map to place them. Keep some credits back to resupply between waves.',
       hint: 'Guns (Skynex) on the sites for drones, a missile battery (IRIS-T SLM, NASAMS) beside the most-threatened site for cruise missiles, Iron Dome for rockets, and something with a high ceiling (Patriot, David’s Sling) if ballistic missiles are forecast. Press ? for the field guide.' },
     { id: 'begin', target: ['begin'], title: 'Begin', text: 'Press “Assume command — begin phase” when your defense is ready. You cannot buy more once the battle starts.', check: running },
@@ -701,7 +701,7 @@ export const ENDLESS: TrainingLesson = {
   makeWaves: (seed, phaseIndex) => [endlessWave(seed, phaseIndex)],
   drill: { goal: 'Survive as many waves as you can.', score: (s) => Math.max(0, wavesSurvived(s)), stars: [5, 10, 15] },
   steps: [
-    { id: 'brief', title: 'Hold the region',
+    { id: 'brief', title: 'Hold the region', check: running,
       text: 'Each wave gets a briefing first. The forecast check shows what is coming; spend what you have, then begin. A new briefing opens after every wave. The run ends when half the region’s site value is gone. Your score is the number of waves survived.',
       hint: 'Cheap guns go a long way early. Turn on “Auto-resupply here” in the Tactical Theater, send repair crews to damaged sites, and save for a high-ceiling system before wave 6, when ballistic missiles arrive.' },
     { id: 'finish', wait: true, title: 'Keep going', text: 'Wave after wave. Any speed is fine.', check: (c) => c.s.status === 'complete' },
@@ -727,7 +727,7 @@ export const RAID: TrainingLesson = {
   makeWaves: (_seed, _phase, settings) => raidWaves(settings),
   drill: { goal: 'Prevent as much of the raid’s damage as you can.', score: defenseScore, stars: [55, 75, 90] },
   steps: [
-    { id: 'brief', title: 'Read the raid, build the defense', text: 'Someone designed this attack to get through. Open the forecast check to see what is coming and from where, place your defenses, and keep credits back for resupply.' },
+    { id: 'brief', title: 'The raid', check: running, text: 'Defending: someone designed this attack to get through. Open the forecast check to see what is coming and from where, place your defenses, and keep credits back for resupply. Attacking: the computer has built its defense and the raid is on its way.' },
     { id: 'begin', target: ['begin'], title: 'Begin', text: 'Press “Assume command — begin phase” when ready.', check: running },
     { id: 'finish', wait: true, title: 'Fight it out', text: 'Watch it in the Tactical Theater (key X). Raise an alert when a launch warning appears.', check: (c) => c.s.status === 'complete' },
     { id: 'result', title: 'Result', view: 'aar', text: 'The defense score is below: the share of the raid’s damage that was prevented. For the attacker, lower is better.' },

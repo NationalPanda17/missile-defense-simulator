@@ -87,7 +87,7 @@ export function WaveCard({ s }: { s: SimState }) {
   }, [fresh?.id]);
   useEffect(() => { setCard(null); }, [s.campaignId]);
   const w = card ? t?.waves.find((x) => x.id === card) : undefined;
-  if (!t || !w || store.pausePrompt || s.status === 'briefing') return null;
+  if (!t || !w || store.pausePrompt || s.status !== 'running') return null; // not over a briefing or the final report
   const real = w.tracks.filter((x) => !x.decoy);
   if (!real.length) return null;
   const stopped = real.filter((x) => x.outcome === 'stopped').length;
