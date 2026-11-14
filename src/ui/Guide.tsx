@@ -52,7 +52,7 @@ export function Meter({ value, good = true }: { value: number; good?: boolean })
 
 // ── Threats ──────────────────────────────────────────────────────────────
 
-const THREAT_ABBR: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
+const THREAT_ABBR: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM', hypersonic: 'HG' };
 const THREAT_WHAT: Record<ThreatClass, { what: string; stop: string }> = {
   slowDrone: {
     what: 'A small propeller aircraft with a warhead. Slow and cheap, so they come in swarms. Flies low.',
@@ -73,6 +73,10 @@ const THREAT_WHAT: Record<ThreatClass, { what: string; stop: string }> = {
   ballistic: {
     what: 'A large missile that climbs high above the atmosphere and falls on its target at enormous speed. The most damaging threat.',
     stop: 'Only systems with a high ceiling: Patriot PAC-3, SAMP/T, David’s Sling, Arrow, THAAD and the Aegis ships.',
+  },
+  hypersonic: {
+    what: 'A glider released at the edge of space that skims the upper atmosphere at enormous speed and always swerves on the way in. Rare, appears late in a campaign, and does the most damage of all.',
+    stop: 'Very little: THAAD, the Aegis SM-6 destroyer, Patriot PAC-3, SAMP/T and Arrow 2 each have a modest chance. Layer two of them over what you cannot afford to lose.',
   },
 };
 

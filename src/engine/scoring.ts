@@ -1,6 +1,7 @@
 // Scoring, objective evaluation and after-action analysis.
 import { DECOY_EFFICIENCY_PENALTY, PROTECTION_SCORE_WEIGHT, SCORE_WEIGHTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { clamp } from './rng';
+import { trackValue } from './tactical';
 import type { ObjectiveResult, PhaseConfig, RegionId, SimState } from './types';
 import { REGION_IDS } from './types';
 
@@ -90,14 +91,13 @@ export interface ScoreBreakdown {
 export function protectionScore(s: SimState): number | null {
   const t = s.tactical;
   if (!t?.enabled) return null;
-  const sites = new Map(t.sites.map((x) => [x.id, x]));
   let potential = 0;
   let prevented = 0;
   for (const w of t.waves) {
     if (!w.resolved) continue;
     for (const tr of w.tracks) {
       if (tr.decoy) continue;
-      const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
+      const v = trackValue(t, tr);
       potential += v;
       if (tr.outcome === 'stopped') prevented += v;
     }

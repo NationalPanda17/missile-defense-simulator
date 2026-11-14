@@ -20,7 +20,7 @@ export const TACTICAL_LIMITS = {
 
 export interface TacticalPreset { id: string; name: string; description: string; settings: TacticalSettings }
 
-const unitMix = (): Record<ThreatClass, number> => ({ slowDrone: 1, fastDrone: 1, cruise: 1, rocket: 1, ballistic: 1 });
+const unitMix = (): Record<ThreatClass, number> => ({ slowDrone: 1, fastDrone: 1, cruise: 1, rocket: 1, ballistic: 1, hypersonic: 1 });
 
 /** Standard reproduces the campaign exactly as it plays with no tactical settings. */
 export function standardTactical(): TacticalSettings {
@@ -38,17 +38,17 @@ export const TACTICAL_PRESETS: TacticalPreset[] = [
   {
     id: 'coastal-saturation', name: 'Coastal Saturation',
     description: 'Big swarms of cheap drones and heavy decoy traffic. Counter-drone systems and good sensors pay off; expensive interceptors run dry.',
-    settings: { ...standardTactical(), preset: 'coastal-saturation', waveSize: 1.8, mix: { slowDrone: 2.2, fastDrone: 1.8, cruise: 0.6, rocket: 0.5, ballistic: 0.2 }, decoys: 2, budget: 150 },
+    settings: { ...standardTactical(), preset: 'coastal-saturation', waveSize: 1.8, mix: { slowDrone: 2.2, fastDrone: 1.8, cruise: 0.6, rocket: 0.5, ballistic: 0.2, hypersonic: 0.3 }, decoys: 2, budget: 150 },
   },
   {
     id: 'long-night', name: 'Long Night',
     description: 'Twice as many waves, cruise-missile heavy, spread over three forecast regions. Magazines and resupply decide it.',
-    settings: { ...standardTactical(), preset: 'long-night', waveCount: 2, waveSize: 0.8, mix: { slowDrone: 0.8, fastDrone: 1, cruise: 2.5, rocket: 0.6, ballistic: 0.6 }, forecastRegions: 3, budget: 300 },
+    settings: { ...standardTactical(), preset: 'long-night', waveCount: 2, waveSize: 0.8, mix: { slowDrone: 0.8, fastDrone: 1, cruise: 2.5, rocket: 0.6, ballistic: 0.6, hypersonic: 0.6 }, forecastRegions: 3, budget: 300 },
   },
   {
     id: 'high-arc', name: 'High Arc',
     description: 'Fewer, heavier waves with many ballistic missiles. Upper-tier and long-range systems carry the defense.',
-    settings: { ...standardTactical(), preset: 'high-arc', waveCount: 0.75, waveSize: 1.4, mix: { slowDrone: 0.5, fastDrone: 0.5, cruise: 1, rocket: 1.2, ballistic: 3 }, budget: 400 },
+    settings: { ...standardTactical(), preset: 'high-arc', waveCount: 0.75, waveSize: 1.4, mix: { slowDrone: 0.5, fastDrone: 0.5, cruise: 1, rocket: 1.2, ballistic: 3, hypersonic: 2 }, budget: 400 },
   },
   {
     id: 'thin-budget', name: 'Thin Budget',

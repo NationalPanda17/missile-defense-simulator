@@ -8,13 +8,14 @@ import { TACTICAL_CONFIG } from './config';
 import type { Domain, ThreatClass } from './types';
 
 export type { ThreatClass } from './types';
-export const THREAT_CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic'];
+export const THREAT_CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic', 'hypersonic'];
 export const THREAT_LABELS: Record<ThreatClass, string> = {
   slowDrone: 'Slow drone',
   fastDrone: 'Fast drone',
   cruise: 'Cruise missile',
   rocket: 'Rocket',
   ballistic: 'Ballistic missile',
+  hypersonic: 'Hypersonic glider',
 };
 
 export type DefenseLayer = 'detection' | 'pointDefense' | 'directedEnergy' | 'shortMedium' | 'long' | 'upper';
@@ -107,9 +108,10 @@ export interface EquipmentSpec {
 export interface Source { name: string; url?: string }
 
 /** Kill rates for sensors: they engage nothing. */
-const NONE: Record<ThreatClass, number> = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0 };
-const kr = (slowDrone: number, fastDrone: number, cruise: number, rocket: number, ballistic: number) =>
-  ({ slowDrone, fastDrone, cruise, rocket, ballistic });
+const NONE: Record<ThreatClass, number> = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0, hypersonic: 0 };
+/** Kill rates by class. The last, against hypersonic gliders, is a game value: only a few systems have any chance. */
+const kr = (slowDrone: number, fastDrone: number, cruise: number, rocket: number, ballistic: number, hypersonic = 0) =>
+  ({ slowDrone, fastDrone, cruise, rocket, ballistic, hypersonic });
 
 export const EQUIPMENT: EquipmentSpec[] = [
   // ── DETECTION: GROUND ────────────────────────────────────────────────
@@ -310,14 +312,14 @@ export const EQUIPMENT: EquipmentSpec[] = [
   {
     id: 'patriot-pac3', name: 'Patriot PAC-3 MSE', origin: 'United States', domain: 'ground', layer: 'long',
     description: 'Hit-to-kill interceptors against ballistic missiles, cruise missiles and aircraft.',
-    rangeKm: 60, altitudeKm: 30, unitCostUsdM: 1100, killRate: kr(0.7, 0.8, 0.85, 0.3, 0.75), reactionSec: 9,
+    rangeKm: 60, altitudeKm: 30, unitCostUsdM: 1100, killRate: kr(0.7, 0.8, 0.85, 0.3, 0.75, 0.35), reactionSec: 9,
     radar: { name: 'AN/MPQ-65', band: 'C', rangeKm: 150 }, magazine: 48, roundCr: 10, reloadHours: 6,
     sources: [{ name: 'Lockheed Martin, PAC-3 MSE product card', url: 'https://www.lockheedmartin.com/content/dam/lockheed-martin/mfc/pc/meads/mfc-pac-3-mse-pc.pdf' }],
   },
   {
     id: 'samp-t-ng', name: 'SAMP/T NG', origin: 'France / Italy', domain: 'ground', layer: 'long',
     description: 'Aster 30 B1NT interceptors with a 360° AESA radar; covers air and ballistic threats.',
-    rangeKm: 150, altitudeKm: 25, unitCostUsdM: 550, killRate: kr(0.7, 0.8, 0.85, 0.2, 0.7), reactionSec: 8,
+    rangeKm: 150, altitudeKm: 25, unitCostUsdM: 550, killRate: kr(0.7, 0.8, 0.85, 0.2, 0.7, 0.3), reactionSec: 8,
     radar: { name: 'Ground Fire 300', band: 'S', rangeKm: 400 }, magazine: 32, roundCr: 8, reloadHours: 6,
     sources: [{ name: 'Eurosam, Aster 30 B1NT long-range firing press release (2025)', url: 'https://eurosam.com/wp-content/uploads/2025/07/2025-07-31_Press_Release-Aster_30_B1NT_long_range_firing-VFinale.pdf' }],
   },
@@ -331,7 +333,7 @@ export const EQUIPMENT: EquipmentSpec[] = [
   {
     id: 'arrow-2', name: 'Arrow 2', origin: 'Israel / United States', domain: 'ground', layer: 'long',
     description: 'Upper-atmosphere interceptor against ballistic missiles, cued by the Green Pine radar.',
-    rangeKm: 150, altitudeKm: 50, unitCostUsdM: 500, killRate: kr(0, 0, 0, 0, 0.8), reactionSec: 10,
+    rangeKm: 150, altitudeKm: 50, unitCostUsdM: 500, killRate: kr(0, 0, 0, 0, 0.8, 0.3), reactionSec: 10,
     radar: { name: 'Green Pine', band: 'L', rangeKm: 500 }, magazine: 24, roundCr: 10, reloadHours: 8,
     sources: [{ name: 'Israel Aerospace Industries, Arrow weapon system information' }],
   },
@@ -340,7 +342,7 @@ export const EQUIPMENT: EquipmentSpec[] = [
   {
     id: 'thaad', name: 'THAAD', origin: 'United States', domain: 'ground', layer: 'upper',
     description: 'Terminal High Altitude Area Defense: hit-to-kill interceptors against ballistic missiles only.',
-    rangeKm: 200, altitudeKm: 150, unitCostUsdM: 1100, killRate: kr(0, 0, 0, 0, 0.9), reactionSec: 10,
+    rangeKm: 200, altitudeKm: 150, unitCostUsdM: 1100, killRate: kr(0, 0, 0, 0, 0.9, 0.45), reactionSec: 10,
     radar: { name: 'AN/TPY-2', band: 'X', rangeKm: 1000 }, magazine: 48, roundCr: 14, reloadHours: 8,
     sources: [{ name: 'Lockheed Martin, THAAD product information' }],
   },
@@ -356,7 +358,7 @@ export const EQUIPMENT: EquipmentSpec[] = [
   {
     id: 'aegis-sm6', name: 'Aegis destroyer (SM-2 / SM-6)', origin: 'United States', domain: 'sea', layer: 'long',
     description: 'Guided-missile destroyer defending a wide area against aircraft and cruise missiles.',
-    rangeKm: 240, altitudeKm: 30, unitCostUsdM: 2200, killRate: kr(0.7, 0.85, 0.9, 0.2, 0.6), reactionSec: 8,
+    rangeKm: 240, altitudeKm: 30, unitCostUsdM: 2200, killRate: kr(0.7, 0.85, 0.9, 0.2, 0.6, 0.5), reactionSec: 8,
     radar: { name: 'AN/SPY-1D', band: 'S', rangeKm: 320 }, magazine: 40, roundCr: 12, reloadHours: 24,
     sources: [{ name: 'RTX (Raytheon), Standard Missile-6 product information' }],
   },

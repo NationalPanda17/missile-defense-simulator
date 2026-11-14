@@ -351,6 +351,7 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
       break;
   }
   const inv = INVESTMENTS.find((i) => i.id === id);
+  if (inv?.once && !s.research?.includes(id)) s.research = [...(s.research ?? []), id];
   log(s, 'success', `Project complete: ${label ?? inv?.label}.`, region);
 }
 

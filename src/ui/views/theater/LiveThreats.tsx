@@ -7,7 +7,7 @@ import { LINGER, trackPhase, waveVisible } from '../../threatTimeline';
 const { width: W, height: H } = TACTICAL_CONFIG.theaterKm;
 
 export const THREAT_COLOR: Record<ThreatClass, string> = {
-  slowDrone: '#f5b13d', fastDrone: '#fb923c', cruise: '#f2545b', rocket: '#e879f9', ballistic: '#ff4d6d',
+  slowDrone: '#f5b13d', fastDrone: '#fb923c', cruise: '#f2545b', rocket: '#e879f9', ballistic: '#ff4d6d', hypersonic: '#f0f9ff',
 };
 
 /** A threat glyph pointing along +x (rotate to heading). */
@@ -18,6 +18,7 @@ export function ThreatGlyph({ cls, color, decoy }: { cls: ThreatClass; color: st
     case 'fastDrone': return <path d="M6,0 L-4,-3.5 L-2,0 L-4,3.5 Z M-1,-5 L1,-5 L0,-1 Z M-1,5 L1,5 L0,1 Z" fill={color} opacity={op} stroke="#06111f" strokeWidth={0.8} />;
     case 'cruise': return <g opacity={op}><rect x={-6} y={-1.4} width={11} height={2.8} rx={1.4} fill={color} stroke="#06111f" strokeWidth={0.7} /><path d="M-1,-1.4 L-3,-4 M-1,1.4 L-3,4" stroke={color} strokeWidth={1.2} /></g>;
     case 'rocket': return <g opacity={op}><path d="M6,0 L-5,-1.6 L-5,1.6 Z" fill={color} stroke="#06111f" strokeWidth={0.6} /><path d="M-5,0 L-9,0" stroke="#fde68a" strokeWidth={1.5} /></g>;
+    case 'hypersonic': return <g opacity={op}><path d="M7,0 L-5,-4 L-2,0 L-5,4 Z" fill={color} stroke="#ff4d6d" strokeWidth={1} /><path d="M-5,0 L-11,0" stroke="#ff4d6d" strokeWidth={1.6} /></g>;
     case 'ballistic': return <g opacity={op}><circle r={3.2} fill={color} stroke="#fff" strokeWidth={0.8} /><circle r={6} fill="none" stroke={color} strokeOpacity={0.6} /></g>;
   }
 }

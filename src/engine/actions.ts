@@ -216,6 +216,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (s.projects.some((p) => p.investmentId === inv.id && p.region === cmd.region && p.domain === cmd.domain))
         return fail('An identical project is already underway.');
       if (inv.id === 'modernize' && s.modernization >= 30) return fail('Modernization is at maximum.');
+      if (inv.once && s.research?.includes(inv.id)) return fail('That research is already complete.');
       if (inv.id === 'rebuild' && cmd.region && !s.tactical?.sites.some((x) => x.region === cmd.region && x.integrity < 100)) return fail('No site in that region is damaged.');
       const err = canAfford(s, inv.credits, inv.personnel, 0);
       if (err) return fail(err);
@@ -312,7 +313,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       spend(s, cost, 0, 'maintenance');
       const missing = spec.magazine - d.stock;
       const hours = Math.max(1, Math.ceil(spec.reloadHours * (rounds / missing)));
-      d.reloadRemaining = rounds < missing ? hours : spec.reloadHours;
+      d.reloadRemaining = Math.max(1, Math.ceil((rounds < missing ? hours : spec.reloadHours) * (s.research?.includes('r_reload') ? TACTICAL_CONFIG.research.reload : 1)));
       d.reloadRounds = rounds;
       if (Number.isFinite(stockpileOf(s, d.equipmentId))) t.stockpile![d.equipmentId] -= rounds;
       const partial = rounds < missing ? ` (${rounds} of ${missing} rounds: the national stockpile is short)` : '';

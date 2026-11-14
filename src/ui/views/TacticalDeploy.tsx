@@ -13,14 +13,14 @@ import { LAYER_COLOR, MapLegend, TheaterMap, effectorsCovering } from './theater
 
 export { LAYER_COLOR, MapLegend, TheaterMap } from './theater/TheaterMap';
 
-export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
+export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM', hypersonic: 'HG' };
 
 /** Best single-shot kill rate per threat class for a threat aimed at this point (engine rules: altitude, horizon, terrain). */
 const bestKill = (s: SimState, region: RegionId, x: number, y: number) => coverageAt(s, region, x, y);
 
 export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   return (
-    <div className="grid grid-cols-5 gap-1">
+    <div className="grid grid-cols-6 gap-1">
       {THREAT_CLASSES.map((c) => (
         <div key={c} title={`${THREAT_LABELS[c]}: ${Math.round(k[c] * 100)}%`}>
           <div className="h-1.5 overflow-hidden rounded-sm bg-ops-line/70">
@@ -260,6 +260,7 @@ const CLASS_ADVICE: Record<ThreatClass, string> = {
   cruise: 'cruise missiles: fly very low; short/medium-range missiles (NASAMS, IRIS-T) with a radar nearby or airborne early warning',
   rocket: 'rockets: fast and short-lived; Iron Dome-class systems near the sites they target',
   ballistic: 'ballistic missiles: only upper-tier or long-range systems reach them (Patriot PAC-3, THAAD, Arrow, SM-3/SM-6)',
+  hypersonic: 'hypersonic gliders: very fast and they swerve; only THAAD, Aegis SM-6, Patriot PAC-3, SAMP/T and Arrow 2 have a chance, so stack two',
 };
 
 /** The phase's storms and nights in a region, in one line. */
