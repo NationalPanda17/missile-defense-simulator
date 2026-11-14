@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  DOCTRINES, ENEMY_STYLES, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  DOCTRINES, ENEMY_STYLES, resupplyCost, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { TONE_HEX } from '../components/ui';
@@ -331,9 +331,20 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   );
 }
 
+/** Bring the deploy map back on screen, for buttons further down the page that start a placement. */
+const showMap = () => window.requestAnimationFrame(() => document.querySelector('[data-coach="deploy-map"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+
 export function DeployPanel({ s }: { s: SimState }) {
   const t = s.tactical!;
-  const [region, setRegion] = useState<RegionId>(t.forecast[0] ?? 'NAM');
+  const ui = useUI();
+  // Open on the region last worked on (in this briefing or the last), else the first forecast region.
+  const [region, setRegionState] = useState<RegionId>(ui.deployRegion ?? t.forecast[0] ?? 'NAM');
+  const setRegion = (r: RegionId) => { setRegionState(r); ui.setDeployRegion(r); };
+  // The newest placement of this briefing that can still be taken back for a full refund.
+  const undoable = [...t.deployments].reverse().find((d) => {
+    const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
+    return s.status === 'briefing' && d.deployedAt === s.hour && !d.kills && (isUnlimited(sp) || d.stock >= sp.magazine);
+  });
   const [equipment, setEquipment] = useState<string | null>(null);
   const [selectedDep, setSelectedDep] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
@@ -393,7 +404,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         {fix && fixSpec && !fixDone && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1 text-[11px]">
             <span><span className="label mr-2 text-ops-amber">From the last review</span>{fix.text} <span className="text-ops-dim">The amber ring on the map marks the spot.</span></span>
-            <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); }}>Pick {fixSpec.name}</button>
+            <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); showMap(); }}>Pick {fixSpec.name}</button>
           </div>
         )}
         {s.settings.mode === 'campaign' && s.settings.enemy && s.settings.enemy !== 'planner' && (
@@ -403,7 +414,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         )}
       </div>
 
-      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
+      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); setPane('map'); showMap(); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
         <button className="order-5 self-start text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
       )}
@@ -435,6 +446,12 @@ export function DeployPanel({ s }: { s: SimState }) {
                 : spec ? <>Placing <b>{spec.name}</b> ({equipmentCost(spec)} cr): click a spot{spec.domain === 'sea' ? ' at sea' : spec.domain === 'air' ? '' : ' on land'}. The outline follows your pointer. Esc cancels.</>
                 : <><span className="md:hidden">Open Systems, pick one, then tap the map to place it.</span><span className="hidden md:inline">Pick a system from the catalog, then click the map to place it.</span></>}
             </span>
+            {undoable && !spec && !moving && (
+              <button className="btn shrink-0 px-2 py-0" title="Take back the last system placed in this briefing: every credit is returned"
+                onClick={() => { if (undoable.region !== region) setRegion(undoable.region); dispatch({ type: 'withdraw', deploymentId: undoable.id }); setSelectedDep(null); setMoving(false); }}>
+                ↶ Undo {EQUIPMENT_MAP.get(undoable.equipmentId)!.name}
+              </button>
+            )}
             {(spec || moving) && <button className="btn px-2 py-0" onClick={() => { setEquipment(null); setMoving(false); }}>Cancel</button>}
           </div>
           {/* Phones: the map is drawn at full size and scrolls sideways, so taps land precisely. */}
@@ -450,8 +467,8 @@ export function DeployPanel({ s }: { s: SimState }) {
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
-            <span className="tabular-nums text-white">
-              Credits <span className="text-ops-green">{Math.round(s.credits)}</span>
+            <span className="rounded border border-ops-green/50 bg-ops-green/10 px-2 py-0.5 tabular-nums text-white">
+              Credits <span className="font-sans text-[15px] font-bold text-ops-green">{Math.round(s.credits).toLocaleString('en-US')}</span>
               {spentNow > 0 && <span className="ml-2 text-ops-dim">spent this briefing {spentNow}</span>}
             </span>
           </div>
@@ -467,8 +484,10 @@ export function DeployPanel({ s }: { s: SimState }) {
               {isEffector(depSpec) && <div className="order-last basis-full"><DoctrinePicker d={dep} /></div>}
               <div className="flex gap-1">
                 <button className={`btn ${moving ? 'btn-active' : ''}`} onClick={() => { setMoving(!moving); setEquipment(null); }}>Move</button>
-                <button className="btn btn-danger" onClick={() => { dispatch({ type: 'withdraw', deploymentId: dep.id }); setSelectedDep(null); setMoving(false); }}>
-                  Withdraw (+{Math.floor(equipmentCost(depSpec) * TACTICAL_CONFIG.withdrawRefund)} cr)
+                <button className="btn btn-danger" onClick={() => { dispatch({ type: 'withdraw', deploymentId: dep.id }); setSelectedDep(null); setMoving(false); }}
+                  title={dep.deployedAt === s.hour && s.status === 'briefing' ? 'Placed in this briefing: taking it back returns every credit' : 'Half its price comes back, less the cost of any rounds it has fired'}>
+                  {dep.deployedAt === s.hour && s.status === 'briefing' && !dep.kills && (isUnlimited(depSpec) || dep.stock >= depSpec.magazine)
+                    ? `Take back (+${equipmentCost(depSpec)} cr)` : `Withdraw (+${Math.max(0, Math.floor(equipmentCost(depSpec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(dep))} cr)`}
                 </button>
               </div>
             </div>

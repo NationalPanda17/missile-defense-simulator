@@ -1,11 +1,11 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { QUICK_BATTLE_ID, SIM_CONFIG, lessonOf, saveGame } from '../engine';
+import { QUICK_BATTLE_ID, SIM_CONFIG, lessonOf, saveGame, urgentList } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { GuideModal } from './Guide';
 import { awardMedals } from './medals';
-import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
+import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, WaveCard, chooseSpeed, goToUrgent } from './Shell';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
 import { installA11y } from './a11y/settings';
@@ -120,6 +120,9 @@ function Root() {
       ui.setRegion(null);
       ui.openEvent(null);
       ui.openAsset(null);
+      ui.setTheaterRegion(null);
+      ui.setDeployRegion(null);
+      ui.setReplayWave(null);
     }
   });
 
@@ -153,6 +156,7 @@ function Root() {
       const k = e.key.toUpperCase();
       if (k === 'T') { if (dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours }).ok && !st.turnBased) store.toast('info', `Advanced ${SIM_CONFIG.turnHours} hours.`); return; }
       if (k === 'B') return ui.setBottomOpen(!ui.bottomOpen);
+      if (k === 'N') { const u = urgentList(st)[0]; if (u) goToUrgent(ui, u); else store.toast('info', 'Nothing needs you right now.'); return; }
       if (k === 'V') return sound.toggleMute();
       const nav = NAV.find((n) => n.key === k);
       if (nav) ui.setView(nav.id);
@@ -197,7 +201,7 @@ function Root() {
   })();
 
   return (
-    <div className="flex min-h-full flex-col lg:h-full">
+    <div className="app-root flex min-h-full flex-col lg:h-full">
       <TopBar s={s} />
       {s.status === 'complete' && (
         <div className="flex items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">
@@ -216,6 +220,7 @@ function Root() {
       <BottomPanel s={s} />
       {s.status === 'briefing' && <BriefingModal s={s} />}
       <PausePrompt s={s} docked={PLANNING_VIEWS.includes(ui.view)} />
+      <WaveCard s={s} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
       {ui.help && <GuideModal />}

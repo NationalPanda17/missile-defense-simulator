@@ -139,3 +139,6 @@ body.coach-on .modal-overlay { padding-bottom: calc(var(--coach-h, 0px) + 12px);
 /* Theater map themes (unlocked with medals): the same map through a different scope. */
 html.map-amber .theater-map { filter: sepia(0.75) saturate(1.5) hue-rotate(-12deg) brightness(1.02); }
 html.map-arctic .theater-map { filter: saturate(0.55) hue-rotate(150deg) brightness(1.12) contrast(1.05); }
+
+/* The coach never covers the game: the whole layout ends above it, so every panel stays readable and scrollable. */
+body.coach-on .app-root { padding-bottom: calc(var(--coach-h, 0px) + 12px); }

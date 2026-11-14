@@ -73,7 +73,7 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
   }
   const stopFor = (kind: PauseReason['kind'], on: boolean) => { if (pacing) store.setPacing({ ...pacing, [kind]: on }); };
   return (
-    <div className="fixed inset-x-2 top-16 z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:top-20" role="alertdialog" aria-label="Paused: your decision">
+    <div className="fixed inset-x-2 top-32 z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:top-28" role="alertdialog" aria-label="Paused: your decision">
       {/* Continue sits in the same place on every prompt; Enter or Space presses it. */}
       <div className="flex items-start justify-between gap-2">
         <div className="label pt-1 text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>

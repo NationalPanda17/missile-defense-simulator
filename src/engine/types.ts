@@ -145,6 +145,8 @@ export interface GameEvent {
   monitored?: boolean; // passive monitoring extension already used
   hiddenLive?: boolean; // dismissed but actually genuine — still develops out of sight
   global?: boolean; // affects all regions
+  /** A confirmation the player tasked came back and found it genuine: the only reports that are certain. */
+  confirmed?: boolean;
 }
 
 export interface Investment {
@@ -451,6 +453,8 @@ export interface TacticalState {
   enemy?: EnemyPlan[]; // Commander: the enemy's plan for each phase after the first
   stockpile?: Record<string, number>; // national reserve of interceptor rounds per equipment type (Officer/Commander)
   stats: TacticalStats;
+  /** Regions where systems are resupplied automatically after they fire (absent: none). */
+  autoResupply?: RegionId[];
 }
 
 export interface SimState {

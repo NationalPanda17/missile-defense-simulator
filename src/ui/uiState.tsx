@@ -1,5 +1,5 @@
 // UI-only state (navigation, selection, overlays). Kept separate from the simulation state.
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { useRef, createContext, useContext, useState, type ReactNode } from 'react';
 import type { RegionId } from '../engine';
 
 export type ViewId =
@@ -26,6 +26,11 @@ interface UIState {
   accountOpen: boolean; setAccountOpen: (b: boolean) => void;
   academyOpen: boolean; setAcademyOpen: (b: boolean) => void;
   theaterFocus: RegionId | null; setTheaterFocus: (r: RegionId | null) => void; // region the Tactical Theater should show next
+  /** Where the player last was, so coming back to a screen finds it as they left it. */
+  theaterRegion: RegionId | null; setTheaterRegion: (r: RegionId | null) => void;
+  deployRegion: RegionId | null; setDeployRegion: (r: RegionId | null) => void;
+  /** A wave the Tactical Theater should replay as soon as it opens. */
+  replayWave: string | null; setReplayWave: (id: string | null) => void;
 }
 
 const Ctx = createContext<UIState | null>(null);
@@ -49,7 +54,15 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [overlay, setOverlay] = useState<OverlayMetric>('readiness');
   const [tutorial, setTutorial] = useState(false);
   const [help, setHelpState] = useState<false | string>(false);
-  const setHelp = (b: boolean | string) => setHelpState(b === true ? 'start' : b);
+  const lastHelp = useRef('start');
+  // Opening the guide with no section named returns to the one last read.
+  const setHelp = (b: boolean | string) => {
+    if (typeof b === 'string') lastHelp.current = b;
+    setHelpState(b === true ? lastHelp.current : b);
+  };
+  const [theaterRegion, setTheaterRegion] = useState<RegionId | null>(null);
+  const [deployRegion, setDeployRegion] = useState<RegionId | null>(null);
+  const [replayWave, setReplayWave] = useState<string | null>(null);
   // The timeline drawer remembers being closed; on short screens it starts closed so the map keeps its height.
   const [bottomOpen, setBottomOpenState] = useState<boolean>(() => {
     try {
@@ -72,7 +85,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       return n;
     });
   return (
-    <Ctx.Provider value={{ view, setView, region, setRegion, eventId, openEvent, assetId, openAsset, layers, toggleLayer, overlay, setOverlay, tutorial, setTutorial, help, setHelp, bottomOpen, setBottomOpen, accountOpen, setAccountOpen, academyOpen, setAcademyOpen, theaterFocus, setTheaterFocus }}>
+    <Ctx.Provider value={{ view, setView, region, setRegion, eventId, openEvent, assetId, openAsset, layers, toggleLayer, overlay, setOverlay, tutorial, setTutorial, help, setHelp, bottomOpen, setBottomOpen, accountOpen, setAccountOpen, academyOpen, setAcademyOpen, theaterFocus, setTheaterFocus, theaterRegion, setTheaterRegion, deployRegion, setDeployRegion, replayWave, setReplayWave }}>
       {children}
     </Ctx.Provider>
   );

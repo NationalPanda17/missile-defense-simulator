@@ -1,6 +1,7 @@
 // The simulation tick. Advances one simulated hour. Pure state mutation — no UI dependencies.
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
 import { restockStockpiles } from './tactical';
+import { autoResupply } from './actions';
 import { siteDamageShare } from './sites';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, isLive, recomputeMetrics } from './metrics';
@@ -256,6 +257,7 @@ function tickEvents(s: SimState) {
         }
         if (e.isGenuine) {
           e.status = 'reported';
+          e.confirmed = true;
           e.confidence = Math.max(e.confidence, 92);
           e.conflicting = false;
           e.reportedSeverity = [e.severity, e.severity];
@@ -451,6 +453,7 @@ export function tick(s: SimState): void {
     log(s, ne.severity >= 3 ? 'crit' : 'warn', `NEW ${ne.id}: ${ne.title} — ${s.regions[ne.region].name}.`, ne.region, ne.id);
   }
   tickTactical(s);
+  autoResupply(s);
   tickProjects(s);
   tickEconomy(s);
   recomputeMetrics(s);

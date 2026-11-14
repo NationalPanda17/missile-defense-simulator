@@ -1,3 +1,4 @@
+import { Term } from '../Term';
 import { DOMAINS, INVESTMENTS, isActive, isKnown, canAfford, type RegionId, type SimState } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import GlobalMap from '../map/GlobalMap';
@@ -12,13 +13,13 @@ export function GlobalOps({ s }: { s: SimState }) {
     <div className="flex h-full min-h-[520px] flex-col gap-2">
       <div className="panel grid grid-cols-3 gap-3 px-3 py-2 sm:grid-cols-6 xl:grid-cols-9">
         <Stat label="Readiness" full="Global readiness" value={Math.round(m.globalReadiness)} unit="%" t={tone(m.globalReadiness)} />
-        <Stat label="Network" full="Network health" value={Math.round(m.network)} unit="%" t={tone(m.network)} />
-        <Stat label="Sensors" full="Sensor availability" value={Math.round(m.sensorAvailability)} unit="%" t={tone(m.sensorAvailability)} />
-        <Stat label="Info" full="Information quality" value={Math.round(m.infoQuality)} unit="%" t={tone(m.infoQuality)} />
-        <Stat label="Stability" full="Average stability" value={Math.round(m.stability)} t={tone(m.stability)} />
-        <Stat label="Infra" full="Infrastructure" value={Math.round(m.infrastructure)} t={tone(m.infrastructure)} />
+        <Stat label={<Term k="Network health">Network</Term>} full="Network health" value={Math.round(m.network)} unit="%" t={tone(m.network)} />
+        <Stat label={<Term k="Sensor availability">Sensors</Term>} full="Sensor availability" value={Math.round(m.sensorAvailability)} unit="%" t={tone(m.sensorAvailability)} />
+        <Stat label={<Term k="Information quality">Info</Term>} full="Information quality" value={Math.round(m.infoQuality)} unit="%" t={tone(m.infoQuality)} />
+        <Stat label={<Term k="Stability">Stability</Term>} full="Average stability" value={Math.round(m.stability)} t={tone(m.stability)} />
+        <Stat label={<Term k="Infrastructure">Infra</Term>} full="Infrastructure" value={Math.round(m.infrastructure)} t={tone(m.infrastructure)} />
         <Stat label="Reports" full="Open reports" value={activeKnown.length} t={activeKnown.length > 5 ? 'red' : activeKnown.length > 2 ? 'amber' : 'green'} />
-        <Stat label="Backlog" full="Maintenance backlog" value={m.maintenanceBacklog} t={m.maintenanceBacklog > 4 ? 'red' : m.maintenanceBacklog > 1 ? 'amber' : 'green'} />
+        <Stat label={<Term k="Backlog">Backlog</Term>} full="Maintenance backlog" value={m.maintenanceBacklog} t={m.maintenanceBacklog > 4 ? 'red' : m.maintenanceBacklog > 1 ? 'amber' : 'green'} />
         <Stat label="Staff" full="Personnel" value={Math.round(s.personnel)} sub={`crews ${s.crews - s.crewsBusy}/${s.crews} free`} />
       </div>
       <div className="relative flex min-h-0 flex-1 gap-2">

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import {
-  DOMAINS, REGION_IDS, SLOTS, autosaveSlot, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
+  DOMAINS, REGION_IDS, SLOTS, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
   formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
+import { MainMenuButton } from '../Shell';
 import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, REGION_SHORT, Stat, ConfirmDelete } from '../components/ui';
 import { useUI } from '../uiState';
 import { ServerSavesPanel, ServiceRecord } from './ServerPanels';
@@ -105,8 +106,9 @@ export function CampaignView({ s }: { s: SimState }) {
                 <button className="btn" onClick={() => setConfirmReset(false)}>Cancel</button>
               </>
             )}
-            <button className="btn" onClick={() => { store.newGame(defaultSettings(s.settings.mode === 'sandbox' ? 'campaign' : s.settings.mode)); ui.setView('global'); }}>New randomized run</button>
-            <button className="btn" onClick={() => { saveGame(s, autosaveSlot(s)); store.quit(); }}>Main menu</button>
+            <ConfirmDelete label="Start a new randomized run (this game is replaced)" text="New randomized run" confirmText="Replace this game?"
+              onConfirm={() => { store.newGame(defaultSettings(s.settings.mode === 'sandbox' ? 'campaign' : s.settings.mode)); ui.setView('global'); }} />
+            <MainMenuButton s={s} />
           </div>
         </Panel>
         <Panel title="Achievements" right={<span>{s.achievements.length}/{Object.keys(ACH).length}</span>}>
@@ -138,7 +140,9 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
           <label className="block flex-1"><div className="label mb-0.5">Scenario name</div><input className="input w-full" value={cfg.name} onChange={(e) => set('name', e.target.value)} /></label>
           <button className="btn" onClick={() => setCfg({ ...defaultSettings('crisis'), mode: 'sandbox', name: 'Sandbox: Crisis Preset', seed: cfg.seed, waves: true })} title="Crisis conditions, with threat waves">Crisis preset · waves on</button>
           <button className="btn" onClick={() => setCfg({ ...defaultSettings('sandbox'), seed: cfg.seed, waves: true })} title="Default conditions, with threat waves">Defaults · waves on</button>
-          <button className="btn btn-primary px-5 py-2" onClick={launch}>Launch simulation ▶</button>
+          {s && s.status !== 'complete'
+            ? <ConfirmDelete className="btn-primary px-5 py-2" label="Launch this scenario (the game in progress is replaced)" text="Launch simulation ▶" confirmText="Replace the game in progress?" onConfirm={launch} />
+            : <button className="btn btn-primary px-5 py-2" onClick={launch}>Launch simulation ▶</button>}
         </div>
         <label className="mt-2 flex items-center gap-2 text-[11px]">
           <input type="checkbox" checked={cfg.waves === true} onChange={(e) => set('waves', e.target.checked)} />

@@ -215,3 +215,49 @@ export function advise(s: SimState): Advice[] {
 
   return out.sort((a, b) => ORDER[a.level] - ORDER[b.level]);
 }
+
+/** The single most pressing thing for the player, and where to go for it. */
+export interface Urgent {
+  kind: 'wave' | 'report' | 'ammo' | 'damage' | 'service';
+  text: string;
+  region?: RegionId;
+  eventId?: string;
+  assetId?: string;
+}
+
+/**
+ * What needs the player now, most pressing first: a wave on its way, a report close to escalating, a system out of
+ * rounds, a system knocked out, an asset badly overdue. Empty when nothing does.
+ */
+export function urgentList(s: SimState): Urgent[] {
+  if (s.status !== 'running') return [];
+  const out: Urgent[] = [];
+  const name = (r: RegionId) => s.regions[r].name;
+  for (const x of incomingWaves(s)) {
+    out.push({ kind: 'wave', region: x.wave.region, text: x.launched ? `Wave in flight toward ${name(x.wave.region)}: impact in about ${Math.max(0, x.eta)}h.` : `Wave expected against ${name(x.wave.region)} in about ${Math.max(0, x.launchIn)}h.` });
+  }
+  const reports = s.events.filter((e) => isActive(e) && e.reportedAt <= s.hour && e.status === 'reported').sort((a, b) => a.deadline - b.deadline);
+  for (const e of reports) {
+    const left = e.deadline - s.hour;
+    if (left <= 8) out.push({ kind: 'report', eventId: e.id, region: e.region, text: `${e.title} (${name(e.region)}) escalates in ${Math.max(1, left)}h and nothing has been ordered.` });
+  }
+  const t = s.tactical?.enabled ? s.tactical : null;
+  if (t) {
+    const seen = new Set<RegionId>();
+    for (const d of t.deployments) {
+      const spec = EQUIPMENT_MAP.get(d.equipmentId);
+      if (!spec || isUnlimited(spec) || spec.magazine <= 0 || d.reloadRemaining !== undefined || d.transit) continue;
+      if (d.stock <= spec.magazine / 4 && resupplyRounds(s, d) > 0 && !seen.has(d.region)) {
+        seen.add(d.region);
+        out.push({ kind: 'ammo', region: d.region, text: `Systems in ${name(d.region)} are nearly out of rounds: resupply them.` });
+      }
+    }
+    for (const d of t.deployments) {
+      const a = s.assets.find((x) => x.id === d.assetId);
+      if (a && a.status === 'offline') out.push({ kind: 'damage', assetId: a.id, region: d.region, text: `${a.name} in ${name(d.region)} is out of action: send it for maintenance.` });
+    }
+  }
+  const worn = s.assets.filter((a) => a.role !== 'defense' && a.status !== 'maintenance' && a.status !== 'transit' && (a.status === 'offline' || a.hoursToService < -24)).sort((a, b) => a.condition - b.condition)[0];
+  if (worn) out.push({ kind: 'service', assetId: worn.id, text: `${worn.name} is ${worn.status === 'offline' ? 'offline' : 'long overdue for service'}: schedule maintenance.` });
+  return out;
+}

@@ -1,5 +1,5 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
-import { Suspense, lazy, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   COMMAND_LEVELS, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
@@ -13,6 +13,8 @@ import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
+import { Term } from './Term';
+import { MainMenuButton } from './Shell';
 import { loadMedals, subscribeMedals } from './medals';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
@@ -37,7 +39,7 @@ export function EventModal({ s }: { s: SimState }) {
   const e = s.events.find((x) => x.id === ui.eventId);
   if (!e) return null;
   const t = TEMPLATE_MAP.get(e.templateId)!;
-  const c = confidenceLabel(e.confidence);
+  const c = confidenceLabel(e.confidence, e.confirmed);
   const active = isActive(e);
   const r = s.regions[e.region];
   const known = e.reportedAt <= s.hour;
@@ -317,7 +319,10 @@ export function BriefingModal({ s }: { s: SimState }) {
   return (
     <Modal wide tall={step === 'deploy'} title={quick ? `QUICK BATTLE · ${quickBattle(s.settings.seed).name.toUpperCase()} · ${s.regions[quickBattle(s.settings.seed).region].name.toUpperCase()}` : `${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
-        <button className="btn mr-auto px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
+        <span className="mr-auto flex flex-wrap items-center gap-2">
+          <MainMenuButton s={s} className="px-3 py-2 text-[13px]" />
+          <button className="btn px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
+        </span>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
           if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
@@ -409,7 +414,7 @@ export function BriefingModal({ s }: { s: SimState }) {
           </div>
           <div className="space-y-3">
             <div><div className="label mb-1">Regional conditions</div>
-              <table className="table-ops w-full"><thead><tr><th>Region</th><th>Stab</th><th>Infra</th><th>Ready</th><th>Comms</th></tr></thead>
+              <table className="table-ops w-full"><thead><tr><th>Region</th><th><Term k="Stability">Stab</Term></th><th><Term k="Infrastructure">Infra</Term></th><th><Term k="Readiness">Ready</Term></th><th><Term k="Comms">Comms</Term></th></tr></thead>
                 <tbody>{REGION_IDS.map((id) => { const r = s.regions[id]; return (
                   <tr key={id}><td className="text-white">{r.name}</td>
                     {[r.stability, r.infrastructure, r.readiness, r.comms].map((v, i) => <td key={i} className={`tabular-nums ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</td>)}</tr>); })}
@@ -576,6 +581,8 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical, enemy: foe }, level));
   };
   const newcomer = isNewcomer(saves.length);
+  // The most recent unfinished game, for the Continue button.
+  const latest = [...saves].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())[0];
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
     { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours, network management only (no threat waves; the Scenario Editor can add them).', cta: 'Enter crisis' },
@@ -604,6 +611,15 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
               <button className="btn" onClick={() => ui.setHelp(true)}>Read how to play</button>
               <button className="btn btn-primary px-5 py-2" autoFocus onClick={() => { markWelcomed(); startLesson('basics'); ui.setView('global'); }}>Start Lesson 1 ▶</button>
             </div>
+          </div>
+        )}
+        {latest && (
+          <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-green/50 p-4" role="region" aria-label="Continue your last game">
+            <div className="min-w-0 max-w-2xl">
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-green">Continue</div>
+              <p className="mt-1 truncate text-[12px] leading-relaxed"><span className="text-white">{latest.name}</span> <span className="text-ops-dim">· {latest.phase} · T+{latest.hour}h · saved {new Date(latest.savedAt).toLocaleString()}</span></p>
+            </div>
+            <button className="btn btn-primary px-5 py-2" autoFocus={!newcomer} onClick={() => { const st = loadGame(latest.slot as Slot); if (st) store.load(st); else store.toast('err', 'That save could not be loaded.'); }}>Continue ▶</button>
           </div>
         )}
         <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-amber/50 p-4" role="region" aria-label="Quick Battle">
@@ -684,7 +700,7 @@ const STEPS: { title: string; view: ViewId; text: string }[] = [
   { title: 'Time control', view: 'global', text: 'The simulation runs in real time. Use Pause (Space), speeds 1x–8x (keys 1–4), or switch to Turn mode and advance six hours at a time with +6h (T). Briefings pause the simulation automatically.' },
   { title: 'The global map', view: 'global', text: 'Scroll to zoom, drag to pan, click a region to open its regional dashboard. Use “Layers & Legend” to toggle Space, Air, Sea, Ground, infrastructure, communications links, sensor coverage, events and history, and to change the region overlay metric.' },
   { title: 'Four domains', view: 'space', text: 'Each domain has its own dashboard with asset inventory, readiness, maintenance and history. Domains depend on each other: Space relays support Air and Sea; Ground control supports Space. Raw → effective readiness shows the dependency penalty.' },
-  { title: 'Information quality', view: 'intel', text: 'Reports arrive with a confidence level: UNVERIFIED, POSSIBLE, PROBABLE or CONFIRMED. In this scenario a report from South America is spurious. Open it and Task confirmation to expose it rather than wasting a response.' },
+  { title: 'Information quality', view: 'intel', text: 'Reports arrive with a confidence level: UNVERIFIED, POSSIBLE, PROBABLE or VERY LIKELY (CONFIRMED only once a confirmation you tasked comes back). In this scenario a report from South America is spurious. Open it and Task confirmation to expose it rather than wasting a response.' },
   { title: 'Responding to reports', view: 'global', text: 'Open the Sensor Calibration Drift event in Europe from the Active reports list. Compare responses by cost, duration and success chance, then Execute one. Monitor Only buys time once, but effects keep accumulating.' },
   { title: 'Resource management', view: 'logistics', text: 'Credits come from regional stability; upkeep is continuous. Crews limit simultaneous maintenance and crew-based responses. Schedule maintenance for overdue assets and consider long-term investments — they compound over a campaign.' },
   { title: 'Tactical defense', view: 'theater', text: 'In the campaign, each briefing forecasts the regions where threat waves will strike. Use the briefing’s Deploy defenses step to place real air defense systems on each region’s theater map, then watch waves play out here in the Tactical Theater (X). Keep systems maintained and resupplied: threat protection is a fifth of the campaign score.' },
@@ -696,8 +712,20 @@ export function TutorialPanel() {
   const ui = useUI();
   const [i, setI] = useState(0);
   const st = STEPS[i];
+  // Like the coach, the guide reserves its own space at the bottom of the screen instead of covering the game.
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    document.body.classList.add('coach-on');
+    const set = () => document.body.style.setProperty('--coach-h', `${el.getBoundingClientRect().height}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); document.body.classList.remove('coach-on'); document.body.style.removeProperty('--coach-h'); };
+  }, []);
   return (
-    <div className="panel fadein fixed bottom-3 left-3 z-40 w-[min(380px,calc(100vw-1.5rem))] border-ops-cyan/40 bg-ops-panel">
+    <div ref={ref} className="panel fadein fixed bottom-3 left-3 z-40 w-[min(380px,calc(100vw-1.5rem))] border-ops-cyan/40 bg-ops-panel">
       <div className="panel-title"><span>Training · {i + 1}/{STEPS.length}</span><button className="btn px-2" onClick={() => ui.setTutorial(false)} aria-label="Close guide">✕</button></div>
       <div className="space-y-2 p-3">
         <div className="font-sans text-lg font-semibold text-white">{st.title}</div>

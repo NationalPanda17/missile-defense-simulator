@@ -177,7 +177,9 @@ export function TheaterView({ s }: { s: SimState }) {
   const t = s.tactical;
   const inbound = incomingWaves(s);
   const lastResolved = t ? [...t.waves].filter((w) => w.resolved).sort((a, b) => b.atHour - a.atHour)[0] : undefined;
-  const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  // Opens where the action is; with nothing inbound, where the player last was.
+  const [region, setRegionState] = useState<RegionId>(inbound[0]?.wave.region ?? ui.theaterRegion ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  const setRegion = (r: RegionId) => { setRegionState(r); ui.setTheaterRegion(r); };
   // Another screen (the adjutant) can ask for a region.
   useEffect(() => {
     if (ui.theaterFocus) {
@@ -199,6 +201,20 @@ export function TheaterView({ s }: { s: SimState }) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [moving]);
+
+  // Another screen (the wave summary card) can ask for a wave's narrated replay.
+  useEffect(() => {
+    const w = ui.replayWave ? t?.waves.find((x) => x.id === ui.replayWave) : undefined;
+    if (!ui.replayWave) return;
+    ui.setReplayWave(null);
+    if (!w) return;
+    setRegion(w.region);
+    setReplayId(w.id);
+    setStory(null);
+    setProgress(0);
+    setPlaying(null);
+    requestAnimationFrame(() => setPlaying(w.id));
+  }, [ui.replayWave]);
 
   // Jump to each new wave as it lands, and replay it.
   const seen = useRef(lastResolved?.id);
@@ -275,6 +291,12 @@ export function TheaterView({ s }: { s: SimState }) {
                 Raise alert ({alertCost(s, region)} cr, {TACTICAL_CONFIG.alert.hours}h)
               </button>
             )}
+            {deps.some((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return isEffector(sp) && !isUnlimited(sp); }) && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-ops-dim" title="Systems here are resupplied automatically once they are down to half a magazine, while credits (keeping 100 in hand), logistics and the stockpile allow.">
+                <input type="checkbox" checked={!!t.autoResupply?.includes(region)} onChange={(e) => dispatch({ type: 'setAutoResupply', region, on: e.target.checked })} />
+                Auto-resupply here
+              </label>
+            )}
             {movingSpec && movingDep && (
               <span className="text-ops-cyan">
                 Click the map (any region tab) to redeploy {s.assets.find((a) => a.id === movingDep.assetId)?.name}:{' '}
@@ -283,6 +305,12 @@ export function TheaterView({ s }: { s: SimState }) {
               </span>
             )}
           </div>
+          {isPlaying && captions.length > 0 && (
+            <div className="mb-1.5 rounded border border-ops-line bg-ops-panel/80 px-2 py-1.5 text-[12px]" role="status" aria-live="polite">
+              <span className="label mr-2">Replay {captionAt + 1}/{captions.length}</span>
+              <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
+            </div>
+          )}
           {/* Phones: full-size map that scrolls sideways, so systems and threats stay readable and taps land. */}
           <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0">
             <div className="min-w-[560px] sm:min-w-0">
@@ -298,12 +326,6 @@ export function TheaterView({ s }: { s: SimState }) {
             <div className="mt-1.5 flex items-start justify-between gap-2 rounded border border-ops-cyan/50 bg-ops-cyan/5 p-2 text-[11px]" role="status">
               <div><span className="label mr-2 text-ops-cyan">This threat</span>{trackStory(s, storyWave, storyTrack)}</div>
               <button className="btn shrink-0 px-2 py-0" onClick={() => setStory(null)} aria-label="Close threat details">✕</button>
-            </div>
-          )}
-          {isPlaying && captions.length > 0 && (
-            <div className="mt-1.5 rounded border border-ops-line bg-ops-panel/80 px-2 py-1.5 text-[12px]" role="status" aria-live="polite">
-              <span className="label mr-2">Replay {captionAt + 1}/{captions.length}</span>
-              <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
             </div>
           )}
           <div className="mt-1.5"><MapLegend region={region} /></div>
