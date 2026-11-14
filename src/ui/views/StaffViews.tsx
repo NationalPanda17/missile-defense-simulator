@@ -164,6 +164,8 @@ export function LogisticsView({ s }: { s: SimState }) {
           const err = canAfford(s, inv.credits, inv.personnel, 0);
           const t = target[inv.id] ?? '';
           const needs = inv.scope !== 'global' && !t;
+          const researched = !!inv.once && !!s.research?.includes(inv.id);
+          const underway = !!inv.once && s.projects.some((p) => p.investmentId === inv.id);
           return (
             <div key={inv.id} className="flex flex-col rounded border border-ops-line p-2.5">
               <div className="flex justify-between gap-2"><span className="font-semibold text-white">{inv.label}</span><Chip>{inv.category}</Chip></div>
@@ -180,8 +182,8 @@ export function LogisticsView({ s }: { s: SimState }) {
                     <option value="">Domain…</option>{DOMAINS.map((d) => <option key={d} value={d}>{DOMAIN_LABEL[d]}</option>)}
                   </select>
                 )}
-                <button data-coach="invest" className="btn btn-primary ml-auto" disabled={!!err || needs} title={err ?? (needs ? 'Select a target' : '')}
-                  onClick={() => dispatch({ type: 'invest', investmentId: inv.id, region: inv.scope === 'region' ? (t as RegionId) : undefined, domain: inv.scope === 'domain' ? (t as Domain) : undefined })}>Fund</button>
+                <button data-coach="invest" className="btn btn-primary ml-auto" disabled={!!err || needs || researched || underway} title={researched ? 'Research complete: in effect for the rest of the scenario' : underway ? 'Research under way' : err ?? (needs ? 'Select a target' : '')}
+                  onClick={() => dispatch({ type: 'invest', investmentId: inv.id, region: inv.scope === 'region' ? (t as RegionId) : undefined, domain: inv.scope === 'domain' ? (t as Domain) : undefined })}>{researched ? '✔ Done' : underway ? 'Under way' : 'Fund'}</button>
               </div>
             </div>
           );

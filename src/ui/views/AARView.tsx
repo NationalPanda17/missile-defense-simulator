@@ -8,6 +8,7 @@ import { useUI } from '../uiState';
 import { MissionReplay } from './MissionReplay';
 import { ChallengePanel } from '../Challenge';
 import { WaveBreakdown } from './WaveBreakdown';
+import { DispatchCard } from '../Dispatch';
 
 const LABELS: Record<ScoreKey, string> = {
   readiness: 'Global readiness', network: 'Network reliability', stability: 'Regional stability', response: 'Event response',
@@ -97,6 +98,11 @@ export function AARView({ s }: { s: SimState }) {
         {!final && <p className="mt-2 text-[10px] text-ops-dim">Interim report — the scenario is still running. A final report is produced when the last phase ends.</p>}
       </Panel>
 
+      {s.phases.some((_, i) => i < s.phaseIndex || final) && s.settings.mode !== 'training' && (
+        <Panel className="xl:col-span-3" title="In the news" bodyClass="p-3 grid gap-3 lg:grid-cols-2">
+          {s.phases.map((p, i) => <DispatchCard key={p.id} s={s} phaseIndex={i} compact />)}
+        </Panel>
+      )}
       <Panel className="xl:col-span-2" title="Readiness, Network & Stability">
         <LineChart series={[
           { name: 'Readiness', color: '#34d399', data: s.history.map((h) => h.readiness) },
