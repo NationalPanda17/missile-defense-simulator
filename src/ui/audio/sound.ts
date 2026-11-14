@@ -35,6 +35,13 @@ const CHORDS = [
   [n(-7), n(3), n(10)], // Gm (G D Bb) inverted
   [n(-5), n(7), n(14)], // A (A E C#) — the turnaround
 ];
+// Under threat the pad moves to tighter, darker chords with a semitone rub in them.
+const TENSE = [
+  [n(0), n(6), n(13)], // D with a tritone and a flat ninth
+  [n(-2), n(5), n(13)], // C against the same top note
+  [n(0), n(8), n(13)], // D, minor sixth
+  [n(-1), n(6), n(13)], // C# under it: the leading tone that never resolves
+];
 
 class SoundSystem {
   settings = loadSettings();
@@ -50,6 +57,7 @@ class SoundSystem {
   private memo: CueMemo | null = null;
   private lastT: number | null = null;
   private tension = 0.12;
+  private tenseNow = false;
   private chord = 0;
   private timers: number[] = [];
 
@@ -332,7 +340,7 @@ class SoundSystem {
     const ctx = this.ctx;
     if (!ctx || !this.pad) return;
     this.chord = (this.chord + 1) % CHORDS.length;
-    const ch = CHORDS[this.chord];
+    const ch = (this.tension >= 0.55 ? TENSE : CHORDS)[this.chord];
     this.pad.osc.forEach((o, i) => o.frequency.setTargetAtTime(ch[Math.floor(i / 2)], ctx.currentTime, 1.5));
   }
 
@@ -344,6 +352,13 @@ class SoundSystem {
     const t = ctx.currentTime;
     this.pad.filter.frequency.setTargetAtTime(380 + x * 1500, t, 1.2);
     this.pad.gain.gain.setTargetAtTime(0.18 + x * 0.12, t, 1.5);
+    // Crossing into or out of danger changes the harmony at once instead of waiting for the next chord.
+    const was = this.tenseNow;
+    this.tenseNow = x >= 0.55;
+    if (was !== this.tenseNow) {
+      const ch = (this.tenseNow ? TENSE : CHORDS)[this.chord];
+      this.pad.osc.forEach((o, i) => o.frequency.setTargetAtTime(ch[Math.floor(i / 2)], t, 0.8));
+    }
   }
 
   private pulse() {

@@ -13,6 +13,7 @@ import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
+import { LANGS, lang, setLang, tr, useLang, type Lang } from './i18n';
 import { RaidDesigner } from './Extras';
 import { Term } from './Term';
 import { MainMenuButton } from './Shell';
@@ -369,13 +370,13 @@ export function BriefingModal({ s }: { s: SimState }) {
       footer={<>
         <span className="mr-auto flex flex-wrap items-center gap-2">
           <MainMenuButton s={s} className="px-3 py-2 text-[13px]" />
-          <button className="btn px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
+          <button className="btn px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">{tr('? How to play')}</button>
         </span>
-        {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
+        {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>{tr('Deploy defenses ▶')}</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
           if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
         }}>
-          {confirmBegin ? 'Begin anyway ▶' : 'Assume command — begin phase ▶'}
+          {confirmBegin ? tr('Begin anyway ▶') : tr('Assume command — begin phase ▶')}
         </button>
       </>}>
       {confirmBegin && step === 'brief' && beginIssues.length > 0 && (
@@ -405,9 +406,9 @@ export function BriefingModal({ s }: { s: SimState }) {
       )}
       {tactical && (
         <div className="mb-4 flex gap-1" role="tablist" aria-label="Briefing steps">
-          <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>1 · Briefing</button>
+          <button role="tab" aria-selected={step === 'brief'} className={`btn ${step === 'brief' ? 'btn-active' : ''}`} onClick={() => setStep('brief')}>{tr('1 · Briefing')}</button>
           <button data-coach="deploy-tab" role="tab" aria-selected={step === 'deploy'} className={`btn ${step === 'deploy' ? 'btn-active' : ''}`} onClick={() => setStep('deploy')}>
-            2 · Deploy defenses <span className="text-ops-dim">{tactical.deployments.length}</span>
+            {tr('2 · Deploy defenses')} <span className="text-ops-dim">{tactical.deployments.length}</span>
           </button>
         </div>
       )}
@@ -534,7 +535,7 @@ function loadLevel(): CommandLevel {
 function LevelPicker({ value, onChange }: { value: CommandLevel; onChange: (l: CommandLevel) => void }) {
   return (
     <div className="mt-3 space-y-1">
-      <div className="label" id="level-label">Difficulty</div>
+      <div className="label" id="level-label">{tr('Difficulty')}</div>
       <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-labelledby="level-label">
         {COMMAND_LEVEL_IDS.map((l) => (
           <button key={l} role="radio" aria-checked={value === l} className={`btn min-w-0 px-0.5 text-[10px] tracking-normal ${value === l ? 'btn-active' : ''}`} onClick={() => onChange(l)}><span className="truncate">{COMMAND_LEVELS[l].label}</span></button>
@@ -557,7 +558,7 @@ function loadEnemy(): EnemyChoice {
 function EnemyPicker({ value, onChange }: { value: EnemyChoice; onChange: (e: EnemyChoice) => void }) {
   return (
     <div className="mt-3 space-y-1">
-      <label className="label block" htmlFor="enemy-pick">Opponent</label>
+      <label className="label block" htmlFor="enemy-pick">{tr('Opponent')}</label>
       <select id="enemy-pick" className="input w-full py-1" value={value} onChange={(e) => onChange(e.target.value as EnemyChoice)}>
         {ENEMY_STYLE_IDS.map((id) => <option key={id} value={id}>{ENEMY_STYLES[id].name}, {ENEMY_STYLES[id].title}</option>)}
         <option value="random">Surprise me</option>
@@ -606,6 +607,7 @@ function AcademyProgressLine() {
 
 export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   useStoreVersion();
+  useLang();
   const ui = useUI();
   const fileRef = useRef<HTMLInputElement>(null);
   const saves = listSaves();
@@ -640,71 +642,75 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const modes = [
     { id: 'campaign' as const, title: 'Campaign', desc: 'Four-phase global campaign: establish the network, weather regional instability, survive a global crisis and lead the recovery. 240 simulated hours.', cta: 'Begin campaign' },
     { id: 'crisis' as const, title: 'Crisis Mode', desc: 'Start inside a cascading blackout with thin resources, unreliable intelligence and simultaneous disruptions. 96 hours, network management only (no threat waves; the Scenario Editor can add them).', cta: 'Enter crisis' },
-    { id: 'training' as const, title: 'Training Academy', desc: `${LESSONS.length - 1} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.`, cta: 'Open the Academy' },
+    { id: 'training' as const, title: 'Training Academy', desc: tr('{n} guided lessons, from your first click to defending a region under attack, then a graded certification exercise. A coach tells you what to do and checks it off.', { n: LESSONS.length - 1 }), cta: 'Open the Academy' },
   ];
   // New players see the Academy first.
   if (newcomer) modes.unshift(modes.splice(2, 1)[0]);
   return (
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
-        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play (?)">? How to play</button><DisplayControl /><SoundControl /></div>
+        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play (?)">{tr('? How to play')}</button>
+          <select className="input py-1 text-[11px]" value={lang()} onChange={(e) => setLang(e.target.value as Lang)} aria-label={tr('Language')} title={tr('Language')}>
+            {(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}
+          </select>
+          <DisplayControl /><SoundControl /></div>
         <div className="text-center">
-          <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
-          <h1 className="mt-2 break-words font-sans text-[clamp(1.25rem,8vw,2.25rem)] font-bold leading-tight tracking-[0.08em] text-white sm:text-5xl sm:tracking-[0.2em]">MISSILE DEFENSE SIMULATOR</h1>
-          <p className="mx-auto mt-3 max-w-2xl text-ops-dim">Command a fictional four-domain defense network — Space, Air, Sea and Ground — across seven strategic regions. Manage readiness, communications, uncertain intelligence and scarce resources through a dynamic campaign.</p>
-          <p className="mx-auto mt-2 max-w-2xl text-[12px] text-ops-cyan">You build the defense; the simulation fights it. Place systems in each briefing, then during the phase raise alerts, resupply, move systems and handle reports.</p>
+          <div className="label tracking-[0.4em]">{tr('Global Integrated Defense Command')}</div>
+          <h1 className="mt-2 break-words font-sans text-[clamp(1.25rem,8vw,2.25rem)] font-bold leading-tight tracking-[0.08em] text-white sm:text-5xl sm:tracking-[0.2em]">{tr('MISSILE DEFENSE SIMULATOR')}</h1>
+          <p className="mx-auto mt-3 max-w-2xl text-ops-dim">{tr('Command a fictional four-domain defense network — Space, Air, Sea and Ground — across seven strategic regions. Manage readiness, communications, uncertain intelligence and scarce resources through a dynamic campaign.')}</p>
+          <p className="mx-auto mt-2 max-w-2xl text-[12px] text-ops-cyan">{tr('You build the defense; the simulation fights it. Place systems in each briefing, then during the phase raise alerts, resupply, move systems and handle reports.')}</p>
         </div>
         {newcomer && (
           <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-cyan/60 p-4" role="region" aria-label="Welcome">
             <div className="min-w-0 max-w-xl">
-              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">New here?</div>
-              <p className="mt-1 text-[12px] leading-relaxed">Start with Lesson 1, Command basics: five minutes, with a coach that shows you each control. The campaign makes much more sense after the first few lessons.</p>
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr('New here?')}</div>
+              <p className="mt-1 text-[12px] leading-relaxed">{tr('Start with Lesson 1, Command basics: five minutes, with a coach that shows you each control. The campaign makes much more sense after the first few lessons.')}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn" onClick={() => { markWelcomed(); store.notify(); }}>I know the basics</button>
-              <button className="btn" onClick={() => ui.setHelp(true)}>Read how to play</button>
-              <button className="btn btn-primary px-5 py-2" autoFocus onClick={() => { markWelcomed(); startLesson('basics'); ui.setView('global'); }}>Start Lesson 1 ▶</button>
+              <button className="btn" onClick={() => { markWelcomed(); store.notify(); }}>{tr('I know the basics')}</button>
+              <button className="btn" onClick={() => ui.setHelp(true)}>{tr('Read how to play')}</button>
+              <button className="btn btn-primary px-5 py-2" autoFocus onClick={() => { markWelcomed(); startLesson('basics'); ui.setView('global'); }}>{tr('Start Lesson 1 ▶')}</button>
             </div>
           </div>
         )}
         {latest && (
           <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-green/50 p-4" role="region" aria-label="Continue your last game">
             <div className="min-w-0 max-w-2xl">
-              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-green">Continue</div>
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-green">{tr('Continue')}</div>
               <p className="mt-1 truncate text-[12px] leading-relaxed"><span className="text-white">{latest.name}</span> <span className="text-ops-dim">· {latest.phase} · T+{latest.hour}h · saved {new Date(latest.savedAt).toLocaleString()}</span></p>
             </div>
-            <button className="btn btn-primary px-5 py-2" autoFocus={!newcomer} onClick={() => { const st = loadGame(latest.slot as Slot); if (st) store.load(st); else store.toast('err', 'That save could not be loaded.'); }}>Continue ▶</button>
+            <button className="btn btn-primary px-5 py-2" autoFocus={!newcomer} onClick={() => { const st = loadGame(latest.slot as Slot); if (st) store.load(st); else store.toast('err', 'That save could not be loaded.'); }}>{tr('Continue ▶')}</button>
           </div>
         )}
         <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-amber/50 p-4" role="region" aria-label="Quick Battle">
           <div className="min-w-0 max-w-2xl">
-            <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-amber">Quick Battle <span className="text-[11px] font-normal normal-case tracking-normal text-ops-dim">· about 5 minutes</span></div>
-            <p className="mt-1 text-[12px] leading-relaxed">One region, three attack waves, a fixed budget, and nothing else to manage. Place air defenses on the map, then watch them fight and see why each threat was stopped or got through. A different battle every time.</p>
+            <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-amber">{tr('Quick Battle')} <span className="text-[11px] font-normal normal-case tracking-normal text-ops-dim">{tr('· about 5 minutes')}</span></div>
+            <p className="mt-1 text-[12px] leading-relaxed">{tr('One region, three attack waves, a fixed budget, and nothing else to manage. Place air defenses on the map, then watch them fight and see why each threat was stopped or got through. A different battle every time.')}</p>
           </div>
-          <button className="btn btn-primary px-5 py-2" onClick={() => { markWelcomed(); startLesson(QUICK_BATTLE_ID); ui.setView('theater'); }}>Play a quick battle ▶</button>
+          <button className="btn btn-primary px-5 py-2" onClick={() => { markWelcomed(); startLesson(QUICK_BATTLE_ID); ui.setView('theater'); }}>{tr('Play a quick battle ▶')}</button>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="panel flex flex-wrap items-center justify-between gap-3 p-4" role="region" aria-label="Endless Defense">
             <div className="min-w-0 max-w-md">
-              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Endless Defense</div>
-              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">One region, a bigger wave every time, a briefing between each. How many can you survive?</p>
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr('Endless Defense')}</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">{tr('One region, a bigger wave every time, a briefing between each. How many can you survive?')}</p>
             </div>
-            <button className="btn btn-primary" onClick={() => { markWelcomed(); startLesson(ENDLESS_ID); ui.setView('theater'); }}>Start a run ▶</button>
+            <button className="btn btn-primary" onClick={() => { markWelcomed(); startLesson(ENDLESS_ID); ui.setView('theater'); }}>{tr('Start a run ▶')}</button>
           </div>
           <div className="panel flex flex-wrap items-center justify-between gap-3 p-4" role="region" aria-label="Raid designer">
             <div className="min-w-0 max-w-md">
-              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Raid Designer</div>
-              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">Play the attacker. Write a raid, then hand it to a friend to defend, or send it against the computer’s defense.</p>
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr('Raid Designer')}</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">{tr('Play the attacker. Write a raid, then hand it to a friend to defend, or send it against the computer’s defense.')}</p>
             </div>
-            <button className="btn btn-primary" onClick={() => setRaidOpen(true)}>Design a raid ▶</button>
+            <button className="btn btn-primary" onClick={() => setRaidOpen(true)}>{tr('Design a raid ▶')}</button>
           </div>
         </div>
         {raidOpen && <RaidDesigner onClose={() => setRaidOpen(false)} />}
         <div className="grid gap-3 md:grid-cols-4">
           {modes.map((m) => (
             <div key={m.id} className="panel flex flex-col p-4">
-              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{m.title}</div>
-              <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{m.desc}</p>
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr(m.title)}</div>
+              <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{tr(m.desc)}</p>
               {m.id === 'campaign' && <LevelPicker value={level} onChange={setLevel} />}
               {m.id === 'campaign' && tacticalOn && (
                 <div className="mt-3 space-y-1">
@@ -721,19 +727,19 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
                 <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
               )}
               {m.id === 'training' && <AcademyProgressLine />}
-              <button className="btn btn-primary mt-3" onClick={() => (m.id === 'training' ? ui.setAcademyOpen(true) : start(m.id))}>{m.cta}</button>
+              <button className="btn btn-primary mt-3" onClick={() => (m.id === 'training' ? ui.setAcademyOpen(true) : start(m.id))}>{tr(m.cta)}</button>
             </div>
           ))}
           <div className="panel flex flex-col p-4">
-            <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Sandbox</div>
-            <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">Configure starting resources, regional conditions, domain readiness, event frequency and duration in the Scenario Editor.</p>
-            <button className="btn btn-primary mt-3" onClick={onSandbox}>Open scenario editor</button>
+            <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr('Sandbox')}</div>
+            <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{tr('Configure starting resources, regional conditions, domain readiness, event frequency and duration in the Scenario Editor.')}</p>
+            <button className="btn btn-primary mt-3" onClick={onSandbox}>{tr('Open scenario editor')}</button>
           </div>
         </div>
         <div className="panel p-4">
           <div className="mb-2 flex items-center justify-between">
-            <div className="font-sans text-sm font-semibold uppercase tracking-widest text-ops-cyan">Browser saves</div>
-            <button className="btn" onClick={() => fileRef.current?.click()}>Import save file…</button>
+            <div className="font-sans text-sm font-semibold uppercase tracking-widest text-ops-cyan">{tr('Browser saves')}</div>
+            <button className="btn" onClick={() => fileRef.current?.click()}>{tr('Import save file…')}</button>
             <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={async (e) => {
               const f = e.target.files?.[0];
               if (!f) return;
@@ -741,7 +747,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
               if (st) store.load(st); else store.toast('err', 'Invalid save file.');
             }} />
           </div>
-          {saves.length === 0 ? <div className="text-ops-dim">No saved operations in this browser.</div> : (
+          {saves.length === 0 ? <div className="text-ops-dim">{tr('No saved operations in this browser.')}</div> : (
             <>
               <div className="grid gap-2 sm:grid-cols-2">
                 {saves.map((m) => (

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   EQUIPMENT_MAP, TACTICAL_CONFIG, TERRAIN_PROFILES, canEngage, canEngageClass, detectionRange, engageRange, inCity, isEffector, isUnlimited, sensorTraits,
-  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState, conditionsAt } from '../../../engine';
+  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState, conditionsAt, localHour } from '../../../engine';
 import { store } from '../../../store/simStore';
 import { LAYER_COLOR, SiteMarker, SystemIcon } from './icons';
 import { fanOut, layoutLabels, textWidth, type Box, type LabelRequest } from './labels';
@@ -311,19 +311,48 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
   );
 }
 
-/** Darkness at night and rain hatching in a storm, over the whole theater. */
+/**
+ * Light and weather over the theater: dusk and dawn tint, darkness at night, and in a storm drifting cells of cloud
+ * with rain under them. The radar rings drawn above shrink in a storm by each radar's band.
+ */
 function WeatherOverlay({ s, region, hour }: { s: SimState; region: RegionId; hour: number }) {
   const c = conditionsAt(s, region, Math.floor(hour));
-  if (!c.night && !c.storm) return null;
+  const local = localHour(s, region, hour);
+  // 0 in full day, 1 in full night, easing through an hour and a half of dusk and dawn.
+  const dark = local >= 20 || local < 5 ? 1 : local >= 18.5 ? (local - 18.5) / 1.5 : local < 6.5 ? 1 - (local - 5) / 1.5 : 0;
+  const twilight = dark > 0 && dark < 1;
+  if (!dark && !c.storm) return null;
+  // Storm cells: placed from the hour's block so they hold still across renders, then drift on their own.
+  const block = Math.floor(hour / 12);
+  const cells = c.storm ? Array.from({ length: 5 }, (_, i) => ({
+    x: ((block * 97 + i * 151) % 100) / 100 * W, y: ((block * 53 + i * 89) % 100) / 100 * H, r: 90 + ((block * 31 + i * 47) % 70), dur: 26 + i * 7,
+  })) : [];
   return (
     <g pointerEvents="none" aria-hidden>
       <defs>
         <pattern id={`rain-${region}`} width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(20)">
           <line x1="0" y1="0" x2="0" y2="9" stroke="#9fb7d6" strokeOpacity="0.35" strokeWidth="1" />
         </pattern>
+        <radialGradient id={`cell-${region}`}>
+          <stop offset="0%" stopColor="#8fa6c4" stopOpacity={0.5} />
+          <stop offset="60%" stopColor="#6b84a6" stopOpacity={0.28} />
+          <stop offset="100%" stopColor="#6b84a6" stopOpacity={0} />
+        </radialGradient>
+        <linearGradient id={`dusk-${region}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={local < 12 ? '#3b2a5c' : '#c2622a'} stopOpacity={0.3} />
+          <stop offset="100%" stopColor={local < 12 ? '#c2622a' : '#3b2a5c'} stopOpacity={0.3} />
+        </linearGradient>
       </defs>
-      {c.night && <rect x={0} y={0} width={W} height={H} fill="#02040a" fillOpacity={0.28} />}
-      {c.storm && <rect x={0} y={0} width={W} height={H} fill={`url(#rain-${region})`} />}
+      {twilight && <rect x={0} y={0} width={W} height={H} fill={`url(#dusk-${region})`} opacity={1 - Math.abs(dark - 0.5) * 2 + 0.25} />}
+      {dark > 0 && <rect x={0} y={0} width={W} height={H} fill="#02040a" fillOpacity={0.3 * dark} />}
+      {c.storm && <rect x={0} y={0} width={W} height={H} fill={`url(#rain-${region})`} opacity={0.6} />}
+      {cells.map((cell, i) => (
+        <g key={i}>
+          <ellipse cx={cell.x} cy={cell.y} rx={cell.r * 1.4} ry={cell.r} fill={`url(#cell-${region})`}>
+            <animateTransform attributeName="transform" type="translate" values={`-60 0; 60 ${i % 2 ? 18 : -18}; -60 0`} dur={`${cell.dur}s`} repeatCount="indefinite" />
+          </ellipse>
+        </g>
+      ))}
     </g>
   );
 }

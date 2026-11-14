@@ -5,6 +5,7 @@ import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { GuideModal } from './Guide';
 import { awardMedals } from './medals';
+import { useLang } from './i18n';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, WaveCard, chooseSpeed, goToUrgent } from './Shell';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
@@ -97,6 +98,7 @@ export default function App() {
 const PLANNING_VIEWS: string[] = ['campaign', 'editor', 'aar'];
 
 function Root() {
+  useLang(); // the whole game re-renders when the language changes
   useStoreVersion();
   const ui = useUI();
   const [editorFirst, setEditorFirst] = useState(false);

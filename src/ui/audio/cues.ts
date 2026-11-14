@@ -1,5 +1,5 @@
 // Which sounds a change in the simulation should make. Pure, so it can be tested without a browser.
-import type { CommandEntry, SimState } from '../../engine';
+import { incomingWaves, type CommandEntry, type SimState } from '../../engine';
 import { trackEnd } from '../threatTimeline';
 
 export type Cue =
@@ -96,5 +96,8 @@ export function tensionOf(s: SimState | null, t: number): number {
   if (!s || s.status !== 'running') return 0.12;
   const base = { NORMAL: 0.18, ELEVATED: 0.38, HIGH: 0.6, SEVERE: 0.8 }[s.metrics.alert] ?? 0.2;
   const inFlight = (s.tactical?.waves ?? []).some((w) => w.resolved && (w.launchAt ?? w.atHour) <= t && t < w.atHour);
-  return Math.min(1, inFlight ? Math.max(base, 0.75) + 0.15 : base);
+  if (inFlight) return Math.min(1, Math.max(base, 0.75) + 0.15);
+  // A launch warning is enough to change the mood: the music tightens before anything is in the air.
+  const warned = incomingWaves(s).length > 0;
+  return Math.min(1, warned ? Math.max(base, 0.58) : base);
 }
