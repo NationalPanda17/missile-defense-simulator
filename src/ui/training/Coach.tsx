@@ -19,7 +19,8 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
   const ui = useUI();
   const [i, setI] = useState(() => Math.min(loadStep(s.campaignId), lesson.steps.length - 1));
   const [since, setSince] = useState(() => ({ cmd: s.commands.length, hour: s.hour }));
-  const [userOpen, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  // A Quick Battle starts with the coach folded to its one-line bar: the map is the point.
+  const [userOpen, setOpen] = useState(() => !lesson.makeWaves && (typeof window === 'undefined' || window.innerWidth >= 640));
   // While a dialog is open the coach folds to its one-line bar so the dialog gets the screen, unless this step is
   // about something inside that dialog (or the player opened the coach again on purpose).
   const [modal, setModal] = useState<'none' | 'other' | 'step'>('none');

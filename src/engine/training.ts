@@ -252,7 +252,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'In the report window, press “Task confirmation”. An independent source checks the report for a small fee and a few hours.',
         check: (c) => did(c, 'confirm') },
       { id: 'result', wait: true, title: 'Wait for the result',
-        text: 'Let time run until the confirmation finishes. A false report closes itself; a real one becomes CONFIRMED.',
+        text: 'Let time run until the confirmation finishes. A false report closes itself; a real one becomes CONFIRMED. (In the campaign, a confirmation can also come back inconclusive.)',
         check: (c) => c.s.counters.confirmations >= 1 },
       { id: 'dismiss', wait: true, target: ['dismiss', 'events'], title: 'Dismiss a false report',
         text: 'Let the clock run: another dubious report will come in from Indo-Pacific. This time, judge it yourself and press Dismiss. Notice it has low confidence and nothing else in that region backs it up.',

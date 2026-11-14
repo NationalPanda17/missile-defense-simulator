@@ -101,7 +101,7 @@ export function EventModal({ s }: { s: SimState }) {
               {e.status !== 'responding' && (
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" disabled={e.status !== 'reported' || e.confidence >= 92 || s.credits < SIM_CONFIG.confirmCost}
-                    data-coach="confirm" onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report">
+                    data-coach="confirm" onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report. Where regional awareness is poor the answer is more often inconclusive, and you would have to pay and wait again.">
                     ◈ Task confirmation ({SIM_CONFIG.confirmCost} cr, ~{SIM_CONFIG.confirmHours}h)
                   </button>
                   <button data-coach="dismiss" className="btn btn-danger" onClick={() => { dispatch({ type: 'dismiss', eventId: e.id }); }} title="Close as unreliable. If it is genuine, it will keep developing unseen.">✕ Dismiss as unreliable</button>
