@@ -33,7 +33,7 @@ export function IntelView({ s }: { s: SimState }) {
           <thead><tr><th>ID</th><th>Report</th><th>Region</th><th>Severity</th><th className="w-40">Confidence</th><th>Status</th></tr></thead>
           <tbody>
             {list.map((e) => {
-              const c = confidenceLabel(e.confidence);
+              const c = confidenceLabel(e.confidence, e.confirmed);
               return (
                 <tr key={e.id} className="cursor-pointer" onClick={() => ui.openEvent(e.id)}>
                   <td className="text-ops-dim">{e.id}</td>

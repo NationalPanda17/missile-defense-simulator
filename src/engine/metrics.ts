@@ -144,8 +144,13 @@ export function recomputeMetrics(s: SimState): void {
   };
 }
 
-export function confidenceLabel(c: number): { label: string; tone: 'green' | 'cyan' | 'amber' | 'red' } {
-  if (c >= 85) return { label: 'CONFIRMED', tone: 'green' };
+/**
+ * A report's confidence in a word. Only a report the player's own confirmation settled is CONFIRMED; a high number
+ * alone is VERY LIKELY, because it can still be false.
+ */
+export function confidenceLabel(c: number, confirmed = false): { label: string; tone: 'green' | 'cyan' | 'amber' | 'red' } {
+  if (confirmed) return { label: 'CONFIRMED', tone: 'green' };
+  if (c >= 85) return { label: 'VERY LIKELY', tone: 'green' };
   if (c >= 60) return { label: 'PROBABLE', tone: 'cyan' };
   if (c >= 35) return { label: 'POSSIBLE', tone: 'amber' };
   return { label: 'UNVERIFIED', tone: 'red' };

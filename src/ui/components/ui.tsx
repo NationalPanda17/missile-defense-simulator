@@ -51,7 +51,7 @@ export function Bar({ value, max = 100, color, height = 6, showValue = false }: 
   );
 }
 
-export function Stat({ label, value, unit, t, sub, full }: { label: string; value: ReactNode; unit?: string; t?: keyof typeof TONE_TEXT; sub?: ReactNode; full?: string }) {
+export function Stat({ label, value, unit, t, sub, full }: { label: ReactNode; value: ReactNode; unit?: string; t?: keyof typeof TONE_TEXT; sub?: ReactNode; full?: string }) {
   return (
     <div className="min-w-0" title={full}>
       <div className="label truncate">{label}</div>

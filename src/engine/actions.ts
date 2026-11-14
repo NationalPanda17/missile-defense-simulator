@@ -23,6 +23,7 @@ export type Command =
   | { type: 'relocate'; deploymentId: string; x: number; y: number }
   | { type: 'withdraw'; deploymentId: string }
   | { type: 'setDoctrine'; deploymentId: string; doctrine: FireDoctrine }
+  | { type: 'setAutoResupply'; region: RegionId; on: boolean }
   | { type: 'resupply'; deploymentId: string }
   | { type: 'emergencyRedeploy'; deploymentId: string; region: RegionId; x: number; y: number }
   | { type: 'raiseAlert'; region: RegionId }
@@ -266,6 +267,13 @@ function run(s: SimState, cmd: Command): CommandResult {
       record(s, 'relocate', `Relocated ${name} (${d.id}).`, TACTICAL_CONFIG.relocateCost, 'redeploy');
       return { ok: true, message: `${name} relocated` };
     }
+    case 'setAutoResupply': {
+      const t = ensureTactical(s);
+      const rest = (t.autoResupply ?? []).filter((r) => r !== cmd.region);
+      t.autoResupply = cmd.on ? [...rest, cmd.region] : rest;
+      record(s, 'autoResupply', `Automatic resupply ${cmd.on ? 'on' : 'off'} in ${s.regions[cmd.region].name}.`, 0, 'maintenance');
+      return { ok: true, message: `Automatic resupply ${cmd.on ? 'on' : 'off'}: ${s.regions[cmd.region].name}` };
+    }
     case 'setDoctrine': {
       const t = ensureTactical(s);
       const d = t.deployments.find((x) => x.id === cmd.deploymentId);
@@ -284,7 +292,9 @@ function run(s: SimState, cmd: Command): CommandResult {
       const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
       // Rounds already fired are not refunded, and the unit takes its share of the national reserve with it, so
       // withdrawing and redeploying is never a cheaper resupply.
-      const refund = Math.max(0, Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(d));
+      // Taking back a placement in the briefing it was made in is an undo: everything is returned.
+      const undo = s.status === 'briefing' && d.deployedAt === s.hour && (isUnlimited(spec) || d.stock >= spec.magazine) && !d.kills;
+      const refund = undo ? equipmentCost(spec) : Math.max(0, Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(d));
       const sp = stockpileRules(s);
       if (sp && t.stockpile?.[spec.id] !== undefined && isEffector(spec) && !isUnlimited(spec)) {
         t.stockpile[spec.id] = Math.max(0, t.stockpile[spec.id] - Math.floor(spec.magazine * sp.initial));
@@ -292,7 +302,8 @@ function run(s: SimState, cmd: Command): CommandResult {
       removeDeployment(s, d);
       s.credits += refund;
       s.personnel = Math.min(s.personnelMax, s.personnel + TACTICAL_CONFIG.deployPersonnel);
-      record(s, 'withdraw', `Withdrew ${spec.name} (${d.id}), +${refund} credits recovered.`, 0, 'investment');
+      if (undo) s.counters.totalSpent = Math.max(0, s.counters.totalSpent - refund);
+      record(s, 'withdraw', undo ? `Took back ${spec.name} (${d.id}): placement undone, ${refund} credits returned.` : `Withdrew ${spec.name} (${d.id}), +${refund} credits recovered.`, 0, 'investment');
       log(s, 'info', `${spec.name} withdrawn from ${s.regions[d.region].name}.`, d.region);
       return { ok: true, message: `${spec.name} withdrawn` };
     }
@@ -361,5 +372,25 @@ function run(s: SimState, cmd: Command): CommandResult {
       log(s, 'warn', `ALERT: defenses in ${s.regions[cmd.region].name} at high readiness for ${TACTICAL_CONFIG.alert.hours}h.`, cmd.region);
       return { ok: true, message: 'Alert raised' };
     }
+  }
+}
+
+/** Credits kept in hand when resupplying automatically, so an automatic order never empties the budget. */
+export const AUTO_RESUPPLY_RESERVE = 100;
+
+/**
+ * Hourly: in regions with automatic resupply on, order a resupply for every system at or below half a magazine,
+ * while the budget (above a small reserve), logistics and the stockpile allow. The same order the player would give.
+ */
+export function autoResupply(s: SimState) {
+  const t = s.tactical;
+  if (!t?.enabled || !t.autoResupply?.length || s.status !== 'running') return;
+  for (const d of t.deployments) {
+    if (!t.autoResupply.includes(d.region) || d.transit || d.reloadRemaining !== undefined) continue;
+    const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+    if (!isEffector(spec) || isUnlimited(spec) || d.stock > spec.magazine / 2) continue;
+    const rounds = resupplyRounds(s, d);
+    if (rounds <= 0 || s.credits - resupplyCost(d, rounds) < AUTO_RESUPPLY_RESERVE) continue;
+    execute(s, { type: 'resupply', deploymentId: d.id });
   }
 }

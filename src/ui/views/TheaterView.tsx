@@ -177,7 +177,9 @@ export function TheaterView({ s }: { s: SimState }) {
   const t = s.tactical;
   const inbound = incomingWaves(s);
   const lastResolved = t ? [...t.waves].filter((w) => w.resolved).sort((a, b) => b.atHour - a.atHour)[0] : undefined;
-  const [region, setRegion] = useState<RegionId>(inbound[0]?.wave.region ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  // Opens where the action is; with nothing inbound, where the player last was.
+  const [region, setRegionState] = useState<RegionId>(inbound[0]?.wave.region ?? ui.theaterRegion ?? lastResolved?.region ?? t?.forecast[0] ?? 'NAM');
+  const setRegion = (r: RegionId) => { setRegionState(r); ui.setTheaterRegion(r); };
   // Another screen (the adjutant) can ask for a region.
   useEffect(() => {
     if (ui.theaterFocus) {
@@ -199,6 +201,20 @@ export function TheaterView({ s }: { s: SimState }) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [moving]);
+
+  // Another screen (the wave summary card) can ask for a wave's narrated replay.
+  useEffect(() => {
+    const w = ui.replayWave ? t?.waves.find((x) => x.id === ui.replayWave) : undefined;
+    if (!ui.replayWave) return;
+    ui.setReplayWave(null);
+    if (!w) return;
+    setRegion(w.region);
+    setReplayId(w.id);
+    setStory(null);
+    setProgress(0);
+    setPlaying(null);
+    requestAnimationFrame(() => setPlaying(w.id));
+  }, [ui.replayWave]);
 
   // Jump to each new wave as it lands, and replay it.
   const seen = useRef(lastResolved?.id);
@@ -274,6 +290,12 @@ export function TheaterView({ s }: { s: SimState }) {
                 onClick={() => dispatch({ type: 'raiseAlert', region })}>
                 Raise alert ({alertCost(s, region)} cr, {TACTICAL_CONFIG.alert.hours}h)
               </button>
+            )}
+            {deps.some((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return isEffector(sp) && !isUnlimited(sp); }) && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-ops-dim" title="Systems here are resupplied automatically once they are down to half a magazine, while credits (keeping 100 in hand), logistics and the stockpile allow.">
+                <input type="checkbox" checked={!!t.autoResupply?.includes(region)} onChange={(e) => dispatch({ type: 'setAutoResupply', region, on: e.target.checked })} />
+                Auto-resupply here
+              </label>
             )}
             {movingSpec && movingDep && (
               <span className="text-ops-cyan">

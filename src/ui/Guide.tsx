@@ -293,6 +293,7 @@ function First() {
         <>Open the <B>Forecast check</B> line above the map. It lists the threats expected, the sites they are aimed at, and the weather.</>,
         <>Pick a system from the catalog on the right, then click the map to place it. Start beside the site marked “Start here”. The ring shows its reach; the dotted ring shows its shorter reach against low fliers.</>,
         <>Watch the Forecast check update. It replays the expected attack against your layout and tells you roughly how much damage you would prevent. Aim for 70% or more in each forecast region, and keep a few hundred credits for the phase.</>,
+        <>Changed your mind? <B>Undo</B> takes back the last system you placed for a full refund, as long as the phase has not begun.</>,
         <>Press <B>Assume command — begin phase</B>. You cannot buy new systems until the next briefing, though you can move the ones you have.</>,
       ]} />
       <H>While the phase runs</H>
@@ -320,6 +321,7 @@ function Phase() {
       <H>Orders you can give during a phase</H>
       <List items={[
         <><B>Raise alert</B> (Tactical Theater). For {C.alert.hours} hours every system in the region reacts {Math.round((1 - C.alert.reactionMult) * 100)}% faster and unseen threats are handled far better. It costs credits and wears equipment, so raise it when a launch warning appears, not before.</>,
+        <><B>Auto-resupply.</B> Tick “Auto-resupply here” in a region’s theater and its systems reorder rounds by themselves once they are down to half a magazine, as long as you keep 100 credits in hand and the stockpile holds out.</>,
         <><B>Resupply.</B> Refills a system’s magazine over a few hours. It costs credits in proportion to the rounds brought, and needs logistics capacity of at least {C.minLogisticsForResupply}.</>,
         <><B>Redeploy.</B> Moves a system to a new spot or another region. It is out of action while it travels: {R.sameRegionHours} hours within a region; to another region {R.otherRegionHours.air} hours for aircraft, {R.otherRegionHours.ground} for ground systems and {R.otherRegionHours.sea} for ships. Use it when a warning appears for a region you did not defend.</>,
         <><B>Fire orders.</B> Tell a shooter to engage everything, to hold its rounds for missiles, or to act as backup. See <B>Defenses</B>.</>,
@@ -404,7 +406,12 @@ function Score() {
   );
 }
 
-const GLOSSARY: [string, string][] = [
+export const GLOSSARY: [string, string][] = [
+  ['Backlog', 'Assets whose scheduled service is overdue. They wear out faster until serviced.'],
+  ['Comms', 'A region’s communications. Poor comms delay reports and make interceptors less accurate.'],
+  ['Information quality', 'How far you can trust what you are told: a blend of awareness, communications and report confidence.'],
+  ['Infrastructure', 'The state of a region’s roads, power and facilities. It supports readiness and is worn down by events and attacks.'],
+  ['Sensor availability', 'The share of your surveillance sensors that are working.'],
   ['AAR', 'After-Action Review: the report on how you did, available any time with the R key.'],
   ['Adjutant', 'Your assistant. It lists the most useful things to do next in the sidebar and in briefings.'],
   ['Airborne early warning', 'A radar carried by an aircraft (E-2D, E-7, GlobalEye). It looks down from above, so the radar horizon does not hide low fliers from it.'],
@@ -415,7 +422,7 @@ const GLOSSARY: [string, string][] = [
   ['Band', 'The wavelength a radar uses. See the Radar bands tab.'],
   ['BM, CM, FD, HG, RK, SD', 'Ballistic missile, cruise missile, fast drone, hypersonic glider, rocket, slow drone.'],
   ['Ceiling', 'The greatest height a weapon can hit.'],
-  ['Confidence', 'How likely a report is to be real. A very high confidence is labelled CONFIRMED, but only a confirmation you tasked is certain.'],
+  ['Confidence', 'How likely a report is to be real: UNVERIFIED, POSSIBLE, PROBABLE or VERY LIKELY. Only a confirmation you tasked makes it CONFIRMED.'],
   ['cr', 'Credits, the game’s money.'],
   ['Crew', 'A maintenance team. Each can do one job at a time.'],
   ['Cue', 'When one sensor tells a shooter where to look. How good the cue is depends on the sensor’s radar band.'],
@@ -449,9 +456,10 @@ const GLOSSARY: [string, string][] = [
 ];
 
 function Glossary() {
+  const sorted = [...GLOSSARY].sort((a, b) => a[0].localeCompare(b[0]));
   return (
     <dl className="grid gap-x-4 gap-y-1.5 text-[12px] leading-relaxed sm:grid-cols-[11rem_1fr]">
-      {GLOSSARY.map(([k, v]) => (
+      {sorted.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="font-semibold text-white">{k}</dt>
           <dd className="mb-1 text-ops-text sm:mb-0">{v}</dd>
@@ -464,7 +472,7 @@ function Glossary() {
 const KEYS: [string, string][] = [
   ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', `Advance ${SIM_CONFIG.turnHours} hours`], ['G S A M D', 'Global · Space · Air · Sea · Ground'], ['X', 'Tactical Theater'],
   ['I C L F', 'Intelligence · Communications · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-Action Review'],
-  ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Show or hide the bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close a window / deselect a region'], ['?', 'This guide'],
+  ['N', 'Jump to whatever needs you most'], ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Show or hide the bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close a window / deselect a region'], ['?', 'This guide'],
 ];
 
 function Keys() {

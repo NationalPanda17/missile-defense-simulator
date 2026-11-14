@@ -386,7 +386,7 @@ export default function GlobalMap({ s }: { s: SimState }) {
           const col = TONE_HEX[SEV_TONE[e.severity]];
           const uncertain = e.confidence < 60;
           const sc = Math.max(0.45, Math.min(1.1, k * 1.3));
-          const conf = confidenceLabel(e.confidence);
+          const conf = confidenceLabel(e.confidence, e.confirmed);
           return (
             <g key={e.id} transform={`translate(${x},${y}) scale(${sc})`} className="cursor-pointer"
               onClick={clickGuard(() => ui.openEvent(e.id))}

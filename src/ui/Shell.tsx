@@ -1,12 +1,13 @@
 // Top bar, left navigation, right sidebar and bottom panel.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, autosaveSlot, saveGame, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, EQUIPMENT_MAP, SIM_CONFIG, autosaveSlot, isEffector, isUnlimited, resupplyCost, resupplyRounds, saveGame, urgentList, type ThreatWave, type Urgent, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { SEVERITY_WORD, Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
+import { Term } from './Term';
 import { ServerStatusChip } from './views/ServerPanels';
 
 const ALERT_TONE = { NORMAL: 'green', ELEVATED: 'cyan', HIGH: 'amber', SEVERE: 'red' } as const;
@@ -38,6 +39,86 @@ export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
   }
   dispatch({ type: 'setSpeed', speed: sp });
   if (s.status === 'running' && s.paused && !s.turnBased) dispatch({ type: 'setPaused', paused: false });
+}
+
+/** Take the player to whatever an urgent item is about. */
+export function goToUrgent(ui: ReturnType<typeof useUI>, u: Urgent) {
+  if (u.kind === 'report' && u.eventId) return ui.openEvent(u.eventId);
+  if ((u.kind === 'damage' || u.kind === 'service') && u.assetId) return ui.openAsset(u.assetId);
+  if (u.region) { ui.setTheaterFocus(u.region); ui.setView('theater'); }
+}
+
+/** One button for "what needs me now?": jumps to the most pressing thing, and says how many more are waiting. */
+export function NextButton({ s }: { s: SimState }) {
+  const ui = useUI();
+  const list = urgentList(s);
+  const first = list[0];
+  return (
+    <button data-next className={`btn ${first ? 'border-ops-amber/70 text-ops-amber' : ''}`} disabled={!first}
+      title={first ? `${first.text}${list.length > 1 ? ` (+${list.length - 1} more)` : ''} Press N.` : 'Nothing needs you right now (N)'}
+      onClick={() => first && goToUrgent(ui, first)}>
+      ⚑ <span className="hidden sm:inline">{first ? 'Needs you' : 'All clear'}</span>{list.length > 0 && <span className="ml-1 rounded-sm bg-ops-amber/20 px-1 tabular-nums">{list.length}</span>}
+    </button>
+  );
+}
+
+/**
+ * A short summary when a wave's damage lands: how it went, why the worst of it happened, and the two things worth
+ * doing next. It appears once per wave and goes when dismissed or acted on.
+ */
+export function WaveCard({ s }: { s: SimState }) {
+  const ui = useUI();
+  const t = s.tactical?.enabled ? s.tactical : null;
+  const done = (w: ThreatWave) => w.resolved && w.applied !== false;
+  // Waves already over when this game was opened are not news.
+  const seen = useRef<Set<string> | null>(null);
+  const game = useRef<string | undefined>(undefined);
+  if (seen.current === null || game.current !== (s.campaignId ?? s.settings.name)) {
+    seen.current = new Set((t?.waves ?? []).filter(done).map((w) => w.id));
+    game.current = s.campaignId ?? s.settings.name;
+  }
+  const [card, setCard] = useState<string | null>(null);
+  const fresh = t?.waves.filter((w) => done(w) && !seen.current!.has(w.id)).sort((a, b) => b.atHour - a.atHour)[0];
+  useEffect(() => {
+    if (!fresh) return;
+    for (const w of t!.waves) if (done(w)) seen.current!.add(w.id);
+    setCard(fresh.id);
+  }, [fresh?.id]);
+  useEffect(() => { setCard(null); }, [s.campaignId]);
+  const w = card ? t?.waves.find((x) => x.id === card) : undefined;
+  if (!t || !w || store.pausePrompt || s.status === 'briefing') return null;
+  const real = w.tracks.filter((x) => !x.decoy);
+  if (!real.length) return null;
+  const stopped = real.filter((x) => x.outcome === 'stopped').length;
+  const leaked = real.length - stopped;
+  const rounds = w.tracks.reduce((a, x) => a + x.shots, 0);
+  const low = t.deployments.filter((d) => {
+    const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
+    return d.region === w.region && isEffector(sp) && !isUnlimited(sp) && d.reloadRemaining === undefined && d.stock < sp.magazine && resupplyRounds(s, d) > 0 && s.logistics >= 25;
+  });
+  const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
+  const tone = leaked === 0 ? 'border-ops-green/60' : leaked * 2 > real.length ? 'border-ops-red/60' : 'border-ops-amber/60';
+  return (
+    <div className={`fixed inset-x-2 top-16 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-20 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="label">Wave over · {s.regions[w.region].name}</div>
+          <div className="font-sans text-[15px] font-semibold text-white">
+            <span className="text-ops-green">{stopped} stopped</span>{leaked > 0 && <span className="text-ops-red"> · {leaked} got through</span>}
+            <span className="ml-2 text-[11px] font-normal text-ops-dim">{rounds} round{rounds === 1 ? '' : 's'} fired</span>
+          </div>
+        </div>
+        <button className="btn px-2" onClick={() => setCard(null)} aria-label="Close wave result">✕</button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button className="btn btn-primary" onClick={() => { ui.setReplayWave(w.id); ui.setView('theater'); setCard(null); }}>▶ Watch what happened</button>
+        <button className="btn" disabled={!low.length || s.credits < cost} title={!low.length ? 'Every magazine there is full, reloading, or the stockpile is empty' : s.credits < cost ? 'Not enough credits' : low.map((d) => EQUIPMENT_MAP.get(d.equipmentId)!.name).join(', ')}
+          onClick={() => { for (const d of low) dispatch({ type: 'resupply', deploymentId: d.id }); }}>
+          {low.length ? `Resupply ${low.length} system${low.length === 1 ? '' : 's'} (${cost} cr)` : 'Nothing to resupply'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -139,6 +220,7 @@ export function TopBar({ s }: { s: SimState }) {
         <span className="hidden sm:contents"><ServerStatusChip /></span>
         <DisplayControl />
         <SoundControl />
+        <NextButton s={s} />
         <MainMenuButton s={s} />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">Guide</span></button>
       </div>
@@ -270,7 +352,7 @@ export function RightSidebar({ s }: { s: SimState }) {
         {active.length === 0 && <div className="text-ops-dim">No open reports. All quiet.</div>}
         <ul className="space-y-1.5">
           {active.map((e) => {
-            const c = confidenceLabel(e.confidence);
+            const c = confidenceLabel(e.confidence, e.confirmed);
             const left = e.deadline - s.hour;
             return (
               <li key={e.id}>
@@ -312,9 +394,9 @@ export function RightSidebar({ s }: { s: SimState }) {
           <button key={r.id} onClick={() => { ui.setView('global'); ui.setRegion(r.id); }} className="mb-1 flex w-full justify-between rounded px-1 py-0.5 text-left hover:bg-ops-panel2">
             <span className="text-white">{r.name}</span>
             <span className="text-[10px]">
-              {r.stability < 55 && <span className="ml-1 text-ops-amber">STAB {Math.round(r.stability)}</span>}
-              {r.comms < 50 && <span className="ml-1 text-ops-red">COMMS {Math.round(r.comms)}</span>}
-              {r.awareness < 45 && <span className="ml-1 text-ops-amber">AWR {Math.round(r.awareness)}</span>}
+              {r.stability < 55 && <span className="ml-1 text-ops-amber"><Term k="Stability">Stability</Term> {Math.round(r.stability)}</span>}
+              {r.comms < 50 && <span className="ml-1 text-ops-red"><Term k="Comms">Comms</Term> {Math.round(r.comms)}</span>}
+              {r.awareness < 45 && <span className="ml-1 text-ops-amber"><Term k="Awareness">Awareness</Term> {Math.round(r.awareness)}</span>}
             </span>
           </button>
         ))}

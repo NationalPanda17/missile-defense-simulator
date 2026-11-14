@@ -242,7 +242,7 @@ export const LESSONS: TrainingLesson[] = [
     steps: [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
       { id: 'levels', title: 'Confidence levels', view: 'intel',
-        text: 'Every report carries a confidence: UNVERIFIED, POSSIBLE, PROBABLE or CONFIRMED. Low confidence does not mean false, and high confidence does not mean certain.',
+        text: 'Every report carries a confidence: UNVERIFIED, POSSIBLE, PROBABLE or VERY LIKELY. Low confidence does not mean false, and high confidence does not mean certain. A report only reads CONFIRMED after a confirmation you tasked comes back.',
         why: 'Real commanders lose more to acting on bad information, or ignoring good information, than to slow decisions.' },
       { id: 'open', wait: true, target: ['events'], title: 'Open a report',
         text: 'Let the clock run (press Resume) until the first report arrives: the South America report. Then click it in the Active reports list on the right, or in Intelligence.',
