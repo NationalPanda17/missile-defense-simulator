@@ -29,7 +29,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
     <div className="space-y-2 text-[11px]">
       {c && (c.night || c.storm) && (
         <p className="text-ops-amber">
-          Launched {c.night ? 'at night' : ''}{c.night && c.storm ? ' and ' : ''}{c.storm ? 'in a storm (sensors at 60% of their range)' : ''}
+          Launched {c.night ? 'at night' : ''}{c.night && c.storm ? ' and ' : ''}{c.storm ? 'in a storm (radars lost range by band: long-wave least, short-wave most)' : ''}
           {c.night ? '; Stinger, Avenger and ZU-23-2 were less accurate in the dark' : ''}.
         </p>
       )}
@@ -41,7 +41,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
               <tr key={tr.id}>
                 <td className="whitespace-nowrap text-white">{THREAT_LABELS[tr.cls]}{tr.via ? ' ↪' : ''}</td>
                 <td className="whitespace-nowrap">{sites.get(tr.siteId)?.name ?? '—'}</td>
-                <td className={tr.detected ? 'text-ops-green' : 'text-ops-amber'}>{tr.detected === undefined ? '—' : tr.detected ? 'yes' : 'no'}</td>
+                <td className={tr.detected ? 'text-ops-green' : 'text-ops-amber'}>{tr.detected === undefined ? '—' : tr.detected ? (tr.band ? (tr.band === 'passive' ? 'yes · passive' : `yes · ${tr.band}-band`) : 'yes') : 'no'}{tr.detected && (tr.cueQ ?? 1) < 0.9 ? <div className="text-[10px] text-ops-amber">shot on a shared track ({Math.round((tr.cueQ ?? 1) * 100)}% accuracy)</div> : null}</td>
                 <td>{tr.fired?.length ? tr.fired.map((f) => `${sys(f.dep)} ×${f.shots}`).join(', ') : <span className="text-ops-dim">nobody</span>}</td>
                 <td className={tr.outcome === 'stopped' ? 'text-ops-green' : 'text-ops-red'}>
                   {tr.outcome === 'stopped' ? `stopped by ${sys(tr.stoppedBy ?? '')}` : <>got through{tr.damage ? ` (−${tr.damage})` : ''}<div className="text-[10px] leading-snug text-ops-dim">{leakText(tr, t.deployments)}</div></>}
@@ -53,8 +53,8 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
       </div>
       {decoys.length > 0 && (
         <p className="text-ops-dim">
-          {decoys.length} decoy{decoys.length === 1 ? '' : 's'} came with it; {decoys.filter((x) => x.shots > 0).length} drew fire
-          ({decoys.reduce((a, x) => a + x.shots, 0)} rounds).
+          {decoys.length} decoy{decoys.length === 1 ? '' : 's'} came with it: {decoys.filter((x) => x.rejected).length} recognised by radar and left alone,{' '}
+          {decoys.filter((x) => x.shots > 0).length} drew fire ({decoys.reduce((a, x) => a + x.shots, 0)} rounds wasted). Sharper radar bands (C, X, Ku) recognise more.
         </p>
       )}
       {idle.size > 0 && (
@@ -68,7 +68,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
           </ul>
         </div>
       )}
-      <p className="text-[10px] text-ops-dim">↪ changed direction mid-flight. “Seen” means a sensor (or airborne radar) tracked it; unseen threats are engaged late and less accurately.</p>
+      <p className="text-[10px] text-ops-dim">↪ changed direction mid-flight. “Seen” means a sensor tracked it, with the sharpest radar band that did; unseen threats are engaged late and less accurately. A “shared track” is a shot guided by another sensor because the shooter’s own radar could not see the threat.</p>
     </div>
   );
 }

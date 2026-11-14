@@ -139,14 +139,15 @@ class SimStore {
       const want = this.autoPause();
       const wanted = want ? found.reasons.filter((x) => want[x.kind]) : [];
       // Batch report and escalation pauses (at most one per BATCH_HOURS); keep what happened meanwhile for the prompt.
-      this.held.push(...wanted.filter((x) => x.kind !== 'launch'));
-      const launch = wanted.filter((x) => x.kind === 'launch');
+      // A report about to escalate cannot wait for the next batch: it pauses at once, like a launch.
+      this.held.push(...wanted.filter((x) => x.kind === 'report'));
+      const launch = wanted.filter((x) => x.kind !== 'report');
       const due = this.held.length > 0 && s.hour - this.lastBatchPause >= BATCH_HOURS;
       if (launch.length || due) {
         const hits = [...launch, ...this.held.filter((x) => isStillRelevant(s, x))];
         this.held = [];
-        if (!launch.length) this.lastBatchPause = s.hour;
         if (!hits.length) continue;
+        if (!launch.length) this.lastBatchPause = s.hour;
         this.pausePrompt = hits;
         s.paused = true; // the game's own pause, not a player order: not written to the command log
         this.acc = 0;

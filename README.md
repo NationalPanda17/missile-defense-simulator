@@ -116,7 +116,7 @@ Fonts load from Google Fonts and fall back to system fonts when offline.
    watch waves play out in the **Tactical Theater** (X), resupply systems that run low, **raise
    an alert** in a region when a wave is inbound, or **redeploy** a system (it's out of action
    while it moves).
-   Threat protection is 15% of the campaign score. Afterwards, the after-action review's
+   Threat protection is 20% of the campaign score. Afterwards, the after-action review's
    **Mission Replay** plays the run back on each region's map, with every wave and decision on a
    timeline you can scrub.
 

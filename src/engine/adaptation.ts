@@ -101,11 +101,11 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   for (const r of REGION_IDS) {
     const real = past.filter((w) => w.region === r && w.phaseIndex === s.phaseIndex - 1).flatMap((w) => w.tracks.filter((x) => !x.decoy));
     if (real.length < 3 || real.filter((x) => x.outcome === 'stopped').length / real.length < 0.8) continue;
-    const mags = s.tactical!.deployments.filter((d) => d.region === r).map((d) => EQUIPMENT_MAP.get(d.equipmentId)!).filter((sp) => sp && !isUnlimited(sp));
+    const mags = s.tactical!.deployments.filter((d) => d.region === r).map((d) => EQUIPMENT_MAP.get(d.equipmentId)!).filter((sp) => sp && sp.magazine > 0 && !isUnlimited(sp));
     if (!mags.length) continue;
     const share = s.tactical!.deployments.filter((d) => d.region === r).reduce((a, d) => {
       const sp = EQUIPMENT_MAP.get(d.equipmentId);
-      return sp && !isUnlimited(sp) ? a + d.stock / sp.magazine : a;
+      return sp && sp.magazine > 0 && !isUnlimited(sp) ? a + d.stock / sp.magazine : a;
     }, 0) / mags.length;
     if (share < 0.5 && share < lowest) { lowest = share; doubleTap = r; }
   }

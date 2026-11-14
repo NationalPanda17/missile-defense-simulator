@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   DOMAINS, EQUIPMENT_MAP, adaptiveEnemy, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
-  type CommandEntry, type ScoreKey, type SimState,
+  type CommandEntry, type GameEvent, type ScoreKey, type SimState,
 } from '../../engine';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
@@ -19,16 +19,20 @@ const SHORT: Record<ScoreKey, string> = {
   efficiency: 'Efficiency', information: 'Info quality', recovery: 'Recovery', protection: 'Protection',
 };
 
+/** Is the truth about a report known to the player yet? Only once it has run its course (or the scenario is over). */
+const truthKnown = (s: SimState, e: GameEvent) =>
+  s.status === 'complete' || e.status === 'resolved' || e.status === 'escalated' || e.status === 'expired' || (e.status === 'dismissed' && !e.hiddenLive);
+
 function verdict(s: SimState, c: CommandEntry): { tone: 'green' | 'red' | 'dim' | 'amber'; text: string } {
   const e = c.eventId ? s.events.find((x) => x.id === c.eventId) : undefined;
   if (c.kind === 'respond' && e) {
-    if (!e.isGenuine && e.status !== 'responding') return { tone: 'red', text: 'Spent on a spurious report' };
+    if (!e.isGenuine && e.status !== 'responding' && truthKnown(s, e)) return { tone: 'red', text: 'Spent on a spurious report' };
     if (e.status === 'resolved') return { tone: 'green', text: 'Resolved the event' };
     if (e.status === 'escalated') return { tone: 'red', text: 'Event still escalated' };
     return { tone: 'dim', text: 'In progress' };
   }
-  if (c.kind === 'dismiss' && e) return e.isGenuine ? { tone: 'red', text: 'Dismissed a genuine event' } : { tone: 'green', text: 'Correctly dismissed' };
-  if (c.kind === 'confirm' && e) return e.isGenuine ? { tone: 'green', text: 'Confirmed genuine' } : e.status === 'expired' ? { tone: 'green', text: 'Exposed spurious report' } : { tone: 'dim', text: 'Pending' };
+  if (c.kind === 'dismiss' && e) return !truthKnown(s, e) ? { tone: 'dim', text: 'Dismissed; outcome not yet known' } : e.isGenuine ? { tone: 'red', text: 'Dismissed a genuine event' } : { tone: 'green', text: 'Correctly dismissed' };
+  if (c.kind === 'confirm' && e) return e.status === 'confirming' ? { tone: 'dim', text: 'Pending' } : e.isGenuine ? { tone: 'green', text: 'Confirmed genuine' } : e.status === 'expired' ? { tone: 'green', text: 'Exposed spurious report' } : { tone: 'dim', text: 'Pending' };
   if (c.kind === 'monitor' && e) return e.status === 'escalated' ? { tone: 'amber', text: 'Delayed action; escalated' } : { tone: 'dim', text: 'Bought time' };
   if (c.kind === 'invest') return { tone: 'green', text: 'Long-term investment' };
   if (c.kind === 'maintain') return { tone: 'green', text: 'Preventive upkeep' };
@@ -44,11 +48,10 @@ export function AARView({ s }: { s: SimState }) {
   const lessons = lessonsLearned(s);
   const final = s.status === 'complete';
   const major = s.events.filter((e) => e.reportedAt <= s.hour && (e.severity >= 3 || e.status === 'escalated' || e.global));
-  const unresolved = s.events.filter((e) => (isActive(e) && e.reportedAt <= s.hour) || e.hiddenLive);
+  const unresolved = s.events.filter((e) => (isActive(e) && e.reportedAt <= s.hour) || (final && e.hiddenLive));
   const degraded = s.assets.filter((a) => a.status === 'offline' || a.status === 'degraded');
   const decisions = s.commands.filter((c) => c.category !== 'control');
   const spendTotal = Object.values(s.spendByCategory).reduce((a, b) => a + b, 0);
-  const first = s.history[0];
   const tactical = tacticalReport(s);
   const tStats = s.tactical?.stats;
   const drill = lessonOf(s)?.drill;
@@ -202,8 +205,8 @@ export function AARView({ s }: { s: SimState }) {
             {REGION_IDS.map((id) => {
               const avg = s.history.length ? s.history.reduce((x, h) => x + h.regions[id], 0) / s.history.length : 0;
               const r = s.regions[id];
-              const n = s.events.filter((e) => e.region === id && e.isGenuine).length;
-              return <tr key={id}><td className="text-white">{r.short}</td><td className={TONE_TEXT[tone(avg)]}>{Math.round(avg)}</td><td className={TONE_TEXT[tone(r.stability)]}>{Math.round(r.stability)}</td><td className={TONE_TEXT[tone(r.infrastructure)]}>{Math.round(r.infrastructure)}{first ? '' : ''}</td><td>{n}</td></tr>;
+              const n = s.events.filter((e) => e.region === id && e.reportedAt <= s.hour && (!truthKnown(s, e) || e.isGenuine)).length;
+              return <tr key={id}><td className="text-white">{r.short}</td><td className={TONE_TEXT[tone(avg)]}>{Math.round(avg)}</td><td className={TONE_TEXT[tone(r.stability)]}>{Math.round(r.stability)}</td><td className={TONE_TEXT[tone(r.infrastructure)]}>{Math.round(r.infrastructure)}</td><td>{n}</td></tr>;
             })}
           </tbody>
         </table>
@@ -219,7 +222,7 @@ export function AARView({ s }: { s: SimState }) {
                 <td className="text-white">{e.title}</td>
                 <td>{e.global ? 'GLOBAL' : e.region}</td>
                 <td className={e.status === 'resolved' ? 'text-ops-green' : e.status === 'escalated' ? 'text-ops-red' : 'text-ops-dim'}>{e.status.toUpperCase()}{e.resolvedAt !== undefined ? ` T+${e.resolvedAt}h` : ''}</td>
-                <td className="text-[10px] text-ops-dim">{e.isGenuine ? '' : 'spurious'}</td>
+                <td className="text-[10px] text-ops-dim">{!truthKnown(s, e) || e.isGenuine ? '' : 'spurious'}</td>
               </tr>
             ))}
             {!major.length && <tr><td className="text-ops-dim">No major events recorded.</td></tr>}

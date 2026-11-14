@@ -159,6 +159,7 @@ export function advise(s: SimState): Advice[] {
       for (const o of phase.objectives) {
         const v = objectiveValue(s, o.metric);
         if (objectiveMet(o.metric, v, o.target) && !(o.metric === 'escalationsMax' && v === o.target)) continue;
+        if (o.metric === 'escalationsMax' && v > o.target) continue; // already missed: nothing left to warn about
         // Counts and gains start at zero, so they are only "at risk" once a third of the phase has gone; a level below
         // its target (network, readiness, stability...) is worth saying at once.
         const isCount = ['maintenanceDone', 'confirmations', 'resolved', 'falseDismissed', 'readinessGain', 'infrastructureGain'].includes(o.metric);

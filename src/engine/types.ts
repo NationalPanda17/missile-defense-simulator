@@ -360,6 +360,12 @@ export interface Track {
   why?: ([string, string] | { dep: string; reason: string })[];
   leak?: string; // older saves only: why it got through, written out (now built on demand by leakText)
   via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
+  /** Radar band of the sharpest sensor that tracked it ('passive' for acoustic or RF sensors); absent if unseen. */
+  band?: string;
+  /** A decoy that a sharp radar recognised, so nothing fired at it. */
+  rejected?: boolean;
+  /** Lowest track quality (0-1) any system fired on: below 1 when it shot on another sensor's coarser track. */
+  cueQ?: number;
 }
 
 export interface ThreatWave {
@@ -381,6 +387,7 @@ export interface TacticalStats {
   stopped: number;
   leaked: number;
   decoysEngaged: number; // decoys that drew at least one shot
+  decoysSpotted?: number; // decoys a sharp radar recognised, so nothing fired (absent in older saves)
   shots: number;
   siteDamage: number; // total integrity lost across sites
 }

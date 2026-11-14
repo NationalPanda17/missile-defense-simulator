@@ -1,10 +1,10 @@
 // Player commands. Every command validates, applies costs, mutates state and records itself in the command log.
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance, responseSuccessChance } from './engine';
-import { EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
+import { isEffector, EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
   addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
-  resupplyCost, resupplyRounds, stockpileOf, theaterToLonLat,
+  resupplyCost, resupplyRounds, stockpileOf, stockpileRules, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
@@ -215,6 +215,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (s.projects.some((p) => p.investmentId === inv.id && p.region === cmd.region && p.domain === cmd.domain))
         return fail('An identical project is already underway.');
       if (inv.id === 'modernize' && s.modernization >= 30) return fail('Modernization is at maximum.');
+      if (inv.id === 'rebuild' && cmd.region && !s.tactical?.sites.some((x) => x.region === cmd.region && x.integrity < 100)) return fail('No site in that region is damaged.');
       const err = canAfford(s, inv.credits, inv.personnel, 0);
       if (err) return fail(err);
       spend(s, inv.credits, inv.personnel, 'investment');
@@ -268,7 +269,13 @@ function run(s: SimState, cmd: Command): CommandResult {
       const d = t.deployments.find((x) => x.id === cmd.deploymentId);
       if (!d) return fail('Unknown deployment.');
       const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-      const refund = Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund);
+      // Rounds already fired are not refunded, and the unit takes its share of the national reserve with it, so
+      // withdrawing and redeploying is never a cheaper resupply.
+      const refund = Math.max(0, Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(d));
+      const sp = stockpileRules(s);
+      if (sp && t.stockpile?.[spec.id] !== undefined && isEffector(spec) && !isUnlimited(spec)) {
+        t.stockpile[spec.id] = Math.max(0, t.stockpile[spec.id] - Math.floor(spec.magazine * sp.initial));
+      }
       removeDeployment(s, d);
       s.credits += refund;
       s.personnel = Math.min(s.personnelMax, s.personnel + TACTICAL_CONFIG.deployPersonnel);

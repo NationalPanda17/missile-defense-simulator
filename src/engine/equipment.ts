@@ -27,11 +27,57 @@ export const LAYER_LABELS: Record<DefenseLayer, string> = {
   upper: 'Upper tier',
 };
 
+/**
+ * Radar bands, from the longest waves to the shortest. The trade the game models is the real one: long waves carry far
+ * and pass through rain but give a blurry picture; short waves give a sharp picture but are soaked up by heavy weather.
+ */
+export type RadarBand = 'UHF' | 'L' | 'S' | 'C' | 'X' | 'Ku';
+export const RADAR_BAND_IDS: RadarBand[] = ['UHF', 'L', 'S', 'C', 'X', 'Ku'];
+
+export interface RadarBandSpec {
+  /** Wavelength, for the guide. */
+  wave: string;
+  /** What the band is like, in a few words. */
+  nick: string;
+  /** Share of its normal range a radar keeps in a storm (1 = unaffected). */
+  storm: number;
+  /** Chance it recognises a decoy it is tracking, so nothing fires at it. */
+  sharp: number;
+  /** How good its track is for a system that cannot see the threat itself (1 = as good as that system's own radar). */
+  cue: number;
+  /** One sentence for the guide and the catalog. */
+  summary: string;
+}
+
+/** Game values, chosen to follow the real trade-off between wavelength, weather and resolution. */
+export const RADAR_BANDS: Record<RadarBand, RadarBandSpec> = {
+  UHF: { wave: 'about 70 cm', nick: 'long wave', storm: 1, sharp: 0, cue: 0.6,
+    summary: 'Sees through any weather and gives early warning, but the picture is blurry: it cannot tell decoys apart and is a poor guide for someone else’s shot.' },
+  L: { wave: 'about 23 cm', nick: 'long wave', storm: 0.9, sharp: 0.1, cue: 0.7,
+    summary: 'Long-range search. Barely troubled by storms; still too coarse to pick out decoys.' },
+  S: { wave: 'about 10 cm', nick: 'all-rounder', storm: 0.75, sharp: 0.35, cue: 0.85,
+    summary: 'The middle of the road: decent range, decent in weather, decent picture.' },
+  C: { wave: 'about 6 cm', nick: 'sharp', storm: 0.6, sharp: 0.55, cue: 0.95,
+    summary: 'A fire-control band: a sharp track that other systems can shoot on, at the cost of range in storms.' },
+  X: { wave: 'about 3 cm', nick: 'very sharp', storm: 0.45, sharp: 0.8, cue: 1,
+    summary: 'Sharp enough to tell most decoys from real threats and to guide any shot, but a storm more than halves its range.' },
+  Ku: { wave: 'about 2 cm', nick: 'sharpest', storm: 0.35, sharp: 0.9, cue: 1,
+    summary: 'The sharpest picture, built for small drones at short range. Heavy weather cuts its range by two thirds.' },
+};
+
+/** Passive sensors (acoustic, RF): what they keep in a storm, and how good a cue they give. They never spot decoys. */
+export const PASSIVE_SENSOR = { storm: 0.6, sharp: 0, cue: 0.8 };
+
 export interface RadarSpec {
   name: string;
-  band: string;
+  band: RadarBand;
   rangeKm: number;
 }
+
+/** The band a system senses with, or null for passive sensors and systems with no sensor of their own. */
+export const bandOf = (spec: EquipmentSpec): RadarBand | null => spec.radar?.band ?? null;
+/** Storm, decoy and cue ratings of a system's sensor (its radar band, or the passive-sensor values). */
+export const sensorTraits = (spec: EquipmentSpec) => (spec.radar ? RADAR_BANDS[spec.radar.band] : PASSIVE_SENSOR);
 
 export interface EquipmentSpec {
   id: string;

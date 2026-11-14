@@ -449,7 +449,7 @@ export function maybeGenerateEvent(s: SimState): GameEvent | undefined {
   const phase = s.phases[s.phaseIndex];
   const active = s.events.filter((e) => e.status === 'reported' || e.status === 'confirming' || e.status === 'responding').length;
   if (active >= 14) return undefined;
-  const freq = s.settings.mode === 'sandbox' ? 1 : s.settings.eventFrequency;
+  const freq = s.settings.mode === 'sandbox' || s.settings.mode === 'crisis' ? 1 : s.settings.eventFrequency; // those modes build it into the phase's rate
   const lambda = phase.eventRate * s.difficulty * freq;
   if (rand(s) > lambda) return undefined;
   const region = pickRegion(s);

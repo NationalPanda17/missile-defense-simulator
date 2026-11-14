@@ -20,7 +20,8 @@ interface UIState {
   layers: Layers; toggleLayer: (k: keyof Layers) => void;
   overlay: OverlayMetric; setOverlay: (m: OverlayMetric) => void;
   tutorial: boolean; setTutorial: (b: boolean) => void;
-  help: boolean; setHelp: (b: boolean) => void;
+  /** The field guide: closed, or open on a section (true opens the first). */
+  help: false | string; setHelp: (b: boolean | string) => void;
   bottomOpen: boolean; setBottomOpen: (b: boolean) => void;
   accountOpen: boolean; setAccountOpen: (b: boolean) => void;
   academyOpen: boolean; setAcademyOpen: (b: boolean) => void;
@@ -47,7 +48,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [layers, setLayers] = useState<Layers>(loadLayers);
   const [overlay, setOverlay] = useState<OverlayMetric>('readiness');
   const [tutorial, setTutorial] = useState(false);
-  const [help, setHelp] = useState(false);
+  const [help, setHelpState] = useState<false | string>(false);
+  const setHelp = (b: boolean | string) => setHelpState(b === true ? 'start' : b);
   // The timeline drawer remembers being closed; on short screens it starts closed so the map keeps its height.
   const [bottomOpen, setBottomOpenState] = useState<boolean>(() => {
     try {

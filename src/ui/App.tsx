@@ -2,7 +2,8 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { SIM_CONFIG, lessonOf, saveGame } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
-import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
+import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
+import { GuideModal } from './Guide';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
@@ -109,6 +110,11 @@ function Root() {
     if (lastMode.current !== s.settings.name + s.settings.seed) {
       lastMode.current = s.settings.name + s.settings.seed;
       ui.setTutorial(s.settings.mode === 'training' && !lessonOf(s));
+      // A new or loaded game starts on the main screen with nothing left open from the last one.
+      ui.setView('global');
+      ui.setRegion(null);
+      ui.openEvent(null);
+      ui.openAsset(null);
     }
   });
 
@@ -119,9 +125,9 @@ function Root() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = store.state;
-      if (!st) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (!st) { if (e.key === '?') ui.setHelp(true); return; } // start screen: only the guide
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         if (saveGame(st, 'slot1')) store.toast('ok', 'Quick-saved to SLOT1');
@@ -129,6 +135,8 @@ function Root() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A window is open (briefing, report, asset, help): its own keys apply, not the command shortcuts behind it.
+      if (document.querySelector('.modal-overlay')) { if (e.key === '?') ui.setHelp(true); return; }
       if (e.key === ' ') {
         e.preventDefault();
         if (st.status === 'running') dispatch({ type: 'setPaused', paused: !st.paused });
@@ -138,7 +146,7 @@ function Root() {
       if (e.key === '?') return ui.setHelp(true);
       if (e.key === 'Escape') { if (!ui.eventId && !ui.assetId) ui.setRegion(null); return; }
       const k = e.key.toUpperCase();
-      if (k === 'T') return void dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours });
+      if (k === 'T') { if (dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours }).ok && !st.turnBased) store.toast('info', `Advanced ${SIM_CONFIG.turnHours} hours.`); return; }
       if (k === 'B') return ui.setBottomOpen(!ui.bottomOpen);
       if (k === 'V') return sound.toggleMute();
       const nav = NAV.find((n) => n.key === k);
@@ -160,6 +168,7 @@ function Root() {
     return (
       <>
         <StartScreen onSandbox={() => setEditorFirst(true)} />
+        {ui.help && <GuideModal />}
         {ui.accountOpen && <AccountModal />}
         {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}
       </>
@@ -204,7 +213,7 @@ function Root() {
       <PausePrompt s={s} docked={PLANNING_VIEWS.includes(ui.view)} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
-      {ui.help && <HelpModal />}
+      {ui.help && <GuideModal />}
       {lesson ? <Suspense fallback={null}><Coach key={s.campaignId ?? s.settings.name} s={s} lesson={lesson} /></Suspense> : ui.tutorial && <TutorialPanel />}
       {ui.accountOpen && <AccountModal />}
       {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}

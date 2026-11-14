@@ -2,7 +2,7 @@
 // the commander can do right now. The same actions appear in the Tactical Theater whenever a wave is inbound.
 import { useSyncExternalStore } from 'react';
 import {
-  EQUIPMENT_MAP, alertActive, alertCost, isActive, isEffector, isUnlimited, resupplyCost, resupplyRounds, type PauseReason, type RegionId, type SimState,
+  EQUIPMENT_MAP, TACTICAL_CONFIG, alertActive, alertCost, isActive, isEffector, isUnlimited, resupplyCost, resupplyRounds, type PauseReason, type RegionId, type SimState,
 } from '../engine';
 import { dispatch, store } from '../store/simStore';
 import { useUI, type ViewId } from './uiState';
@@ -19,7 +19,7 @@ export function WaveActions({ s, region, compact }: { s: SimState; region: Regio
   const aCost = alertCost(s, region);
   const low = deps.filter((d) => {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
-    return isEffector(spec) && !isUnlimited(spec) && d.reloadRemaining === undefined && d.stock < spec.magazine && resupplyRounds(s, d) > 0;
+    return isEffector(spec) && !isUnlimited(spec) && d.reloadRemaining === undefined && d.stock < spec.magazine && resupplyRounds(s, d) > 0 && s.logistics >= TACTICAL_CONFIG.minLogisticsForResupply;
   });
   const rCost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
   const unsure = s.events.filter((e) => isActive(e) && e.reportedAt <= s.hour && e.status === 'reported' && e.confidence < 55);

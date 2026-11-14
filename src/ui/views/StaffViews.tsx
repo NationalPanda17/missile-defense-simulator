@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  DOMAINS, INVESTMENTS, REGION_IDS, SIM_CONFIG, canAfford, confidenceLabel, crewsFree, isActive, isKnown, maintenanceCost, mitigation,
+  DOMAINS, INVESTMENTS, REGION_IDS, SIM_CONFIG, canAfford, confidenceLabel, incomePerHour, crewsFree, isActive, isKnown, maintenanceCost, mitigation,
   type Domain, type RegionId, type SimState,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
@@ -141,7 +141,7 @@ export function LogisticsView({ s }: { s: SimState }) {
   const ui = useUI();
   const [target, setTarget] = useState<Record<string, string>>({});
   const upkeep = s.assets.reduce((x, a) => x + a.upkeep, 0);
-  const income = SIM_CONFIG.baseIncomePerHour * (0.5 + s.metrics.stability / 200);
+  const income = incomePerHour(s);
   const queue = s.assets.filter((a) => a.status !== 'maintenance' && a.status !== 'transit' && (a.hoursToService < 24 || a.condition < 60)).sort((a, b) => a.hoursToService - b.hoursToService);
   const inMaint = s.assets.filter((a) => a.status === 'maintenance');
   const spendTotal = Object.values(s.spendByCategory).reduce((a, b) => a + b, 0) || 1;

@@ -115,8 +115,7 @@ export function TopBar({ s }: { s: SimState }) {
         <span className="hidden sm:contents"><ServerStatusChip /></span>
         <DisplayControl />
         <SoundControl />
-        <button className="btn" onClick={() => ui.setHelp(true)} title="Help & shortcuts (?)">?</button>
-        <button className="btn hidden sm:inline-flex" onClick={() => ui.setTutorial(!ui.tutorial)} title="Training guide">Guide</button>
+        <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">Guide</span></button>
       </div>
     </header>
   );
