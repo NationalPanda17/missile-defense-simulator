@@ -4,11 +4,12 @@
 // scripted threat waves) plus a list of steps. A step either waits for the player to do something, checked by a pure
 // predicate over the simulation state and what the UI is showing, or is a short read / quiz the player moves past.
 // Keeping the checks here, free of UI code, lets the tests prove every lesson can be completed.
+import { TACTICAL_CONFIG } from './config';
 import { computeScore, protectionScore } from './scoring';
 import { regionProtection } from './tactical';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
 import { hash01 } from './weather';
-import { REGION_IDS, type PhaseConfig, type RegionId, type ScenarioSettings, type SimState, type ThreatAxis, type ThreatClass } from './types';
+import { REGION_IDS, type PhaseConfig, type RegionId, type Raid, type ScenarioSettings, type SimState, type ThreatAxis, type ThreatClass } from './types';
 
 /** What a step's check can see: the simulation, what the UI is showing, and where the step began. */
 export interface StepContext {
@@ -81,6 +82,12 @@ export interface ScriptedWave {
   tracks: Partial<Record<ThreatClass, number>>;
   /** Shown in the briefing forecast (false = a surprise attack). */
   forecast: boolean;
+  /** Player-written raids only (see RaidWave). */
+  axis2?: ThreatAxis;
+  target?: string;
+  route?: 'direct' | 'turn' | 'valley';
+  decoys?: number;
+  hunt?: number;
 }
 
 export interface TrainingLesson {
@@ -712,11 +719,23 @@ export const ENDLESS: TrainingLesson = {
 // ── Player-written raids ─────────────────────────────────────────────────
 
 export const RAID_ID = 'raid';
-/** Attack points a raid may spend: each threat costs what the game says it costs the attacker. */
-export const RAID_BUDGET = 600;
+/** Attack points a standard raid may spend (see raid.ts for the other sizes and what the options cost). */
+export const RAID_BUDGET = TACTICAL_CONFIG.raid.sizes.standard.points;
 
 const raidWaves = (settings: ScenarioSettings): ScriptedWave[] =>
-  (settings.raid?.waves ?? []).map((w) => ({ region: settings.raid!.region, atHour: w.atHour, axis: w.axis, tracks: w.tracks, forecast: true }));
+  (settings.raid?.waves ?? []).map((w) => ({
+    region: settings.raid!.region, atHour: w.atHour, axis: w.axis, tracks: w.tracks, forecast: !w.hidden,
+    axis2: w.axis2, target: w.target, route: w.route, decoys: w.decoys ?? 0, hunt: w.hunt ? TACTICAL_CONFIG.raid.huntShare : 0,
+  }));
+
+/** Settings for a battle against a player-written raid: its own map and weather, and credits to match its size. */
+export function raidSettings(raid: Raid, base: ScenarioSettings): ScenarioSettings {
+  const st = lessonSettings(RAID_ID, base);
+  return {
+    ...st, seed: raid.seed ?? st.seed, startCredits: TACTICAL_CONFIG.raid.sizes[raid.size ?? 'standard'].credits,
+    name: raid.name ? `Custom Raid · ${raid.name}` : st.name, raid,
+  };
+}
 
 /** A battle whose waves a player wrote: defended by another player, or by the computer while the author watches. */
 export const RAID: TrainingLesson = {
@@ -727,10 +746,10 @@ export const RAID: TrainingLesson = {
   makeWaves: (_seed, _phase, settings) => raidWaves(settings),
   drill: { goal: 'Prevent as much of the raid’s damage as you can.', score: defenseScore, stars: [55, 75, 90] },
   steps: [
-    { id: 'brief', title: 'The raid', check: running, text: 'Defending: someone designed this attack to get through. Open the forecast check to see what is coming and from where, place your defenses, and keep credits back for resupply. Attacking: the computer has built its defense and the raid is on its way.' },
+    { id: 'brief', title: 'The raid', check: running, text: 'Defending: someone designed this attack to get through. Open the forecast check to see what is coming and from where, place your defenses, and keep credits back for resupply: the author may have paid to keep a wave out of the forecast, to jam a radar band or to send missiles after your radars. Attacking: the computer has built its defense and the raid is on its way.' },
     { id: 'begin', target: ['begin'], title: 'Begin', text: 'Press “Assume command — begin phase” when ready.', check: running },
     { id: 'finish', wait: true, title: 'Fight it out', text: 'Watch it in the Tactical Theater (key X). Raise an alert when a launch warning appears.', check: (c) => c.s.status === 'complete' },
-    { id: 'result', title: 'Result', view: 'aar', text: 'The defense score is below: the share of the raid’s damage that was prevented. For the attacker, lower is better.' },
+    { id: 'result', title: 'Result', view: 'aar', text: 'The defense score is below: the share of the raid’s damage that was prevented. For the attacker, lower is better. The panel under it shows the raid wave by wave; a defender can copy the result there to send back to the author.' },
   ],
 };
 
@@ -747,7 +766,14 @@ export function lessonPhase(lesson: TrainingLesson, settings: ScenarioSettings):
     grant: 0, special: ['Training Academy', lesson.drill ? 'Practice drill' : lesson.exam ? 'Graded' : 'Guided'],
     objectives: [],
     ...lesson.phase,
+    ...(lesson.id === RAID_ID && settings.raid ? { situation: raidSituation(settings.raid) } : {}),
   };
+}
+
+/** What the defender is told about a player-written raid: its name and the author's message, never its contents. */
+function raidSituation(raid: Raid): string {
+  const title = raid.name ? `“${raid.name}”, a raid` : 'A raid';
+  return `${title} written by another commander is on its way.${raid.note ? ` Their message: “${raid.note}”.` : ''} The forecast shows the waves your intelligence knows about; the author may have paid to keep others out of it, so hold something back.${raid.jam ? ` Expect ${raid.jam}-band radars to be jammed.` : ''}`;
 }
 
 /** Scenario settings for a lesson. */

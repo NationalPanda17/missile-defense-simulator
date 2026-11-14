@@ -344,6 +344,15 @@ export const TACTICAL_CONFIG = {
   /** Ships on patrol move up to this far toward a wave before it arrives, and wear this much faster. */
   patrol: { km: 60, wear: 0.3 },
   /** Chance a wave comes from two sides, or as a drone opener with missiles an hour behind, by phase. */
+  /**
+   * The Raid Designer: what the attacker may spend and what each option costs, in attack points (the threats
+   * themselves cost `threatCost`). The defender's credits grow with the size of the raid. Game values.
+   */
+  raid: {
+    sizes: { skirmish: { points: 400, credits: 1000 }, standard: { points: 600, credits: 1400 }, major: { points: 900, credits: 2000 } },
+    maxWaves: 5, hours: [4, 28] as [number, number], maxPerClass: 30,
+    secondAxis: 15, turn: 10, valley: 10, hunt: 20, huntShare: 0.35, decoy: 1, maxDecoys: 20, hidden: 0.25, jam: 60,
+  },
   raids: { pincerByPhase: [0, 0.2, 0.3, 0.2], timedByPhase: [0, 0.15, 0.25, 0.15] },
   /**
    * Escalation: once the defense has stopped at least `high` of what was sent, the enemy brings heavier weapons;

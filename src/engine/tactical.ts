@@ -424,17 +424,30 @@ function scheduleLessonWaves(s: SimState, t: TacticalState, waves: ScriptedWave[
   t.forecast = [...new Set(waves.filter((w) => w.forecast).map((w) => w.region))];
   for (const sw of waves) {
     const tracks: Track[] = [];
+    // A player-written raid can aim a whole wave at one site, split it between two sides and choose its route.
+    const aimed = sw.target ? t.sites.find((x) => x.id === sw.target && x.region === sw.region && x.integrity > 0) : undefined;
+    const terrain = t.terrain?.[sw.region];
     for (const cls of CLASSES) {
       for (let i = 0; i < (sw.tracks[cls] ?? 0); i++) {
         const tr = makeTrack(t, sw.region, cls, sw.axis, false);
-        if (tr && TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
-        if (tr) tracks.push(tr);
+        if (!tr) continue;
+        if (aimed) tr.siteId = aimed.id;
+        const side = sw.axis2 && tracks.length % 2 === 1 ? sw.axis2 : sw.axis;
+        if (side !== sw.axis) tr.from = edgePoint(t, side);
+        if (TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
+        else if (sw.route === 'turn' && TACTICAL_CONFIG.turning.classes.includes(cls)) tr.via = turnPoint(t, tr);
+        else if (sw.route === 'valley' && isLowFlying(cls)) {
+          const v = terrain?.valleys?.find((x) => x.side === side);
+          if (v) { tr.from = [v.a[0], v.a[1]]; tr.via = [v.b[0], v.b[1]]; tr.valley = true; }
+        }
+        tracks.push(tr);
       }
     }
     const atHour = start + sw.atHour;
     t.waves.push({
       id: `WAVE-${t.nextId++}`, region: sw.region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis: sw.axis,
       forecast: sw.forecast, tracks, resolved: false,
+      ...(sw.axis2 ? { axis2: sw.axis2 } : {}), ...(sw.decoys !== undefined ? { decoys: sw.decoys } : {}), ...(sw.hunt !== undefined ? { hunt: sw.hunt } : {}),
     });
   }
 }
@@ -592,8 +605,10 @@ export function detectionRange(spec: EquipmentSpec, cls: ThreatClass): number {
 export const JAMMING = { range: 0.5, sharp: 0.5 };
 
 /** The radar band the enemy is jamming in the current phase, if any. */
-export const jammedBand = (s: SimState): RadarBand | undefined =>
-  s.tactical?.enemy?.find((p) => p.phaseIndex === s.phaseIndex)?.jam as RadarBand | undefined;
+export const jammedBand = (s: SimState): RadarBand | undefined => jamIn(s, s.phaseIndex);
+/** The band jammed in a phase: the adapting enemy's choice (Commander), or the one a raid's author paid for. */
+export const jamIn = (s: SimState, phaseIndex: number): RadarBand | undefined =>
+  (s.tactical?.enemy?.find((p) => p.phaseIndex === phaseIndex)?.jam ?? s.settings.raid?.jam) as RadarBand | undefined;
 
 /** The fire orders a system can be given, with what each means in a sentence. */
 export const DOCTRINES: Record<FireDoctrine, { label: string; short: string; text: string }> = {
@@ -641,6 +656,7 @@ export const hasResearch = (s: SimState, id: string) => !!s.research?.includes(i
 
 /** Share of a wave's missiles that go for the defender's radars, for this scenario and phase. */
 function strikeShare(s: SimState, w: ThreatWave): number {
+  if (w.hunt !== undefined) return w.hunt;
   if (s.settings.mode !== 'campaign') return 0;
   const style = enemyStyleOf(s.settings);
   if (w.phaseIndex < style.strikeFrom) return 0;
@@ -663,7 +679,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
   // Every working sensor that tracks it: surface sensors within their horizon and line of sight, aircraft from above.
   // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
   // Commander: the enemy jams one radar band for the phase, shortening those radars' range and blurring their picture.
-  const jam = t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.jam;
+  const jam = t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.jam ?? s.settings.raid?.jam;
   const jammed = (spec: EquipmentSpec) => !!jam && spec.radar?.band === jam && !hasResearch(s, 'r_ecm');
   const sharpOf = (spec: EquipmentSpec) => Math.min(0.97, (sensorTraits(spec).sharp + (spec.radar && hasResearch(s, 'r_discrim') ? TACTICAL_CONFIG.research.discrim : 0)) * (jammed(spec) ? JAMMING.sharp : 1));
   const watchers = working
@@ -884,7 +900,7 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave, live = false)
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
   const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult * enemyStyleOf(s.settings).decoys * (t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.decoys ?? 1);
-  const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * TACTICAL_CONFIG.decoysPerTrack * decoyScale);
+  const decoys = w.decoys ?? Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * TACTICAL_CONFIG.decoysPerTrack * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);
     if (tr) w.tracks.push(tr);
@@ -968,10 +984,11 @@ export interface DefensePreview {
  * random numbers (never the game's own stream) and averages the result. Uses the real engagement rules, so moving
  * or adding a system changes the estimate exactly as it would change the fight. Surprise waves are not included.
  */
-export function previewDefense(s: SimState, region: RegionId, runs = 24): DefensePreview | null {
+export function previewDefense(s: SimState, region: RegionId, runs = 24, all = false): DefensePreview | null {
   const t = s.tactical;
   if (!t?.enabled) return null;
-  const waves = t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved && w.forecast);
+  // `all` counts the waves kept out of the forecast too: for a raid's author, who knows what is coming.
+  const waves = t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved && (all || w.forecast));
   if (!waves.length) return null;
   const mix: Partial<Record<ThreatClass, number>> = {};
   for (const w of waves) for (const tr of w.tracks) if (!tr.decoy) mix[tr.cls] = (mix[tr.cls] ?? 0) + 1;
