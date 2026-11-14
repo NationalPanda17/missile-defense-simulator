@@ -103,7 +103,7 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
   const asset = s.assets.find((a) => a.id === d.assetId);
   const rounds = resupplyRounds(s, d);
-  const cost = resupplyCost(d, rounds);
+  const cost = resupplyCost(d, rounds, s);
   const unlimited = isUnlimited(spec);
   const reserve = stockpileOf(s, d.equipmentId);
   return (

@@ -3,7 +3,7 @@
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
 import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, enemyStyleOf, levelOf } from './config';
-import { EQUIPMENT, EQUIPMENT_MAP, RADAR_BAND_IDS, equipmentCost, isEffector, sensorTraits, type EquipmentSpec, type RadarBand } from './equipment';
+import { EQUIPMENT, EQUIPMENT_MAP, RADAR_BAND_IDS, channelsOf, equipmentCost, isEffector, loadoutOf, sensorTraits, type EquipmentSpec, type RadarBand } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
 import { normalizeTactical } from './scenarios';
@@ -47,6 +47,9 @@ export function createTactical(s: SimState): TacticalState {
   for (const region of REGION_IDS) {
     t.terrain![region] = generateTerrain(t, region);
     t.sites.push(...generateSites(t, region));
+    // Worked out from the seed alone, so the game's random stream (and every existing scenario) is unchanged.
+    t.terrain![region].valleys = makeValleys(s.settings.seed, region, t.terrain![region]);
+    t.terrain![region].cities = t.sites.filter((x) => x.region === region && x.type === 'city').map((x) => [x.x, x.y]);
   }
   return t;
 }
@@ -78,6 +81,62 @@ export function ensureTactical(s: SimState): TacticalState {
   if (s.status === 'briefing') scheduleWaves(s);
   else if (s.status === 'running') scheduleWaves(s, s.hour + 1);
   return t;
+}
+
+/** One or two valleys per theater, each running in from a landward edge. */
+function makeValleys(seed: number, region: RegionId, terrain: TheaterTerrain): NonNullable<TheaterTerrain['valleys']> {
+  const { width, height } = TACTICAL_CONFIG.theaterKm;
+  const V = TACTICAL_CONFIG.valley;
+  const k = REGION_IDS.indexOf(region);
+  const sides = AXES.filter((a) => a !== terrain.coast);
+  const n = hash01(seed, k, 0x71) < 0.45 ? 2 : 1;
+  const out: NonNullable<TheaterTerrain['valleys']> = [];
+  for (let i = 0; i < n; i++) {
+    const side = sides[Math.floor(hash01(seed, k, i, 0x72) * sides.length)];
+    if (out.some((v) => v.side === side)) continue;
+    const along = 0.25 + hash01(seed, k, i, 0x73) * 0.5;
+    const len = V.lengthKm[0] + hash01(seed, k, i, 0x74) * (V.lengthKm[1] - V.lengthKm[0]);
+    const bend = (hash01(seed, k, i, 0x75) - 0.5) * 120;
+    const a: [number, number] = side === 'north' ? [along * width, 0] : side === 'south' ? [along * width, height] : side === 'west' ? [0, along * height] : [width, along * height];
+    const b: [number, number] = side === 'north' ? [a[0] + bend, len] : side === 'south' ? [a[0] + bend, height - len] : side === 'west' ? [len, a[1] + bend] : [width - len, a[1] + bend];
+    const clampXY = (p: [number, number]): [number, number] => [Math.round(Math.max(20, Math.min(width - 20, p[0]))), Math.round(Math.max(20, Math.min(height - 20, p[1])))];
+    out.push({ a: [Math.round(a[0]), Math.round(a[1])], b: clampXY(b), w: V.widthKm, side });
+  }
+  return out;
+}
+
+/** Distance (km) from a point to the segment a→b. */
+function segDist(p: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const k = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p[0] - (a[0] + k * dx), p[1] - (a[1] + k * dy));
+}
+
+/** The valley a path leg runs along, if any. */
+function valleyOf(terrain: TheaterTerrain | undefined, a: [number, number], b: [number, number]) {
+  return terrain?.valleys?.find((v) => Math.hypot(v.a[0] - a[0], v.a[1] - a[1]) < 3 && Math.hypot(v.b[0] - b[0], v.b[1] - b[1]) < 3);
+}
+
+/** A weapon's reach from where it stands: line-of-fire weapons among a city's buildings lose part of it. */
+export function engageRange(terrain: TheaterTerrain | undefined, d: Pick<Deployment, 'x' | 'y'>, spec: EquipmentSpec): number {
+  const U = TACTICAL_CONFIG.urban;
+  const built = U.ids.includes(spec.id) && !!terrain?.cities?.some((c) => Math.hypot(c[0] - d.x, c[1] - d.y) <= U.km);
+  return spec.rangeKm * (built ? U.reach : 1);
+}
+
+/** Is this spot among a city's buildings (for line-of-fire weapons)? */
+export const inCity = (terrain: TheaterTerrain | undefined, spec: EquipmentSpec, x: number, y: number) =>
+  TACTICAL_CONFIG.urban.ids.includes(spec.id) && !!terrain?.cities?.some((c) => Math.hypot(c[0] - x, c[1] - y) <= TACTICAL_CONFIG.urban.km);
+
+/** A deployment's chance to stop a class with its chosen interceptor load. */
+export function killRateOf(d: Pick<Deployment, 'loadout'>, spec: EquipmentSpec, cls: ThreatClass): number {
+  return Math.min(0.97, spec.killRate[cls] * (loadoutOf(spec, d.loadout)?.kill[cls] ?? 1));
+}
+
+/** Credits one round costs for this deployment: its load, and the defense industry's discount. */
+export function roundCostOf(s: Pick<SimState, 'industry'> | undefined, d: Pick<Deployment, 'loadout'>, spec: EquipmentSpec): number {
+  return roundCost(spec) * (loadoutOf(spec, d.loadout)?.price ?? 1) * (1 - TACTICAL_CONFIG.industry.price * Math.min(TACTICAL_CONFIG.industry.max, s?.industry ?? 0));
 }
 
 // ── Theater generation ──────────────────────────────────────────────────
@@ -151,11 +210,53 @@ function edgePoint(r: Rng, axis: ThreatAxis): [number, number] {
   }
 }
 
+/** A point on a theater edge, a share of the way along it. */
+function edgePointAt(axis: ThreatAxis, along: number): [number, number] {
+  const { width, height } = TACTICAL_CONFIG.theaterKm;
+  switch (axis) {
+    case 'north': return [Math.round(along * width), 0];
+    case 'south': return [Math.round(along * width), height];
+    case 'west': return [0, Math.round(along * height)];
+    case 'east': return [width, Math.round(along * height)];
+  }
+}
+
 function makeTrack(t: TacticalState, region: RegionId, cls: ThreatClass, axis: ThreatAxis, decoy: boolean): Track | null {
   const targets = t.sites.filter((x) => x.region === region && x.integrity > 0);
   if (!targets.length) return null;
   const site = weighted(t, targets.map((x) => ({ item: x, w: x.importance })));
   return { id: `TRK-${t.nextId++}`, cls, siteId: site.id, from: edgePoint(t, axis), decoy, shots: 0 };
+}
+
+/**
+ * The regions that can be reinforced before the current phase: the forecast regions and the worst-damaged other
+ * region. One is chosen per phase; the choices made trace the player's path through the campaign.
+ */
+export function reinforceOptions(s: SimState): RegionId[] {
+  const t = s.tactical;
+  if (!t?.enabled || s.settings.mode !== 'campaign' || s.phaseIndex === 0) return [];
+  const others = REGION_IDS.filter((r) => !t.forecast.includes(r)).sort((a, b) => siteDamageShare(s, b) - siteDamageShare(s, a) || s.regions[a].stability - s.regions[b].stability);
+  return [...t.forecast, ...others.slice(0, 1)];
+}
+
+/** How the war is going for the enemy, and what it does about it. */
+export interface Escalation { level: 'heavy' | 'steady' | 'light'; rate: number | null; mix: Partial<Record<ThreatClass, number>>; text: string }
+
+/**
+ * The escalation ladder (campaign): judged on everything sent in earlier phases. A defense that has held provokes
+ * heavier weapons; one that is failing does not need them.
+ */
+export function escalationOf(s: SimState): Escalation {
+  const E = TACTICAL_CONFIG.escalation;
+  const steady: Escalation = { level: 'steady', rate: null, mix: {}, text: '' };
+  if (s.settings.mode !== 'campaign' || !s.tactical || s.phaseIndex === 0) return steady;
+  const real = s.tactical.waves.filter((w) => w.resolved && w.phaseIndex < s.phaseIndex).flatMap((w) => w.tracks.filter((x) => !x.decoy));
+  if (real.length < E.minThreats) return steady;
+  const rate = real.filter((x) => x.outcome === 'stopped').length / real.length;
+  const pct = Math.round(rate * 100);
+  if (rate >= E.high) return { level: 'heavy', rate, mix: E.heavy, text: `Your defense has stopped ${pct}% of what was sent, so the enemy is escalating: expect more ballistic and cruise missiles, and gliders where it has them.` };
+  if (rate <= E.low) return { level: 'light', rate, mix: E.light, text: `Only ${pct}% of what was sent has been stopped, so the enemy sees no need for its heavier weapons: expect more drones.` };
+  return { ...steady, rate, text: `About ${pct}% of what was sent has been stopped. The enemy is holding its mix of weapons steady.` };
 }
 
 /**
@@ -186,8 +287,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   const plan = enemyPlan(s);
   // The enemy commander's style: the Planner changes nothing.
   const style = enemyStyleOf(s.settings);
+  const esc = escalationOf(s);
   if (style.surprise !== 1) sc.surpriseRate = Math.min(0.9, sc.surpriseRate * style.surprise);
-  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c] * (plan?.mix[c] ?? 1) * (style.mix[c] ?? 1)])) as Record<ThreatClass, number>;
+  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c] * (plan?.mix[c] ?? 1) * (style.mix[c] ?? 1) * (esc.mix[c] ?? 1)])) as Record<ThreatClass, number>;
   const profile = {
     count: Math.max(1, Math.round(base.count * sc.waveCount * style.waveCount)),
     tracks: [Math.max(1, Math.round(base.tracks[0] * sc.waveSize * style.waveSize)), Math.max(1, Math.round(base.tracks[1] * sc.waveSize * style.waveSize))] as const,
@@ -238,12 +340,46 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
       if (TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
       tracks.push(tr);
     }
-    const w: ThreatWave = {
-      id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis, forecast: !surprise, tracks,
-      resolved: false,
+    // Everything below is decided from the seed, never the random stream, so earlier scenarios play as before.
+    const H = (i: number, salt: number) => hash01(s.settings.seed, s.phaseIndex, atHour, i, salt);
+    // Two sides at once: part of the wave swings round to a second approach.
+    let axis2: ThreatAxis | undefined;
+    if (tracks.length >= 6 && H(0, 0x81) < (TACTICAL_CONFIG.raids.pincerByPhase[s.phaseIndex] ?? 0)) {
+      axis2 = AXES.filter((a) => a !== axis)[Math.floor(H(0, 0x82) * 3)];
+      tracks.forEach((tr, i) => {
+        if (i % 2 === 0 || TACTICAL_CONFIG.alwaysTurn.includes(tr.cls)) return;
+        tr.from = edgePointAt(axis2!, 0.1 + H(i, 0x83) * 0.8);
+        if (tr.via) tr.via = undefined;
+      });
+    }
+    // Valleys: low fliers coming from a valley's side follow it in.
+    const terrain = t.terrain?.[region];
+    tracks.forEach((tr, i) => {
+      // Not in the opening phase (index 0), which stays simple.
+      if (s.phaseIndex === 0 || !isLowFlying(tr.cls) || tr.via) return;
+      const side = Math.abs(tr.from[1]) < 1 ? 'north' : Math.abs(tr.from[1] - TACTICAL_CONFIG.theaterKm.height) < 1 ? 'south' : Math.abs(tr.from[0]) < 1 ? 'west' : 'east';
+      const v = terrain?.valleys?.find((x) => x.side === side);
+      if (!v || H(i, 0x84) >= TACTICAL_CONFIG.valley.useChance) return;
+      tr.from = [v.a[0], v.a[1]];
+      tr.via = [v.b[0], v.b[1]];
+      tr.valley = true;
+    });
+    const make = (trs: Track[], at: number, follow = false): ThreatWave => {
+      const w: ThreatWave = {
+        id: `WAVE-${t.nextId++}`, region, phaseIndex: s.phaseIndex, atHour: at, launchAt: at - waveLeadHours(trs), axis, forecast: !surprise, tracks: trs,
+        resolved: false, ...(axis2 ? { axis2 } : {}), ...(follow ? { follow: true } : {}),
+      };
+      t.waves.push(w);
+      return w;
     };
-    t.waves.push(w);
-    return w;
+    // Timed raid: the drones go in first to draw fire, and the missiles arrive an hour behind them.
+    const drones = tracks.filter((x) => DRONES.includes(x.cls));
+    const heavy = tracks.filter((x) => !DRONES.includes(x.cls));
+    if (drones.length >= 3 && heavy.length >= 2 && atHour + 1 <= last && H(0, 0x85) < (TACTICAL_CONFIG.raids.timedByPhase[s.phaseIndex] ?? 0)) {
+      make(drones, atHour);
+      return make(heavy, atHour + 1, true);
+    }
+    return make(tracks, atHour);
   };
   for (const [k, scheduled] of hours.entries()) {
     const { region, surprise } = targets[k];
@@ -340,6 +476,11 @@ function reachSpan(terrain: TheaterTerrain | undefined, d: Deployment, spec: Equ
   if (range <= 0) return null;
   const low = isLowFlying(cls) && spec.domain !== 'air';
   const limited = low && !isPassive(spec) ? Math.min(range, lowHorizonKm(terrain, [d.x, d.y]) * (cued ? TACTICAL_CONFIG.lowAltitude.cuedHorizonMult : 1)) : range;
+  // A low flier in a valley is hidden from ground systems that are not in or beside the valley.
+  if (low && !cued) {
+    const v = valleyOf(terrain, a, b);
+    if (v && segDist([d.x, d.y], a, b) > v.w) return null;
+  }
   const span = chordSpan(a, b, [d.x, d.y], limited);
   if (!span) return null;
   if (low && !cued) {
@@ -420,7 +561,7 @@ export function coverageAt(s: SimState, region: RegionId, x: number, y: number):
       for (const d of deps) {
         const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
         if (!canEngageClass(spec, cls)) continue;
-        if (reach(terrain, d, spec, cls, from, target, spec.rangeKm, cued) > 0) out[cls] = Math.max(out[cls], spec.killRate[cls]);
+        if (reach(terrain, d, spec, cls, from, target, engageRange(terrain, d, spec), cued) > 0) out[cls] = Math.max(out[cls], killRateOf(d, spec, cls));
       }
     }
   }
@@ -440,6 +581,7 @@ export function placementError(s: SimState, spec: EquipmentSpec, region: RegionI
 export function detectionRange(spec: EquipmentSpec, cls: ThreatClass): number {
   const dronesOnly = spec.id === 'acoustic-net' || spec.id === 'passive-rf';
   if (dronesOnly && cls !== 'slowDrone' && cls !== 'fastDrone') return 0;
+  if (spec.lure) return 0; // a decoy emitter sees nothing
   if (spec.layer === 'detection') return spec.rangeKm;
   return spec.radar?.rangeKm ?? 0;
 }
@@ -504,7 +646,7 @@ function strikeShare(s: SimState, w: ThreatWave): number {
   return Math.min(0.5, base * style.strike * (s.settings.level === 'commander' ? 1.5 : s.settings.level === 'recruit' ? 0.5 : 1));
 }
 
-function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[]) {
+function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[], load?: Map<string, number>) {
   const target = trackTarget(t, tr);
   if (!target) return;
   const region = s.regions[w.region];
@@ -524,6 +666,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const sharpOf = (spec: EquipmentSpec) => Math.min(0.97, (sensorTraits(spec).sharp + (spec.radar && hasResearch(s, 'r_discrim') ? TACTICAL_CONFIG.research.discrim : 0)) * (jammed(spec) ? JAMMING.sharp : 1));
   const watchers = working
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
+    .filter(({ d }) => !d.emcon) // a silent radar sees nothing
     .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1) * (jammed(spec) ? JAMMING.range : 1), false) > 0);
   const cued = isLowFlying(tr.cls) && watchers.some((x) => x.spec.domain === 'air');
   const seen = watchers.length > 0;
@@ -558,7 +701,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const shooters = deps
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)!, asset: assetOf(d) }))
     .filter((x) => x.asset && isEffector(x.spec) && canEngageClass(x.spec, tr.cls))
-    .map((x) => ({ ...x, chord: reachPath(terrain, x.d, x.spec, tr.cls, path, x.spec.rangeKm, cued) }))
+    .map((x) => ({ ...x, chord: reachPath(terrain, x.d, x.spec, tr.cls, path, engageRange(terrain, x.d, x.spec), cued) }))
     .filter((x) => x.chord > 0)
     .filter((x) => !(x.d.doctrine === 'missiles' && DRONES.includes(tr.cls))) // standing orders: no shots at drones
     // Outer layers first, then systems held back as backup (longest reach first within each group).
@@ -576,14 +719,17 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     else if (spec.killRate[tr.cls] <= 0) why.set(d.id, 'type');
     else if (d.doctrine === 'missiles' && DRONES.includes(tr.cls)) why.set(d.id, 'hold');
     else if (!shooters.some((x) => x.d === d)) {
-      const blind = isLowFlying(tr.cls) && !cued && reachPath(terrain, d, spec, tr.cls, path, spec.rangeKm, true) > 0;
+      const blind = isLowFlying(tr.cls) && !cued && reachPath(terrain, d, spec, tr.cls, path, engageRange(terrain, d, spec), true) > 0;
       why.set(d.id, blind ? 'blind' : 'range');
     }
   }
 
   let stopped = false;
+  let missed = false; // an earlier layer fired at it and missed
   for (const { d, spec, asset, chord } of shooters) {
     if (stopped) { why.set(d.id, 'done'); continue; }
+    // Saturation: a system can only handle so many threats in one wave.
+    if (load && (load.get(d.id) ?? 0) >= channelsOf(spec) * TACTICAL_CONFIG.saturationPasses) { why.set(d.id, 'sat'); continue; }
     const avail = Math.min(1, availability(s, asset!));
     if (avail <= 0) { why.set(d.id, 'oa'); continue; }
     const vet = veteranOf(d);
@@ -596,7 +742,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       if (!isUnlimited(spec)) {
         if (d.stock <= 0) { if (!firedHere) why.set(d.id, 'mag'); break; }
         d.stock -= 1;
-        tr.cost = (tr.cost ?? 0) + roundCost(spec);
+        tr.cost = (tr.cost ?? 0) + roundCostOf(s, d, spec);
       }
       firedHere++;
       tr.shots += 1;
@@ -604,16 +750,21 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
       const quality = trackQuality(d);
       if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
-      if (rand(t) < Math.min(0.98, spec.killRate[tr.cls] + (vet?.kill ?? 0)) * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
+      if (rand(t) < Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
         stopped = true;
         tr.stoppedBy = d.id;
+        if (missed) tr.handoff = true;
         if (!tr.decoy) d.kills = (d.kills ?? 0) + 1;
         // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
-        const span = reachSpanPath(terrain, d, spec, tr.cls, path, spec.rangeKm, cued);
+        const span = reachSpanPath(terrain, d, spec, tr.cls, path, engageRange(terrain, d, spec), cued);
         if (span) tr.stopAt = Math.min(0.97, span[0] + (span[1] - span[0]) * (0.25 + 0.3 * i));
       }
     }
-    if (firedHere) fired.push({ dep: d.id, shots: firedHere });
+    if (firedHere) {
+      fired.push({ dep: d.id, shots: firedHere });
+      load?.set(d.id, (load.get(d.id) ?? 0) + 1);
+      if (!stopped) missed = true;
+    }
   }
   tr.fired = fired;
   tr.why = [...why].filter(([dep]) => !fired.some((f) => f.dep === dep));
@@ -652,6 +803,7 @@ export function reasonText(code: string, cls: ThreatClass): string {
     case 'late': return 'not detected in time to react';
     case 'mag': return 'magazine empty';
     case 'hold': return 'held fire: its orders are missiles only';
+    case 'sat': return 'saturated: already engaging as many threats as it can handle';
     default: return code; // older saves stored the words themselves
   }
 }
@@ -722,7 +874,7 @@ function applyImpacts(s: SimState, t: TacticalState, w: ThreatWave) {
   }
 }
 
-function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
+function resolveWave(s: SimState, t: TacticalState, w: ThreatWave, live = false) {
   const region = s.regions[w.region];
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
@@ -736,25 +888,62 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   // Some missiles home on the defender's radars instead of a site (their emissions give them away).
   const share = strikeShare(s, w);
   if (share > 0) {
-    const emitters = deps.filter((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return !!sp.radar && sp.domain !== 'air' && !d.transit; });
+    // Silent radars give nothing away; decoy emitters shine brightest of all.
+    const emitters = deps.filter((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return ((!!sp.radar && !d.emcon) || !!sp.lure) && sp.domain !== 'air' && !d.transit; });
     for (const tr of w.tracks) {
       if (tr.decoy || tr.depTarget || !emitters.length || !TACTICAL_CONFIG.strikes.classes.includes(tr.cls) || rand(t) >= share) continue;
       // The farther a radar reaches, the brighter it shines.
-      const d = weighted(t, emitters.map((x) => ({ item: x, w: 20 + (EQUIPMENT_MAP.get(x.equipmentId)!.radar?.rangeKm ?? 0) })));
+      const d = weighted(t, emitters.map((x) => { const sp = EQUIPMENT_MAP.get(x.equipmentId)!; return { item: x, w: sp.lure ? 600 : 20 + (sp.radar?.rangeKm ?? 0) }; }));
       tr.depTarget = d.id;
       tr.aim = [d.x, d.y];
       if (tr.via) tr.via = undefined; // it flies straight down the beam
     }
   }
   w.conditions = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
+  // Ships on patrol steam toward where the wave is headed before it arrives.
+  const terrainHere = t.terrain?.[w.region];
+  for (const d of deps) {
+    const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
+    if (!d.patrol || sp.domain !== 'sea' || d.transit || !w.tracks.length) continue;
+    const pts = w.tracks.map((tr) => trackTarget(t, tr)).filter((p): p is [number, number] => !!p);
+    if (!pts.length) continue;
+    const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+    const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const dist = Math.hypot(cx - d.x, cy - d.y);
+    // The farthest point along the way that is still at sea.
+    for (let step = Math.min(TACTICAL_CONFIG.patrol.km, dist); step >= 5; step -= 5) {
+      const p: [number, number] = [Math.round(d.x + ((cx - d.x) / dist) * step), Math.round(d.y + ((cy - d.y) / dist) * step)];
+      if (!isSea(terrainHere, p)) continue;
+      d.x = p[0];
+      d.y = p[1];
+      if (live) { const a = s.assets.find((z) => z.id === d.assetId); if (a) a.pos = theaterToLonLat(s, w.region, d.x, d.y); }
+      break;
+    }
+  }
+  const load = new Map<string, number>();
   for (const tr of w.tracks) {
     tr.launchAt = w.atHour - TACTICAL_CONFIG.flightHours[tr.cls];
-    resolveTrack(s, t, w, tr, deps);
+    resolveTrack(s, t, w, tr, deps, load);
+  }
+  // Shoot and scoot: systems with those orders that fired move off, out of action while they do.
+  if (live) {
+    const firedIds = new Set(w.tracks.flatMap((tr) => (tr.fired ?? []).map((f) => f.dep)));
+    for (const d of deps) {
+      const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
+      const a = s.assets.find((z) => z.id === d.assetId);
+      if (!d.scoot || sp.domain !== 'ground' || d.transit || !a || !firedIds.has(d.id)) continue;
+      const k = hash01(s.settings.seed, w.atHour, t.deployments.indexOf(d), 0x91) * Math.PI * 2;
+      const p = spotNear(s, sp, w.region, d.x + Math.cos(k) * TACTICAL_CONFIG.scoot.km, d.y + Math.sin(k) * TACTICAL_CONFIG.scoot.km);
+      if (!p) continue;
+      d.transit = { region: w.region, x: p[0], y: p[1], remaining: TACTICAL_CONFIG.scoot.hours, hours: TACTICAL_CONFIG.scoot.hours };
+      a.status = 'transit';
+      a.maintenanceRemaining = TACTICAL_CONFIG.scoot.hours;
+    }
   }
   w.resolved = true;
   w.applied = false;
   const real = w.tracks.filter((x) => !x.decoy).length;
-  if (real) tlog(s, 'crit', `LAUNCH: threat wave ${w.id} (${real} threats) inbound to ${region.name} from the ${w.axis}, impact T+${w.atHour}h.`, w.region);
+  if (real) tlog(s, 'crit', `LAUNCH: threat wave ${w.id} (${real} threats) inbound to ${region.name} from the ${w.axis}${w.axis2 ? ` and the ${w.axis2}` : ''}${w.follow ? ', timed behind the drones' : ''}, impact T+${w.atHour}h.`, w.region);
 }
 
 export interface DefensePreview {
@@ -924,6 +1113,21 @@ export function tickTactical(s: SimState) {
     }
     t.alerts = t.alerts.filter((al) => al.until > s.hour);
   }
+  // Ships on patrol wear faster.
+  for (const d of t.deployments) {
+    if (!d.patrol || d.transit) continue;
+    const a = s.assets.find((z) => z.id === d.assetId);
+    if (a && a.status !== 'maintenance') a.condition = clamp(a.condition - TACTICAL_CONFIG.patrol.wear * 0.1);
+  }
+  // Idle maintenance crews rebuild the damaged sites the player has sent them to, one at a time, in that order.
+  const idle = Math.max(0, s.crews - s.crewsBusy);
+  if (idle > 0 && t.repairFirst?.length) {
+    const order = t.repairFirst;
+    // Only sites the player has sent crews to: the first in the list that still needs work.
+    const site = order.map((id) => t.sites.find((x) => x.id === id)).find((x) => x && x.integrity < 100);
+    if (site) site.integrity = clamp(site.integrity + idle * TACTICAL_CONFIG.repairPerCrewHour);
+    else if (order.length) t.repairFirst = undefined; // all done
+  }
   for (const d of t.deployments) {
     if (d.reloadRemaining === undefined) continue;
     d.reloadRemaining -= 1;
@@ -936,7 +1140,7 @@ export function tickTactical(s: SimState) {
   }
   for (const w of t.waves) {
     // Launch: outcome decided with the defenses as they stand. Impact: damage lands.
-    if (!w.resolved && (w.launchAt ?? w.atHour) <= s.hour) resolveWave(s, t, w);
+    if (!w.resolved && (w.launchAt ?? w.atHour) <= s.hour) resolveWave(s, t, w, true);
     if (w.resolved && w.applied === false && w.atHour <= s.hour) applyImpacts(s, t, w);
   }
 }
@@ -958,7 +1162,11 @@ export function roundCost(spec: EquipmentSpec): number {
 /** Stockpile rules in force: the campaign at Officer or Commander. Null means unlimited reserves. */
 export function stockpileRules(s: SimState) {
   if (s.settings.mode !== 'campaign') return null;
-  return STOCKPILES[s.settings.level ?? 'officer'] ?? null;
+  const base = STOCKPILES[s.settings.level ?? 'officer'] ?? null;
+  if (!base) return null;
+  // The defense industry adds to what each unit brings, what is restocked and what can be held.
+  const extra = TACTICAL_CONFIG.industry.magazines * Math.min(TACTICAL_CONFIG.industry.max, s.industry ?? 0);
+  return { initial: base.initial + extra, restock: base.restock + extra, cap: base.cap + extra };
 }
 
 /** Rounds left in the national reserve for an equipment type (Infinity when reserves are unlimited). */
@@ -991,12 +1199,14 @@ export function restockStockpiles(s: SimState) {
 }
 
 /** Credits to resupply: a share of the deployment cost, in proportion to the rounds brought. */
-export function resupplyCost(d: Deployment, rounds?: number): number {
+export function resupplyCost(d: Deployment, rounds?: number, s?: SimState): number {
   const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+  const free = s?.tactical?.freeResupply;
+  if (free && free.region === d.region && free.phaseIndex === s!.phaseIndex) return 0;
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
   const n = rounds ?? spec.magazine - d.stock;
   if (n <= 0) return 0;
-  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(roundCost(spec) * n));
+  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(roundCostOf(s, d, spec) * n));
 }
 
 export type ProtectionLevel = 'protected' | 'thin' | 'exposed';
@@ -1173,7 +1383,8 @@ function replayRegion(s: SimState, region: RegionId, extra: { spec: EquipmentSpe
     for (const w of t2.waves) {
       const deps = t2.deployments.filter((d) => d.region === w.region);
       w.conditions = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
-      for (const tr of w.tracks) resolveTrack(s2, t2, w, tr, deps);
+      const load = new Map<string, number>();
+      for (const tr of w.tracks) resolveTrack(s2, t2, w, tr, deps, load);
       stopped += w.tracks.filter((x) => x.outcome === 'stopped').length;
     }
   }

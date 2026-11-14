@@ -303,10 +303,17 @@ export interface ScenarioSettings {
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
   level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
   waves?: boolean; // sandbox and crisis: turn the tactical layer (threat waves, Deploy defenses) on
+  /** Campaign: a written scenario with its own story (see STORIES). */
+  story?: string;
+  /** A raid written by a player: the waves a custom battle sends, and where. */
+  raid?: { region: RegionId; waves: RaidWave[]; attacker?: boolean };
   /** Campaign: the enemy commander faced (absent: the Planner, the campaign as designed). See ENEMY_STYLES. */
   enemy?: EnemyStyle;
   challenge?: { score: number; grade: string }; // played from a challenge link: the challenger's score (-1 if none)
 }
+
+/** One wave of a player-written raid. Hours are from the start of the battle. */
+export interface RaidWave { atHour: number; axis: ThreatAxis; tracks: Partial<Record<ThreatClass, number>> }
 
 export type CommandLevel = 'recruit' | 'officer' | 'commander';
 export type EnemyStyle = 'planner' | 'swarm' | 'fox' | 'hunter';
@@ -331,6 +338,14 @@ export interface Deployment {
   kills?: number;
   /** The unit's callsign, given when it is fielded. */
   callsign?: string;
+  /** Radar switched off: it sees nothing and cannot be hunted. */
+  emcon?: boolean;
+  /** Shoot and scoot: after firing in a wave it moves a short way, out of action while it does. */
+  scoot?: boolean;
+  /** Ships: steam toward each wave before it arrives. */
+  patrol?: boolean;
+  /** Interceptor load chosen in a briefing (see EquipmentSpec.loadouts; absent: the standard mix). */
+  loadout?: string;
   /** Standing fire orders (absent: engage everything). */
   doctrine?: FireDoctrine;
 }
@@ -385,6 +400,10 @@ export interface Track {
   /** Aimed at one of the defender's own systems instead of a site: that deployment's id, and where it stood. */
   depTarget?: string;
   aim?: [number, number];
+  /** Stopped by a later layer after an earlier one fired and missed. */
+  handoff?: boolean;
+  /** Flew in along a valley. */
+  valley?: boolean;
   /** Radar band of the sharpest sensor that tracked it ('passive' for acoustic or RF sensors); absent if unseen. */
   band?: string;
   /** A decoy that a sharp radar recognised, so nothing fired at it. */
@@ -403,6 +422,10 @@ export interface ThreatWave {
   axis: ThreatAxis;
   forecast: boolean; // whether the briefing forecast this region
   conditions?: { night: boolean; storm: boolean }; // weather and daylight when it launched
+  /** A second approach: part of the wave comes from this side as well. */
+  axis2?: ThreatAxis;
+  /** Missiles timed to arrive just behind a drone wave sent to empty the magazines. */
+  follow?: boolean;
   tracks: Track[];
   resolved: boolean;
 }
@@ -424,6 +447,10 @@ export interface TheaterTerrain {
   coastline: [number, number][];
   sea: [number, number][]; // polygon
   massifs: { x: number; y: number; r: number }[];
+  /** Valleys: corridors low fliers use to come in unseen. From the map edge (a) to the valley's inner end (b). */
+  valleys?: { a: [number, number]; b: [number, number]; w: number; side: ThreatAxis }[];
+  /** City centres, for the rule that buildings block line-of-fire weapons placed among them. */
+  cities?: [number, number][];
 }
 
 /** Tactical layer state. Optional on SimState so saves from before the tactical layer still load. */
@@ -455,6 +482,10 @@ export interface TacticalState {
   stats: TacticalStats;
   /** Regions where systems are resupplied automatically after they fire (absent: none). */
   autoResupply?: RegionId[];
+  /** Sites the repair crews work on first, in order (absent: most important first). */
+  repairFirst?: string[];
+  /** Resupply is free in this region for this phase (a reinforcement choice). */
+  freeResupply?: { region: RegionId; phaseIndex: number };
 }
 
 export interface SimState {
@@ -479,6 +510,10 @@ export interface SimState {
   crewsBusy: number;
   resilience: number; // 0-100 network resilience investment level
   modernization: number; // 0-30 capability bonus %
+  /** Defense industry level, 0-3: bigger stockpiles and cheaper rounds (absent: 0). */
+  industry?: number;
+  /** The region reinforced before each phase (phase index → region). */
+  branches?: Record<number, RegionId>;
   /** Research programmes completed (investment ids; absent in older saves). */
   research?: string[];
   logistics: number; // 0-100 logistics capacity

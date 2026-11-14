@@ -347,6 +347,9 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
         s.regions[region].infrastructure = clamp(s.regions[region].infrastructure + 8);
       }
       break;
+    case 'industry':
+      s.industry = Math.min(TACTICAL_CONFIG.industry.max, (s.industry ?? 0) + 1);
+      break;
     case 'modernize':
       s.modernization = Math.min(30, s.modernization + 6);
       for (const a of s.assets) a.upkeep *= 0.9;
@@ -483,6 +486,7 @@ export function endPhase(s: SimState) {
   if (s.phaseIndex < s.phases.length - 1) {
     // Where the next phase starts from, for its "raise it during the phase" objectives: taken now, before the
     // briefing, so maintenance ordered in the briefing cannot lower the starting line.
+    recomputeMetrics(s);
     s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
     s.phaseIndex += 1;
     s.status = 'briefing';

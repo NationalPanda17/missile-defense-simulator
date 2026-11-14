@@ -96,7 +96,7 @@ export function WaveCard({ s }: { s: SimState }) {
     const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
     return d.region === w.region && isEffector(sp) && !isUnlimited(sp) && d.reloadRemaining === undefined && d.stock < sp.magazine && resupplyRounds(s, d) > 0 && s.logistics >= 25;
   });
-  const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
+  const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d), s), 0);
   const tone = leaked === 0 ? 'border-ops-green/60' : leaked * 2 > real.length ? 'border-ops-red/60' : 'border-ops-amber/60';
   return (
     <div className={`fixed inset-x-2 top-32 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-28 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">

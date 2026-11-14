@@ -133,6 +133,11 @@ export const INVESTMENTS: Investment[] = [
     credits: 220, personnel: 6, hours: 24,
   },
   {
+    id: 'industry', label: 'Defense Industry Expansion', category: 'modernization', scope: 'global',
+    description: 'New production lines. Each level adds a quarter of a magazine per unit to every interceptor stockpile (and to its restock and its cap) and cuts round prices by 10%. Three levels.',
+    credits: 300, personnel: 8, hours: 36,
+  },
+  {
     id: 'modernize', label: 'Long-Term Modernization', category: 'modernization', scope: 'global',
     description: '+6% capability for every asset (max +30%) and -10% upkeep. Slow, expensive, permanent.',
     credits: 480, personnel: 12, hours: 72,
@@ -323,6 +328,36 @@ export const TACTICAL_CONFIG = {
   ],
   /** Research: points added to every radar's decoy recognition, and the share of normal reload time. */
   research: { discrim: 0.2, reload: 0.5 },
+  /**
+   * Valleys: each theater has one or two. Low fliers entering from a valley's side use it this often; inside it they
+   * are hidden from any ground system farther than the valley's width from its line.
+   */
+  valley: { widthKm: 28, useChance: 0.55, lengthKm: [150, 230] as [number, number] },
+  /** Buildings block weapons that need a clear line of fire: placed within `km` of a city centre they keep this share of their reach. */
+  urban: { km: 3, reach: 0.7, ids: ['zu-23-2', 'gepard', 'skynex', 'iron-beam', 'hpm'] },
+  /** A later layer engaging what an earlier one missed already holds a track: its kill chance is multiplied by 1 + this. */
+  handoff: 0.1,
+  /** Saturation: in one wave a system engages at most its channels × this many threats (decoys count). */
+  saturationPasses: 3,
+  /** Shoot and scoot: hours out of action, and how far it moves. */
+  scoot: { hours: 2, km: 8 },
+  /** Ships on patrol move up to this far toward a wave before it arrives, and wear this much faster. */
+  patrol: { km: 60, wear: 0.3 },
+  /** Chance a wave comes from two sides, or as a drone opener with missiles an hour behind, by phase. */
+  raids: { pincerByPhase: [0, 0.2, 0.3, 0.2], timedByPhase: [0, 0.15, 0.25, 0.15] },
+  /**
+   * Escalation: once the defense has stopped at least `high` of what was sent, the enemy brings heavier weapons;
+   * below `low` it sees no need to. Multipliers on the weapon mix.
+   */
+  escalation: { minThreats: 8, high: 0.8, low: 0.45,
+    heavy: { ballistic: 1.4, cruise: 1.2, hypersonic: 1.5, slowDrone: 0.85 } as Partial<Record<ThreatClass, number>>,
+    light: { slowDrone: 1.2, fastDrone: 1.1, ballistic: 0.8, hypersonic: 0.6 } as Partial<Record<ThreatClass, number>> },
+  /** Repair crews: integrity an idle maintenance crew restores to a damaged site each hour. */
+  repairPerCrewHour: 0.25,
+  /** Defense industry: per level, extra magazines of stockpile (start, restock and cap) and a cut in round prices. */
+  industry: { max: 3, magazines: 0.25, price: 0.1 },
+  /** Reinforcing a region before a phase: site integrity and stability restored, and resupply there is free that phase. */
+  reinforce: { integrity: 25, stability: 8 },
   /** Magazine size treated as unlimited (jammers, lasers, microwave). */
   unlimitedMagazine: 999,
   /** Standard scenario: chance each wave beyond one per forecast region strikes outside the forecast. */
