@@ -214,6 +214,14 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
 
 ## Scoring (`engine/scoring.ts`)
 
+**Stakes and choices in the tactical layer.** Damaged sites cost their region (`sites.ts`, `TACTICAL_CONFIG.consequences`):
+income, global readiness, and the readiness, communications or awareness that power stations, the signal hub and the
+command post provide. Interceptor rounds are priced per system (`roundCr`). An aircraft radar extends a surface
+system's reach against low fliers to `cuedHorizonMult` horizons, not to its full range. Each shooter has fire orders
+(`Deployment.doctrine`: engage everything, missiles only, backup) set with the `setDoctrine` command. On Commander the
+enemy jams the radar band the defense fields most (`EnemyPlan.jam`, `JAMMING`). Quick Battle is a seed-generated
+one-region drill (`QUICK_BATTLE` in `training.ts`).
+
 **Radar bands.** Each radar has a band (`RADAR_BANDS` in `equipment.ts`, long waves to short: UHF, L, S, C, X, Ku) with
 three game values: the share of range it keeps in a storm, the chance it recognises a decoy it is tracking (recognised
 decoys draw no fire), and the quality of the track it hands to a shooter whose own sensor cannot see the threat. Wave

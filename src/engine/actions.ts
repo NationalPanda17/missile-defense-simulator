@@ -3,13 +3,13 @@ import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance, responseSuccessChance } from './engine';
 import { isEffector, EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
-  addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
+  DOCTRINES, addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
   resupplyCost, resupplyRounds, stockpileOf, stockpileRules, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
 import { isActive, recomputeMetrics } from './metrics';
 import { rand } from './rng';
-import type { Domain, RegionId, SimState, SpendCategory } from './types';
+import type { Domain, FireDoctrine, RegionId, SimState, SpendCategory } from './types';
 
 export type Command =
   | { type: 'respond'; eventId: string; responseId: string }
@@ -22,6 +22,7 @@ export type Command =
   | { type: 'deploy'; equipmentId: string; region: RegionId; x: number; y: number }
   | { type: 'relocate'; deploymentId: string; x: number; y: number }
   | { type: 'withdraw'; deploymentId: string }
+  | { type: 'setDoctrine'; deploymentId: string; doctrine: FireDoctrine }
   | { type: 'resupply'; deploymentId: string }
   | { type: 'emergencyRedeploy'; deploymentId: string; region: RegionId; x: number; y: number }
   | { type: 'raiseAlert'; region: RegionId }
@@ -263,6 +264,17 @@ function run(s: SimState, cmd: Command): CommandResult {
       const name = EQUIPMENT_MAP.get(d.equipmentId)?.name ?? d.equipmentId;
       record(s, 'relocate', `Relocated ${name} (${d.id}).`, TACTICAL_CONFIG.relocateCost, 'redeploy');
       return { ok: true, message: `${name} relocated` };
+    }
+    case 'setDoctrine': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      if (!isEffector(spec)) return fail(`${spec.name} is a sensor: it has no fire orders.`);
+      if (!(cmd.doctrine in DOCTRINES)) return fail('Unknown fire orders.');
+      d.doctrine = cmd.doctrine === 'free' ? undefined : cmd.doctrine;
+      record(s, 'doctrine', `${s.assets.find((a) => a.id === d.assetId)?.name ?? spec.name}: fire orders set to “${DOCTRINES[cmd.doctrine].label}”.`, 0, 'response');
+      return { ok: true, message: `Fire orders: ${DOCTRINES[cmd.doctrine].label}` };
     }
     case 'withdraw': {
       const t = ensureTactical(s);

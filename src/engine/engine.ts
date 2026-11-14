@@ -1,6 +1,7 @@
 // The simulation tick. Advances one simulated hour. Pure state mutation — no UI dependencies.
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
-import { restockStockpiles, siteDamageShare } from './tactical';
+import { restockStockpiles } from './tactical';
+import { siteDamageShare } from './sites';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, isLive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
@@ -243,6 +244,16 @@ function tickEvents(s: SimState) {
       e.confirmProgress = Math.min(100, e.confirmProgress + 100 / hours);
       if (e.confirmProgress >= 100) {
         s.counters.confirmations++;
+        const CI = SIM_CONFIG.confirmInconclusive;
+        // The independent source is only as good as the coverage it works with. Lessons always get a clear answer.
+        if (s.settings.mode !== 'training' && rand(s) < CI.base + CI.blind * (1 - r.awareness / 100)) {
+          e.status = 'reported';
+          e.confirmProgress = 0;
+          e.confidence = clamp(e.confidence + (e.isGenuine ? CI.nudge : -CI.nudge), 3, 91);
+          log(s, 'intel', `${e.id}: confirmation INCONCLUSIVE. Confidence is now ${Math.round(e.confidence)}%; it can be tasked again.`, e.region, e.id);
+          e.log.push({ t: s.hour, text: `Independent confirmation: INCONCLUSIVE (confidence now ${Math.round(e.confidence)}%).` });
+          continue;
+        }
         if (e.isGenuine) {
           e.status = 'reported';
           e.confidence = Math.max(e.confidence, 92);
@@ -345,7 +356,14 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
 
 /** Credits earned per hour: the base income, scaled by difficulty and by average regional stability. */
 export function incomePerHour(s: SimState): number {
-  return SIM_CONFIG.baseIncomePerHour * levelOf(s.settings).incomeMult * (0.5 + s.metrics.stability / 200);
+  return SIM_CONFIG.baseIncomePerHour * levelOf(s.settings).incomeMult * (0.5 + s.metrics.stability / 200) * (1 - incomeLostToDamage(s));
+}
+
+/** Share (0-1) of income lost because sites lie damaged: wrecked cities and ports pay nothing in. */
+export function incomeLostToDamage(s: SimState): number {
+  if (!s.tactical?.enabled) return 0;
+  const C = TACTICAL_CONFIG.consequences;
+  return Math.min(C.incomeMax, C.income * REGION_IDS.reduce((a, r) => a + siteDamageShare(s, r), 0));
 }
 
 function tickEconomy(s: SimState) {
@@ -459,6 +477,9 @@ export function endPhase(s: SimState) {
   log(s, met === results.length ? 'success' : 'warn', `PHASE ${phase.id} "${phase.name}" complete — ${met}/${results.length} objectives met.`);
   s.paused = true;
   if (s.phaseIndex < s.phases.length - 1) {
+    // Where the next phase starts from, for its "raise it during the phase" objectives: taken now, before the
+    // briefing, so maintenance ordered in the briefing cannot lower the starting line.
+    s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
     s.phaseIndex += 1;
     s.status = 'briefing';
     scheduleWaves(s); // forecast the next phase's waves before the player deploys
@@ -479,7 +500,7 @@ export function beginPhase(s: SimState) {
   }
   s.phaseStartHour = s.hour;
   recomputeMetrics(s);
-  s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
+  if (s.phaseIndex === 0 || !s.phaseStart) s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
   if (s.phaseIndex > 0) restockStockpiles(s);
   s.status = 'running';
   s.paused = false;

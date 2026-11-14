@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -44,7 +44,7 @@ export function EventModal({ s }: { s: SimState }) {
   const asset = e.assetId ? s.assets.find((a) => a.id === e.assetId) : undefined;
   const left = e.deadline - s.hour;
   return (
-    <Modal wide title={<span className="flex items-center gap-2">EVENT INVESTIGATION · {e.id}</span>} onClose={() => ui.openEvent(null)}>
+    <Modal wide title={<span className="flex items-center gap-2">REPORT · {e.id}</span>} onClose={() => ui.openEvent(null)}>
       <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
         <div className="space-y-3">
           <div>
@@ -101,7 +101,7 @@ export function EventModal({ s }: { s: SimState }) {
               {e.status !== 'responding' && (
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" disabled={e.status !== 'reported' || e.confidence >= 92 || s.credits < SIM_CONFIG.confirmCost}
-                    data-coach="confirm" onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report">
+                    data-coach="confirm" onClick={() => dispatch({ type: 'confirm', eventId: e.id })} title="Task an independent source to confirm or refute this report. Where regional awareness is poor the answer is more often inconclusive, and you would have to pay and wait again.">
                     ◈ Task confirmation ({SIM_CONFIG.confirmCost} cr, ~{SIM_CONFIG.confirmHours}h)
                   </button>
                   <button data-coach="dismiss" className="btn btn-danger" onClick={() => { dispatch({ type: 'dismiss', eventId: e.id }); }} title="Close as unreliable. If it is genuine, it will keep developing unseen.">✕ Dismiss as unreliable</button>
@@ -152,7 +152,7 @@ export function EventModal({ s }: { s: SimState }) {
             </div>
           )}
           <div className="rounded border border-ops-line p-3">
-            <div className="label mb-1">Event log</div>
+            <div className="label mb-1">Report history</div>
             <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px]">
               {e.log.map((l, i) => <li key={i}><span className="text-ops-dim">T+{l.t}h</span> {l.text}</li>)}
             </ul>
@@ -200,7 +200,7 @@ export function AssetModal({ s }: { s: SimState }) {
           )}
         </div>
         {events.length > 0 && (
-          <div><div className="label mb-1">Linked events</div>{events.map((e) => <button key={e.id} className="mr-2 text-ops-amber hover:underline" onClick={() => { ui.openAsset(null); ui.openEvent(e.id); }}>{e.id} {e.title}</button>)}</div>
+          <div><div className="label mb-1">Linked reports</div>{events.map((e) => <button key={e.id} className="mr-2 text-ops-amber hover:underline" onClick={() => { ui.openAsset(null); ui.openEvent(e.id); }}>{e.id} {e.title}</button>)}</div>
         )}
         <div className="flex flex-wrap items-center gap-2 border-t border-ops-line pt-3">
           {a.status === 'maintenance' ? (
@@ -240,10 +240,23 @@ const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
   falseDismissed: 'expose false reports: task a confirmation, or dismiss a report you are sure is false.',
   readinessGain: 'service the most worn assets early so they are back before the phase ends, and fix events that hurt a domain.',
   infrastructureGain: 'fund Harden Regional Infrastructure (+18) or Regional Recovery (+8) projects in the weakest regions, and keep sites defended.',
+  networkAvg: 'the average over every hour of the phase counts, so one bad stretch can be made up: respond quickly to comms events and fund the Network Resilience Program.',
+  stabilityAvg: 'the average over every hour of the phase counts: resolve reports before they escalate and stop threat waves reaching sites.',
   credits: 'keep this much in hand at the end of the phase; above the reserve level, idle money is reclaimed.',
 };
 
 const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
+
+const SITE_EFFECT: [SiteType, string, 'power' | 'comms' | 'command'][] = [['power', 'readiness', 'power'], ['comms', 'communications', 'comms'], ['command', 'awareness', 'command']];
+/** " Power stations hit: regional readiness −12%." for each kind of site whose damage is costing the region. */
+function siteEffects(s: SimState, r: RegionId): string {
+  const C = TACTICAL_CONFIG.consequences;
+  const label: Record<string, string> = { power: 'Power stations', comms: 'Signal hub', command: 'Command post' };
+  return SITE_EFFECT.map(([type, what, key]) => {
+    const loss = siteLoss(s, r, type);
+    return loss >= 0.05 ? ` ${label[type]} hit: regional ${what} −${Math.round(C[key] * loss * 100)}%.` : '';
+  }).join('');
+}
 
 /** What earlier phases left behind: damaged sites, and what that does to each region. */
 function CarriedOver({ s }: { s: SimState }) {
@@ -257,7 +270,7 @@ function CarriedOver({ s }: { s: SimState }) {
         {hurt.map(({ r, share }) => (
           <li key={r}>
             <span className="text-white">{s.regions[r].name}</span>: sites at {Math.round(100 - share * 100)}% of their value.
-            <span className="text-ops-dim"> Stability pulled down by about {Math.round(C.stability * share)} points, and a likelier target for attacks.</span>
+            <span className="text-ops-dim"> Stability pulled down by about {Math.round(C.stability * share)} points, income cut by {Math.round(C.income * share * 100)}%, and a likelier target for attacks.{siteEffects(s, r)}</span>
           </li>
         ))}
       </ul>
@@ -286,7 +299,9 @@ export function BriefingModal({ s }: { s: SimState }) {
   const activeEv = s.events.filter(isActive);
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
-  const [step, setStep] = useState<'brief' | 'deploy'>('brief');
+  const quick = s.settings.lesson === QUICK_BATTLE_ID;
+  // A Quick Battle goes straight to the map.
+  const [step, setStep] = useState<'brief' | 'deploy'>(quick && tactical ? 'deploy' : 'brief');
   const [confirmBegin, setConfirmBegin] = useState(false);
   // Before the phase starts: forecast regions nothing can defend, and money that will otherwise sit idle.
   const beginIssues: string[] = s.settings.mode === 'training' ? [] : [
@@ -298,7 +313,7 @@ export function BriefingModal({ s }: { s: SimState }) {
     .filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'))
     .filter((a) => !(confirmBegin && a.id.startsWith('undefended:')));
   return (
-    <Modal wide tall={step === 'deploy'} title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
+    <Modal wide tall={step === 'deploy'} title={quick ? `QUICK BATTLE · ${quickBattle(s.settings.seed).name.toUpperCase()} · ${s.regions[quickBattle(s.settings.seed).region].name.toUpperCase()}` : `${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         <button className="btn mr-auto px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
@@ -527,6 +542,13 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             </div>
           </div>
         )}
+        <div className="panel flex flex-wrap items-center justify-between gap-3 border-ops-amber/50 p-4" role="region" aria-label="Quick Battle">
+          <div className="min-w-0 max-w-2xl">
+            <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-amber">Quick Battle <span className="text-[11px] font-normal normal-case tracking-normal text-ops-dim">· about 5 minutes</span></div>
+            <p className="mt-1 text-[12px] leading-relaxed">One region, three attack waves, a fixed budget, and nothing else to manage. Place air defenses on the map, then watch them fight and see why each threat was stopped or got through. A different battle every time.</p>
+          </div>
+          <button className="btn btn-primary px-5 py-2" onClick={() => { markWelcomed(); startLesson(QUICK_BATTLE_ID); ui.setView('theater'); }}>Play a quick battle ▶</button>
+        </div>
         <div className="grid gap-3 md:grid-cols-4">
           {modes.map((m) => (
             <div key={m.id} className="panel flex flex-col p-4">
@@ -592,12 +614,12 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
 }
 
 const STEPS: { title: string; view: ViewId; text: string }[] = [
-  { title: 'Welcome, Commander', view: 'global', text: 'This is the Global Operations center. The top bar shows simulation time, speed controls, global readiness, network health, credits and alert condition. The left rail switches command views; the right sidebar lists active events and alerts; the bottom panel holds the timeline and logs.' },
+  { title: 'Welcome, Commander', view: 'global', text: 'This is the Global Operations center. The top bar shows simulation time, speed controls, global readiness, network health, credits and alert condition. The left rail switches command views; the right sidebar lists active reports; the bottom panel holds the timeline and logs.' },
   { title: 'Time control', view: 'global', text: 'The simulation runs in real time. Use Pause (Space), speeds 1x–8x (keys 1–4), or switch to Turn mode and advance six hours at a time with +6h (T). Briefings pause the simulation automatically.' },
   { title: 'The global map', view: 'global', text: 'Scroll to zoom, drag to pan, click a region to open its regional dashboard. Use “Layers & Legend” to toggle Space, Air, Sea, Ground, infrastructure, communications links, sensor coverage, events and history, and to change the region overlay metric.' },
-  { title: 'Four domains', view: 'space', text: 'Each domain has its own dashboard with asset inventory, readiness, maintenance and history. Domains depend on each other: Space relays support Air and Maritime; Ground control supports Space. Raw → effective readiness shows the dependency penalty.' },
+  { title: 'Four domains', view: 'space', text: 'Each domain has its own dashboard with asset inventory, readiness, maintenance and history. Domains depend on each other: Space relays support Air and Sea; Ground control supports Space. Raw → effective readiness shows the dependency penalty.' },
   { title: 'Information quality', view: 'intel', text: 'Reports arrive with a confidence level: UNVERIFIED, POSSIBLE, PROBABLE or CONFIRMED. In this scenario a report from South America is spurious. Open it and Task confirmation to expose it rather than wasting a response.' },
-  { title: 'Event response', view: 'global', text: 'Open the Sensor Calibration Drift event in Europe from the Active Events list. Compare responses by cost, duration and success chance, then Execute one. Monitor Only buys time once, but effects keep accumulating.' },
+  { title: 'Responding to reports', view: 'global', text: 'Open the Sensor Calibration Drift event in Europe from the Active reports list. Compare responses by cost, duration and success chance, then Execute one. Monitor Only buys time once, but effects keep accumulating.' },
   { title: 'Resource management', view: 'logistics', text: 'Credits come from regional stability; upkeep is continuous. Crews limit simultaneous maintenance and crew-based responses. Schedule maintenance for overdue assets and consider long-term investments — they compound over a campaign.' },
   { title: 'Tactical defense', view: 'theater', text: 'In the campaign, each briefing forecasts the regions where threat waves will strike. Use the briefing’s Deploy defenses step to place real air defense systems on each region’s theater map, then watch waves play out here in the Tactical Theater (X). Keep systems maintained and resupplied: threat protection is a fifth of the campaign score.' },
   { title: 'Communications resilience', view: 'comms', text: 'Network health feeds every domain. The Network Resilience Program permanently reduces the impact of communications disruptions. Watch the relay degradation event in Africa and respond before it spreads.' },

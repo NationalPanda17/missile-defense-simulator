@@ -494,9 +494,9 @@ export default function GlobalMap({ s }: { s: SimState }) {
 function LegendPanel({ open, setOpen }: { open: boolean; setOpen: (b: boolean) => void }) {
   const { layers, toggleLayer, overlay, setOverlay } = useUI();
   const LAYER_LIST: [keyof Layers, string, string][] = [
-    ['space', 'Space', DOMAIN_COLOR.space], ['air', 'Air', DOMAIN_COLOR.air], ['sea', 'Maritime', DOMAIN_COLOR.sea],
+    ['space', 'Space', DOMAIN_COLOR.space], ['air', 'Air', DOMAIN_COLOR.air], ['sea', 'Sea', DOMAIN_COLOR.sea],
     ['ground', 'Ground sensors', DOMAIN_COLOR.ground], ['infrastructure', 'Infrastructure', '#34d399'], ['comms', 'Comms network', '#38d6f5'],
-    ['sensors', 'Sensor coverage', '#38d6f5'], ['events', 'Intel events', '#f2545b'], ['history', 'Event history', '#7088a8'], ['labels', 'Labels', '#c9d8ec'],
+    ['sensors', 'Sensor coverage', '#38d6f5'], ['events', 'Reports', '#f2545b'], ['history', 'Report history', '#7088a8'], ['labels', 'Labels', '#c9d8ec'],
   ];
   return (
     <div className="absolute bottom-2 left-2 max-h-[calc(100%-1rem)] w-56 overflow-y-auto rounded border border-ops-line bg-ops-bg/90 text-[11px] backdrop-blur">

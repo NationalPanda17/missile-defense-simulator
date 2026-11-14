@@ -118,6 +118,16 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   const decoys = shots > 0 && wasted / shots >= ADAPTATION.decoyWaste ? ADAPTATION.decoyBoost : 1;
   if (decoys > 1) learned.push(`About ${Math.round((wasted / shots) * 100)}% of your rounds went at decoys, so it brought more of them.`);
 
+  // 6. Jamming: the radar band the defense leaned on most (by radars fielded) is jammed for the phase.
+  const bands = new Map<string, number>();
+  for (const d of s.tactical!.deployments) {
+    const b = EQUIPMENT_MAP.get(d.equipmentId)?.radar?.band;
+    if (b) bands.set(b, (bands.get(b) ?? 0) + 1);
+  }
+  const top = [...bands].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  const jam = top && top[1] >= 2 ? top[0] : undefined;
+  if (jam) learned.push(`Most of your radars were ${jam}-band (${top[1]} of ${[...bands.values()].reduce((a, b) => a + b, 0)}), so it jammed that band.`);
+
   if (!learned.length) learned.push('It found no clear weakness and kept its approach.');
 
   // The intel line: right most of the time, wrong about the weapon or the place sometimes.
@@ -137,9 +147,9 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   }
   const dir = axis[place];
   const what = shifted || (wrong && which === 'weapon') ? `more ${PLURAL[cls]}` : 'a similar mix of threats';
-  const text = `Analysts expect ${what}${dir ? `, mostly from the ${dir}` : ''}, with ${s.regions[place].name} the likeliest target.`;
+  const text = `Analysts expect ${what}${dir ? `, mostly from the ${dir}` : ''}, with ${s.regions[place].name} the likeliest target.${jam ? ` Signals intelligence is certain of one thing: it will jam ${jam}-band radars this phase, halving their range and their eye for decoys.` : ''}`;
 
-  return { phaseIndex: s.phaseIndex, mix, target, axis, doubleTap, decoys, learned, intel: { text, accurate: !wrong, ...(truth ? { actual: truth } : {}) } };
+  return { phaseIndex: s.phaseIndex, mix, target, axis, doubleTap, decoys, jam, learned, intel: { text, accurate: !wrong, ...(truth ? { actual: truth } : {}) } };
 }
 
 const cap = (x: string) => x[0].toUpperCase() + x.slice(1);

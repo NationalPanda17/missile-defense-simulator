@@ -134,7 +134,8 @@ function playLesson(id: string) {
       done.push(step.id);
       continue;
     }
-    if (!step.check) { done.push(step.id); continue; }
+    // The exam's planning step has no check, but a diligent student still deploys: undefended attacks now cost score.
+    if (!step.check) { if (l.exam && s.status === 'briefing') act(l, step.id, s, ui); done.push(step.id); continue; }
     let ok = false;
     for (let i = 0; i < 400 && !ok; i++) {
       act(l, step.id, s, ui);

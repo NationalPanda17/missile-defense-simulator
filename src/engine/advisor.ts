@@ -25,7 +25,7 @@ const DOMAIN_VIEW: Record<Domain, string> = { space: 'space', air: 'air', sea: '
 const OBJECTIVE_VIEW: Record<Objective['metric'], string> = {
   readiness: 'global', network: 'comms', stability: 'global', infrastructure: 'infra', maintenanceDone: 'air',
   confirmations: 'intel', escalationsMax: 'global', resolved: 'global', falseDismissed: 'intel', credits: 'logistics',
-  readinessGain: 'global', infrastructureGain: 'infra',
+  readinessGain: 'global', infrastructureGain: 'infra', networkAvg: 'comms', stabilityAvg: 'global',
 };
 const ORDER: Record<AdviceLevel, number> = { urgent: 0, warn: 1, info: 2 };
 
@@ -158,7 +158,7 @@ export function advise(s: SimState): Advice[] {
     if (phase.objectives.length) {
       for (const o of phase.objectives) {
         const v = objectiveValue(s, o.metric);
-        if (objectiveMet(o.metric, v, o.target) && !(o.metric === 'escalationsMax' && v === o.target)) continue;
+        if (objectiveMet(o.metric, v, o.target, s) && !(o.metric === 'escalationsMax' && v === o.target)) continue;
         if (o.metric === 'escalationsMax' && v > o.target) continue; // already missed: nothing left to warn about
         // Counts and gains start at zero, so they are only "at risk" once a third of the phase has gone; a level below
         // its target (network, readiness, stability...) is worth saying at once.

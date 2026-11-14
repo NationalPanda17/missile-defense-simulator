@@ -22,7 +22,7 @@ describe('Crisis Mode pauses before escalations', () => {
     execute(s, { type: 'beginPhase' });
     for (const r of Object.values(s.regions)) r.comms = 10;
     s.metrics.network = 30;
-    const net = s.phases[0].objectives.find((o) => o.metric === 'network')!;
+    const net = s.phases[0].objectives.find((o) => o.metric === 'networkAvg')!;
     s.metrics.network = net.target - 10;
     expect(advise(s).some((a) => a.id.startsWith(`objective:0:${net.id}`))).toBe(true);
   });

@@ -4,7 +4,7 @@ import {
   formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
-import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, Stat, ConfirmDelete } from '../components/ui';
+import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, REGION_SHORT, Stat, ConfirmDelete } from '../components/ui';
 import { useUI } from '../uiState';
 import { ServerSavesPanel, ServiceRecord } from './ServerPanels';
 
@@ -168,7 +168,7 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
           <thead><tr><th>Region</th><th title="Stability">Stab.</th><th title="Infrastructure">Infra.</th></tr></thead>
           <tbody>
             {REGION_IDS.map((id) => (
-              <tr key={id}><td>{id}</td>
+              <tr key={id}><td>{REGION_SHORT[id]}</td>
                 {(['regionStability', 'regionInfrastructure'] as const).map((k) => (
                   <td key={k} className="whitespace-nowrap"><input type="range" min={20} max={100} value={cfg[k][id] ?? 75} aria-label={`${id} ${k === 'regionStability' ? 'stability' : 'infrastructure'}`}
                     onChange={(e) => set(k, { ...cfg[k], [id]: Number(e.target.value) } as Partial<Record<RegionId, number>>)} className="w-16 accent-cyan-400 align-middle" />

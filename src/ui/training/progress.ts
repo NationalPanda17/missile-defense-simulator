@@ -1,5 +1,5 @@
 // Training Academy progress, kept in this browser. Lessons are short, so losing it only means re-taking one.
-import { LESSONS, defaultSettings, lessonSettings } from '../../engine';
+import { LESSONS, QUICK_BATTLE_ID, defaultSettings, lessonSettings } from '../../engine';
 import { api } from '../../store/remote';
 import { store } from '../../store/simStore';
 import type { ExamRecord } from '../../shared/api';
@@ -115,5 +115,7 @@ export function saveStep(campaignId: string | undefined, i: number) {
 }
 
 export function startLesson(id: string) {
-  store.newGame(lessonSettings(id, defaultSettings('training')));
+  const base = defaultSettings('training');
+  // A Quick Battle is a different battle every time; lessons and drills fix their own seed.
+  store.newGame(lessonSettings(id, id === QUICK_BATTLE_ID ? { ...base, seed: Math.floor(Math.random() * 1e9) } : base));
 }

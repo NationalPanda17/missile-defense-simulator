@@ -2,8 +2,8 @@
 // so the guide can never drift from what the simulation does. Opened with ? from anywhere, including the start screen.
 import type { ReactNode } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, EQUIPMENT, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
-  STOCKPILES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, type DefenseLayer, type RadarBand, type ThreatClass,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, EQUIPMENT, JAMMING, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
+  STOCKPILES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, type DefenseLayer, type FireDoctrine, type RadarBand, type ThreatClass,
 } from '../engine';
 import { Modal } from './components/ui';
 import { DisplaySettings } from './a11y/DisplayControl';
@@ -98,10 +98,18 @@ function Threats() {
           </tbody>
         </table>
       </div>
-      <P><B>Damage</B> is how much integrity (out of 100) a site loses when that threat gets through. Damaged sites drag down the region’s stability and infrastructure, cut your income, and make the region a likelier target next phase. Damage carries over until you rebuild it.</P>
+      <P><B>Damage</B> is how much integrity (out of 100) a site loses when that threat gets through. Damage carries over from phase to phase until you rebuild it (Logistics → Rebuild Damaged Sites), and until then it costs you:</P>
+      <List items={[
+        <><B>Income.</B> A region whose sites are wrecked pays less in: up to {pct(C.consequences.incomeMax)} of your income can be lost this way.</>,
+        <><B>Readiness and stability</B> across the network fall with the total damage, and a damaged region becomes a likelier target.</>,
+        <><B>Power stations</B> hit: the region’s readiness drops (by up to {pct(C.consequences.power)}).</>,
+        <><B>Signal hub</B> hit: the region’s communications drop (up to {pct(C.consequences.comms)}), so reports arrive late and interceptors are guided worse.</>,
+        <><B>Command post</B> hit: the region’s awareness drops (up to {pct(C.consequences.command)}), so warnings come later and more decoys get through.</>,
+      ]} />
+      <P>This is why defending matters: a region you leave open does not just lose points, it weakens everything else you are trying to do.</P>
       <H>Low fliers and the radar horizon</H>
       <P>Drones and cruise missiles fly <B>low</B>. The ground curves away and hills get in the way, so a radar on the ground cannot see a low flier until it is close: about <B>{C.lowAltitude.horizonKm} km</B>, or {C.lowAltitude.horizonKm * C.lowAltitude.massifHorizonMult} km from a radar placed on a mountain. This is the <B>radar horizon</B>. It applies to weapons too: a missile system with a 300 km range still only engages low fliers within {C.lowAltitude.horizonKm} km of itself. Rockets and ballistic missiles fly high, so the horizon does not hide them.</P>
-      <P>Two things beat the horizon: put the system <B>close to the site</B> it protects, or deploy an <B>aircraft radar</B> (E-2D, E-7, GlobalEye), which looks down from above and lets ground systems shoot at low fliers out to their full range.</P>
+      <P>Two things beat the horizon: put the system <B>close to the site</B> it protects, or deploy an <B>aircraft radar</B> (E-2D, E-7, GlobalEye), which looks down from above. While it tracks a low flier, ground systems can engage it out to {C.lowAltitude.cuedHorizonMult} times the horizon ({C.lowAltitude.horizonKm * C.lowAltitude.cuedHorizonMult} km), though on a shared track (see <B>Radar bands</B>).</P>
       <H>Decoys</H>
       <P>Some of the dots in a wave are <B>decoys</B>: cheap fakes that do no damage but look real enough to draw fire and empty your magazines. A sharp radar can tell them apart (see <B>Radar bands</B>). Better regional awareness also means fewer of them.</P>
     </>
@@ -141,6 +149,7 @@ function Defenses() {
         <><B>Range</B> (or <B>Detects</B> for a sensor): how far it reaches. The solid ring on the map.</>,
         <><B>Ceiling</B>: how high it can hit. Ballistic missiles are engaged at {C.threatAltitudeKm.ballistic} km and rockets at {C.threatAltitudeKm.rocket} km; a system with a lower ceiling cannot touch them at all.</>,
         <><B>Rounds</B>: shots before it must be resupplied. ∞ means it never runs out (lasers, jammers, microwave).</>,
+        <><B>Per round</B>: what each shot costs to replace. Gun rounds cost almost nothing; a long-range interceptor costs more than the drone it might be fired at. Compare it with the threat: stopping a cheap drone with a 10-credit missile is a bad trade.</>,
         <><B>Radar</B>: the band of its own radar and how far that radar sees. “No radar” means it is aimed by eye or by heat-seeker: it needs another sensor nearby to warn it, and shoots worse at night.</>,
         <><B>Low-level ≤{C.lowAltitude.horizonKm} km</B>: a reminder that against low fliers this system only reaches the radar horizon, not its full range. The dotted ring on the map.</>,
         <><B>The five bars</B> (SD FD CM RK BM): the chance one shot stops each kind of threat. No bar means it cannot engage that kind. Each system fires up to {C.maxShotsPerSystem} shots at a threat if there is time.</>,
@@ -153,6 +162,10 @@ function Defenses() {
         <><B>Did the shot hit?</B> Each shot rolls against the kill chance on the card, reduced if the system is worn, if regional communications are poor, or if it is firing on another sensor’s rough track.</>,
       ]} />
       <P>After every wave the debrief lists each threat, who shot at it and, for anything that got through, the reason in plain words.</P>
+      <H>Fire orders: your one decision in the fight</H>
+      <P>Each shooter follows standing <B>fire orders</B>, which you can change at any time from the deploy screen or the Tactical Theater (it costs nothing and takes effect at the next wave):</P>
+      <List items={(Object.keys(DOCTRINES) as FireDoctrine[]).map((k) => <><B>{DOCTRINES[k].label}.</B> {DOCTRINES[k].text}</>)} />
+      <P>By default the longest-ranged system fires first, which means your most expensive missiles are spent on whatever arrives first, often drones and decoys. Setting big systems to <B>Missiles only</B> or <B>Backup</B>, with guns underneath them for the drones, makes a limited stockpile last.</P>
       <H>Terrain</H>
       <P>Ships go on water, everything else on land. Mountains block a ground radar’s view of low fliers behind them, but a radar <B>on</B> a mountain sees twice as far over the horizon.</P>
       <Tip>For your first defense: one medium-range battery (IRIS-T SLM or NASAMS) next to the most-threatened city, a gun system (Skynex) on the next site, and a cheap sensor facing the attack. The deploy screen’s first-deployment guide walks you through exactly this.</Tip>
@@ -219,7 +232,8 @@ function Bands() {
         <><B>Mix your bands.</B> Pair a long-wave radar for early warning in any weather with a short-wave radar near what matters. The deploy screen’s “Radar picture” line shows which bands a region has and warns when a forecast storm will blind them.</>,
         <><B>Check the storm forecast.</B> Each region’s forecast check lists the storms expected this phase. Indo-Pacific and the Polar Regions are the stormiest; the Middle East the driest.</>,
         <><B>Put a sharp radar where decoys will come.</B> A Sentinel (X-band) is one of the cheapest systems in the catalog. One beside a busy site stops your expensive interceptors being thrown at fakes. This matters most when interceptor stockpiles are limited.</>,
-        <><B>Don’t lean on a far-off aircraft alone.</B> An E-2D lets a distant battery shoot at low fliers over its horizon, but on a blurry UHF track those shots land about {pct(RADAR_BANDS.UHF.cue)} as often. Batteries close enough to see the threat themselves shoot at full accuracy.</>,
+        <><B>Don’t lean on a far-off aircraft alone.</B> An E-2D lets a battery shoot at low fliers beyond its own horizon, but on a blurry UHF track those shots land about {pct(RADAR_BANDS.UHF.cue)} as often. Batteries close enough to see the threat themselves shoot at full accuracy.</>,
+        <><B>On Commander, expect jamming.</B> From the second phase the enemy jams whichever band most of your radars use: those radars see {pct(JAMMING.range)} as far and recognise {pct(JAMMING.sharp)} as many decoys for the whole phase. The briefing’s enemy intel names the band, and the Radar picture line shows how many of your radars it hits. A defense spread over two or three bands shrugs it off.</>,
       ]} />
       <P>After a wave, the debrief shows the band that tracked each threat, how many decoys were recognised, and says so when a shot missed on a rough shared track.</P>
     </>
@@ -243,7 +257,8 @@ function Start() {
       <H>Where to begin</H>
       <List items={[
         <>New to all of this: open the <B>Training Academy</B> from the start screen. Lesson 1 takes five minutes and a coach points at every control.</>,
-        <>Want to jump in: start a <B>Campaign</B> on <B>Recruit</B> and read <B>Your first phase</B> on the next tab.</>,
+        <>Want to try the fighting first: play a <B>Quick Battle</B> from the start screen. One region, three waves, five minutes, and no reports or maintenance to think about.</>,
+        <>Want the whole game: start a <B>Campaign</B> on <B>Recruit</B> and read <B>Your first phase</B> on the next tab.</>,
         <>Stuck on a word: the <B>Glossary</B> tab explains every term and abbreviation the game uses.</>,
       ]} />
       <H>How to do well</H>
@@ -278,7 +293,7 @@ function First() {
         <>When a <B>launch warning</B> appears, open the <B>Tactical Theater</B> (key X). Press <B>Raise alert</B> for the region under attack: for {C.alert.hours} hours its systems react faster and see better.</>,
         <>Watch the wave fly in. Green crosses are interceptions; red bursts are hits.</>,
         <>Afterwards, press <B>Resupply</B> on each system that fired. An empty system defends nothing.</>,
-        <>When a <B>report</B> appears in Active Events, click it. If its confidence is low, press <B>Task confirmation</B> to find out whether it is real. If it is real, pick a response and press <B>Execute</B>.</>,
+        <>When a <B>report</B> appears under Active reports, click it. If its confidence is low, press <B>Task confirmation</B> to find out whether it is real. If it is real, pick a response and press <B>Execute</B>.</>,
         <>Check the <B>Objectives</B> in the sidebar. Meeting them pays credits and adds to your score.</>,
       ]} />
       <H>When the phase ends</H>
@@ -298,7 +313,8 @@ function Phase() {
         <><B>Raise alert</B> (Tactical Theater). For {C.alert.hours} hours every system in the region reacts {Math.round((1 - C.alert.reactionMult) * 100)}% faster and unseen threats are handled far better. It costs credits and wears equipment, so raise it when a launch warning appears, not before.</>,
         <><B>Resupply.</B> Refills a system’s magazine over a few hours. It costs credits in proportion to the rounds brought, and needs logistics capacity of at least {C.minLogisticsForResupply}.</>,
         <><B>Redeploy.</B> Moves a system to a new spot or another region. It is out of action while it travels: {R.sameRegionHours} hours within a region; to another region {R.otherRegionHours.air} hours for aircraft, {R.otherRegionHours.ground} for ground systems and {R.otherRegionHours.sea} for ships. Use it when a warning appears for a region you did not defend.</>,
-        <><B>Maintenance.</B> Deployed systems wear like all equipment. Service them from the Ground, Air or Maritime screens before they fail.</>,
+        <><B>Fire orders.</B> Tell a shooter to engage everything, to hold its rounds for missiles, or to act as backup. See <B>Defenses</B>.</>,
+        <><B>Maintenance.</B> Deployed systems wear like all equipment. Service them from the Ground, Air or Sea screens before they fail.</>,
       ]} />
       <P>You cannot buy new systems during a phase. That is what briefings are for.</P>
       <H>Warnings and surprise attacks</H>
@@ -324,7 +340,7 @@ function Network() {
       <H>Maintenance</H>
       <P>Equipment wears out. Each asset has a service clock; once it is overdue it wears {SIM_CONFIG.overdueDecayMult} times as fast. Open a domain screen, click an asset and press <B>Schedule maintenance</B>. It needs credits, a free crew and a few hours out of service. You have a limited number of crews, so service the most worn assets first.</P>
       <H>Reports</H>
-      <P>Problems reach you as <B>reports</B>, listed under Active Events. Each has:</P>
+      <P>Problems reach you as <B>reports</B>, listed under Active reports. Each has:</P>
       <List items={[
         <><B>Confidence</B>: how likely it is to be real. Some reports are false.</>,
         <><B>Severity</B> (S1 minor to S4 critical): how much harm it does while it lasts.</>,
@@ -332,7 +348,7 @@ function Network() {
       ]} />
       <P>For each report you can:</P>
       <List items={[
-        <><B>Task confirmation</B> ({SIM_CONFIG.confirmCost} credits, about {SIM_CONFIG.confirmHours} hours): an independent check. A false report is exposed and closes; a real one is confirmed. Worth it whenever confidence is low and there is time.</>,
+        <><B>Task confirmation</B> ({SIM_CONFIG.confirmCost} credits, about {SIM_CONFIG.confirmHours} hours): an independent check. Usually a false report is exposed and closes, and a real one is confirmed. But it can come back <B>inconclusive</B> (about one time in eight where your awareness is good, far more often where it is poor): confidence moves a little toward the truth and you must decide whether to pay and wait again, or act on what you know. With a short decision window there may not be time for a second try.</>,
         <><B>Execute a response</B>: each option shows its cost, time and chance of success. A failed response wastes the money; you can try another.</>,
         <><B>Monitor</B>: buys extra time once, while the harm continues.</>,
         <><B>Dismiss</B>: free, and right for a false report. But a real problem you dismiss keeps doing harm out of sight and still escalates.</>,
@@ -358,7 +374,7 @@ function Score() {
         <><B>Information</B>: false reports exposed, real ones not dismissed.</>,
         <><B>Recovery</B>: how well readiness came back after its lowest point.</>,
       ]} />
-      <P>Each objective you meet adds a point (up to 8) and most pay credits at once.</P>
+      <P>Meeting objectives adds up to {SIM_CONFIG.objectiveBonus} points, shared equally between all of a scenario’s objectives, and most pay credits at once. Objectives that say “average … over the whole phase” count every hour, so a bad stretch can be made up; ones that say “end the phase with” are measured at the last hour.</P>
       <H>Difficulty</H>
       <ul className="mt-1.5 space-y-1 text-[12px] leading-relaxed">
         {COMMAND_LEVEL_IDS.map((l) => <li key={l}><B>{COMMAND_LEVELS[l].label}.</B> {COMMAND_LEVELS[l].description}</li>)}
@@ -385,15 +401,18 @@ const GLOSSARY: [string, string][] = [
   ['Crew', 'A maintenance team. Each can do one job at a time.'],
   ['Cue', 'When one sensor tells a shooter where to look. How good the cue is depends on the sensor’s radar band.'],
   ['Decoy / false track', 'A fake threat that does no damage but can draw fire.'],
-  ['Domain', 'One of the four parts of the network: Space, Air, Sea (Maritime) and Ground.'],
+  ['Domain', 'One of the four parts of the network: Space, Air, Sea and Ground.'],
   ['Effector / shooter / interceptor', 'Anything that destroys threats: guns, missiles, lasers, jammers.'],
   ['Escalation', 'What happens when a report is left until its time runs out: lasting damage, and sometimes a new problem.'],
+  ['Fire orders', 'A shooter’s standing instructions: engage everything, missiles only, or backup.'],
   ['Forecast', 'The briefing’s prediction of which regions will be attacked this phase.'],
   ['Integrity', 'A site’s health, from 100 (untouched) to 0 (destroyed).'],
+  ['Jamming', 'On Commander, the enemy blinds one radar band for a phase: the band most of your radars use.'],
   ['Layer', 'A family of defenses grouped by reach, from close-in guns to the upper tier.'],
   ['Magazine / rounds', 'The shots a system holds before it needs resupply.'],
   ['Network health', 'The state of communications worldwide. Every domain depends on it.'],
   ['Phase', 'One chapter of a campaign: a briefing followed by two or three simulated days.'],
+  ['Quick Battle', 'A five-minute game: one region, three waves, a fixed budget, nothing else to manage.'],
   ['Radar horizon', 'The distance beyond which a ground radar cannot see low-flying threats, because the ground and hills are in the way.'],
   ['Raw / effective readiness', 'Raw is a domain’s own equipment condition. Effective is what is left after weakness in the domains it depends on.'],
   ['Readiness', 'How fit for use your equipment is, as a percentage.'],
@@ -422,7 +441,7 @@ function Glossary() {
 }
 
 const KEYS: [string, string][] = [
-  ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', `Advance ${SIM_CONFIG.turnHours} hours`], ['G S A M D', 'Global · Space · Air · Maritime · Ground'], ['X', 'Tactical Theater'],
+  ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', `Advance ${SIM_CONFIG.turnHours} hours`], ['G S A M D', 'Global · Space · Air · Sea · Ground'], ['X', 'Tactical Theater'],
   ['I C L F', 'Intelligence · Communications · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-Action Review'],
   ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Show or hide the bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close a window / deselect a region'], ['?', 'This guide'],
 ];

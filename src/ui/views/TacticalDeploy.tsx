@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, previewDefense, forecastTargets, stockpileRules, stormWindows, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  DOCTRINES, JAMMING, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { TONE_HEX } from '../components/ui';
@@ -40,6 +40,21 @@ function StatChip({ label, value, tone = 'dim' }: { label: string; value: string
   return <span className={`rounded-sm border px-1 py-px ${c}`}><span className="text-ops-dim">{label} </span>{value}</span>;
 }
 
+/** A shooter's standing fire orders: one choice the player makes for the fight, changeable at any time. */
+export function DoctrinePicker({ d }: { d: Deployment }) {
+  const cur: FireDoctrine = d.doctrine ?? 'free';
+  return (
+    <label className="flex flex-wrap items-center gap-1.5 text-[10px] text-ops-dim" title={DOCTRINES[cur].text}>
+      <span>Fire orders</span>
+      <select className="input py-0.5 text-[11px]" value={cur} aria-label="Fire orders"
+        onChange={(e) => dispatch({ type: 'setDoctrine', deploymentId: d.id, doctrine: e.target.value as FireDoctrine })}>
+        {(Object.keys(DOCTRINES) as FireDoctrine[]).map((k) => <option key={k} value={k}>{DOCTRINES[k].label}</option>)}
+      </select>
+      <span className="basis-full leading-snug">{DOCTRINES[cur].text}</span>
+    </label>
+  );
+}
+
 /** What a system's radar band means for it: range kept in storms, decoys recognised, quality of the track it shares. */
 function BandLine({ band }: { band: RadarBand | null }) {
   const r = band ? RADAR_BANDS[band] : PASSIVE_SENSOR;
@@ -68,6 +83,7 @@ function RadarPicture({ s, region }: { s: SimState; region: RegionId }) {
   const from = s.status === 'running' ? s.phaseStartHour : s.hour;
   const storms = stormWindows(s, region, from, from + phase.hours).length > 0;
   const guide = <button className="ml-1 text-ops-cyan underline" onClick={() => ui.setHelp('bands')}>What are radar bands?</button>;
+  const jam = jammedBand(s);
   if (!bands.length) {
     return (
       <div className="rounded border border-ops-line px-2 py-1 text-[11px] text-ops-dim">
@@ -82,6 +98,13 @@ function RadarPicture({ s, region }: { s: SimState; region: RegionId }) {
   const notes: { tone: string; text: string }[] = [];
   if (bestStorm < 0.7) notes.push({ tone: storms ? 'text-ops-amber' : 'text-ops-dim', text: `${storms ? '⚠ Storms are forecast and e' : 'E'}very radar here is short-wave: in a storm the best keeps ${Math.round(bestStorm * 100)}% of its range. A long-wave radar (L or UHF) sees through weather.` });
   if (bestSharp < 0.5) notes.push({ tone: 'text-ops-amber', text: `Nothing here is sharp enough to pick out decoys (best ${Math.round(bestSharp * 100)}%): expect rounds wasted on fakes. An X-band radar such as Sentinel recognises ${Math.round(RADAR_BANDS.X.sharp * 100)}%.` });
+  if (jam) {
+    const hit = specs.filter((sp) => sp.radar?.band === jam).length;
+    const radars = specs.filter((sp) => sp.radar).length;
+    notes.unshift({ tone: hit ? 'text-ops-red' : 'text-ops-green', text: hit
+      ? `⚠ The enemy is jamming ${jam}-band this phase: ${hit} of your ${radars} radar${radars === 1 ? '' : 's'} here will see ${Math.round(JAMMING.range * 100)}% as far and recognise ${Math.round(JAMMING.sharp * 100)}% as many decoys. Add a radar on another band.`
+      : `The enemy is jamming ${jam}-band this phase; none of your radars here use it.` });
+  }
   if (!notes.length) notes.push({ tone: 'text-ops-green', text: 'A good mix: weather-proof warning and a sharp picture.' });
   return (
     <div className="rounded border border-ops-line px-2 py-1 text-[11px]">
@@ -133,7 +156,8 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
                   <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />
                   {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
                   {isEffector(e) && <StatChip label="Rounds" value={isUnlimited(e) ? '∞' : String(e.magazine)} />}
-                  {e.radar && <StatChip label="Radar" value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
+                  {e.radar && <StatChip label={jammedBand(s) === e.radar.band ? 'Radar (jammed)' : 'Radar'} tone={jammedBand(s) === e.radar.band ? 'amber' : 'dim'} value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
+                  {isEffector(e) && e.roundCr !== undefined && <StatChip label="Per round" value={`${e.roundCr} cr`} />}
                   {!e.radar && isEffector(e) && <StatChip label="No radar" value="needs a sensor nearby" tone="amber" />}
                   {!e.radar && !isEffector(e) && <StatChip label="Passive" value="drones only" />}
                   {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
@@ -252,7 +276,7 @@ function weatherOutlook(s: SimState, region: RegionId): string {
 /** Forecast check: the expected threats in this region and how the current layout would do against them. */
 function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   const t = s.tactical!;
-  const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}`).join('|');
+  const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}:${d.doctrine ?? ''}`).join('|');
   // Recomputed only when this region's layout (or the phase) changes.
   const p = useMemo(() => previewDefense(s, region), [key, region, s.phaseIndex, s.hour]);
   const targets = useMemo(() => forecastTargets(s, region), [key, region, s.phaseIndex, s.hour]);
@@ -409,6 +433,7 @@ export function DeployPanel({ s }: { s: SimState }) {
                   {isEffector(depSpec) ? ` · ${isUnlimited(depSpec) ? 'unlimited' : `${dep.stock}/${depSpec.magazine} rds`}` : ''}
                 </div>
               </div>
+              {isEffector(depSpec) && <div className="order-last basis-full"><DoctrinePicker d={dep} /></div>}
               <div className="flex gap-1">
                 <button className={`btn ${moving ? 'btn-active' : ''}`} onClick={() => { setMoving(!moving); setEquipment(null); }}>Move</button>
                 <button className="btn btn-danger" onClick={() => { dispatch({ type: 'withdraw', deploymentId: dep.id }); setSelectedDep(null); setMoving(false); }}>

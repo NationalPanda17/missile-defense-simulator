@@ -154,8 +154,8 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
       ],
       situation: 'A geomagnetic storm has coincided with unrest in two regions. Communications are fragile, resources are thin and reports are unreliable. Hold the network together for four days.',
       objectives: [
-        { id: 'c_net', text: 'Keep network health at or above 50%', metric: 'network', target: 50, reward: 0 },
-        { id: 'c_stab', text: 'Keep average stability at or above 50', metric: 'stability', target: 50, reward: 0 },
+        { id: 'c_net', text: 'Average network health of 50% or more over the scenario', metric: 'networkAvg', target: 50, reward: 0 },
+        { id: 'c_stab', text: 'Average regional stability of 50 or more over the scenario', metric: 'stabilityAvg', target: 50, reward: 0 },
         { id: 'c_esc', text: 'Allow no more than 5 escalations', metric: 'escalationsMax', target: 5, reward: 0 },
       ],
     }];
@@ -191,9 +191,9 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
     situation: 'Free-play simulation using your custom configuration. All event categories, chains and uncertainty systems are active.',
     special: ['All event types enabled', `Event frequency x${settings.eventFrequency.toFixed(1)}`, `False report rate ${Math.round(settings.falseReportRate * 100)}%`],
     objectives: [
-      { id: 's_ready', text: 'Hold global readiness at or above 70%', metric: 'readiness', target: 70, reward: 0 },
-      { id: 's_net', text: 'Hold network health at or above 70%', metric: 'network', target: 70, reward: 0 },
-      { id: 's_stab', text: 'Hold average stability at or above 60', metric: 'stability', target: 60, reward: 0 },
+      { id: 's_ready', text: 'End with global readiness at 70% or higher', metric: 'readiness', target: 70, reward: 0 },
+      { id: 's_net', text: 'Average network health of 70% or more over the scenario', metric: 'networkAvg', target: 70, reward: 0 },
+      { id: 's_stab', text: 'Average regional stability of 60 or more over the scenario', metric: 'stabilityAvg', target: 60, reward: 0 },
     ],
   }];
 }

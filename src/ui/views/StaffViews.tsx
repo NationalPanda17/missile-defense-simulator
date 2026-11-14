@@ -206,14 +206,14 @@ export function LogisticsView({ s }: { s: SimState }) {
           <thead><tr><th>Asset</th><th>Domain</th><th>Region</th><th className="w-32">Condition</th><th>Service</th><th /></tr></thead>
           <tbody>
             {inMaint.map((a) => (
-              <tr key={a.id}><td className="text-white">{a.name}</td><td style={{ color: DOMAIN_COLOR[a.domain] }}>{DOMAIN_LABEL[a.domain]}</td><td>{a.region}</td><td><Bar value={a.condition} showValue /></td><td className="text-ops-cyan">in work {a.maintenanceRemaining}h</td><td /></tr>
+              <tr key={a.id}><td className="text-white">{a.name}</td><td style={{ color: DOMAIN_COLOR[a.domain] }}>{DOMAIN_LABEL[a.domain]}</td><td>{s.regions[a.region].short}</td><td><Bar value={a.condition} showValue /></td><td className="text-ops-cyan">in work {a.maintenanceRemaining}h</td><td /></tr>
             ))}
             {queue.map((a) => {
               const c = maintenanceCost(s, a.domain);
               return (
                 <tr key={a.id}>
                   <td><button className="text-white hover:text-ops-cyan" onClick={() => ui.openAsset(a.id)}>{a.name}</button></td>
-                  <td style={{ color: DOMAIN_COLOR[a.domain] }}>{DOMAIN_LABEL[a.domain]}</td><td>{a.region}</td>
+                  <td style={{ color: DOMAIN_COLOR[a.domain] }}>{DOMAIN_LABEL[a.domain]}</td><td>{s.regions[a.region].short}</td>
                   <td><Bar value={a.condition} showValue /></td>
                   <td className={a.hoursToService < 0 ? 'text-ops-red' : 'text-ops-amber'}>{a.hoursToService < 0 ? `${-a.hoursToService}h overdue` : `due ${a.hoursToService}h`}</td>
                   <td className="text-right"><button className="btn" disabled={crewsFree(s) < 1 || s.credits < c} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>Schedule ({c})</button></td>

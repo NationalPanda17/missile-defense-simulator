@@ -25,6 +25,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
     }
   }
   const c = wave.conditions;
+  const jam = t.enemy?.find((p) => p.phaseIndex === wave.phaseIndex)?.jam;
   return (
     <div className="space-y-2 text-[11px]">
       {c && (c.night || c.storm) && (
@@ -33,6 +34,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
           {c.night ? '; Stinger, Avenger and ZU-23-2 were less accurate in the dark' : ''}.
         </p>
       )}
+      {jam && <p className="text-ops-amber">The enemy jammed {jam}-band radars this phase: they saw half as far and recognised half as many decoys.</p>}
       <div className="overflow-x-auto">
         <table className="table-ops w-full">
           <thead><tr><th>Threat</th><th>Target</th><th>Seen</th><th>Engaged by</th><th>Result</th></tr></thead>

@@ -8,7 +8,7 @@ import {
   regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, pointAlong, trackPath } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
-import { LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
+import { DoctrinePicker, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
 
 export const PROTECTION_TONE: Record<ProtectionLevel, 'green' | 'amber' | 'red'> = { protected: 'green', thin: 'amber', exposed: 'red' };
 const REPLAY_MS = 5000;
@@ -125,6 +125,7 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
           </button>
         </div>
       )}
+      {isEffector(spec) && <div className="mt-1.5"><DoctrinePicker d={d} /></div>}
       {!isEffector(spec) && <div className="mt-1 text-[10px] text-ops-dim">{LAYER_LABELS[spec.layer]} · detects to {spec.rangeKm} km</div>}
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
         <span className={d.transit ? 'text-ops-amber' : 'text-ops-dim'}>
@@ -334,7 +335,7 @@ export function TheaterView({ s }: { s: SimState }) {
               </div>
             )}
             <p className="mt-2 text-[10px] text-ops-dim">
-              Systems wear down like other equipment: send them for maintenance from Ground, Air or Maritime Command.
+              Systems wear down like other equipment: send them for maintenance from Ground, Air or Sea Command.
               Resupply needs logistics capacity of {TACTICAL_CONFIG.minLogisticsForResupply}+ (now {Math.round(s.logistics)}).
             </p>
           </Panel>

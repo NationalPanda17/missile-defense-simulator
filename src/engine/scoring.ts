@@ -1,11 +1,19 @@
 // Scoring, objective evaluation and after-action analysis.
-import { DECOY_EFFICIENCY_PENALTY, PROTECTION_SCORE_WEIGHT, SCORE_WEIGHTS, TACTICAL_CONFIG } from './config';
+import { DECOY_EFFICIENCY_PENALTY, PROTECTION_SCORE_WEIGHT, SCORE_WEIGHTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { clamp } from './rng';
 import type { ObjectiveResult, PhaseConfig, RegionId, SimState } from './types';
 import { REGION_IDS } from './types';
 
+/** Average of a tracked metric over the current phase so far (its current value before the first hour is sampled). */
+function phaseAverage(s: SimState, key: 'network' | 'stability'): number {
+  const xs = s.history.filter((h) => h.t > s.phaseStartHour);
+  return xs.length ? xs.reduce((a, h) => a + h[key], 0) / xs.length : s.metrics[key];
+}
+
 export function objectiveValue(s: SimState, metric: PhaseConfig['objectives'][number]['metric']): number {
   switch (metric) {
+    case 'networkAvg': return phaseAverage(s, 'network');
+    case 'stabilityAvg': return phaseAverage(s, 'stability');
     case 'readiness': return s.metrics.globalReadiness;
     case 'network': return s.metrics.network;
     case 'stability': return s.metrics.stability;
@@ -21,8 +29,16 @@ export function objectiveValue(s: SimState, metric: PhaseConfig['objectives'][nu
   }
 }
 
-export function objectiveMet(metric: string, value: number, target: number) {
-  return metric === 'escalationsMax' ? value <= target : value >= target;
+/**
+ * Is the objective met? Pass the state so that "raise it during the phase" objectives also pass for a network that is
+ * already at a high level, however little room it had left to rise.
+ */
+export function objectiveMet(metric: string, value: number, target: number, s?: SimState) {
+  if (metric === 'escalationsMax') return value <= target;
+  if (value >= target) return true;
+  const ceiling = SIM_CONFIG.objectiveCeiling[metric];
+  if (s && ceiling !== undefined) return (metric === 'readinessGain' ? s.metrics.globalReadiness : s.metrics.infrastructure) >= ceiling;
+  return false;
 }
 
 /** An objective's value or target for display: gains are signed (+3, -2). */
@@ -43,7 +59,7 @@ export type ObjectiveProgress = 'done' | 'on-track' | 'behind' | 'missed';
  */
 export function objectiveProgress(s: SimState, o: PhaseConfig['objectives'][number]): ObjectiveProgress {
   const v = objectiveValue(s, o.metric);
-  const met = objectiveMet(o.metric, v, o.target);
+  const met = objectiveMet(o.metric, v, o.target, s);
   if (COUNT_METRICS.has(o.metric)) return met ? 'done' : 'behind';
   if (o.metric === 'escalationsMax') return met ? 'on-track' : 'missed';
   return met ? 'on-track' : 'behind';
@@ -52,7 +68,7 @@ export function objectiveProgress(s: SimState, o: PhaseConfig['objectives'][numb
 export function evaluateObjectives(s: SimState, phase: PhaseConfig): ObjectiveResult[] {
   return phase.objectives.map((o) => {
     const value = objectiveValue(s, o.metric);
-    return { phase: phase.id, objectiveId: o.id, text: o.text, met: objectiveMet(o.metric, value, o.target), value };
+    return { phase: phase.id, objectiveId: o.id, text: o.text, met: objectiveMet(o.metric, value, o.target, s), value };
   });
 }
 
@@ -143,7 +159,9 @@ export function computeScore(s: SimState): ScoreBreakdown {
   }
   const weighted = (Object.keys(weights) as ScoreKey[]).reduce((x, k) => x + weights[k]! * components[k]!, 0);
   const met = s.objectiveResults.filter((r) => r.met).length;
-  const objectiveBonus = Math.min(8, met * 1);
+  // Every objective is worth an equal share of the bonus, so none is worth nothing.
+  const all = s.phases.reduce((a, p) => a + p.objectives.length, 0);
+  const objectiveBonus = all ? Math.round((SIM_CONFIG.objectiveBonus * met / all) * 10) / 10 : 0;
   const total = clamp(weighted + objectiveBonus);
   const grade = total >= 90 ? 'S' : total >= 80 ? 'A' : total >= 70 ? 'B' : total >= 60 ? 'C' : total >= 50 ? 'D' : 'F';
   return { components, weights, objectiveBonus, total, grade };
