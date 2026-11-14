@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  DOCTRINES, JAMMING, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  DOCTRINES, ENEMY_STYLES, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { TONE_HEX } from '../components/ui';
@@ -13,14 +13,14 @@ import { LAYER_COLOR, MapLegend, TheaterMap, effectorsCovering } from './theater
 
 export { LAYER_COLOR, MapLegend, TheaterMap } from './theater/TheaterMap';
 
-export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
+export const CLASS_SHORT: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM', hypersonic: 'HG' };
 
 /** Best single-shot kill rate per threat class for a threat aimed at this point (engine rules: altitude, horizon, terrain). */
 const bestKill = (s: SimState, region: RegionId, x: number, y: number) => coverageAt(s, region, x, y);
 
 export function KillBars({ k }: { k: Record<ThreatClass, number> }) {
   return (
-    <div className="grid grid-cols-5 gap-1">
+    <div className="grid grid-cols-6 gap-1">
       {THREAT_CLASSES.map((c) => (
         <div key={c} title={`${THREAT_LABELS[c]}: ${Math.round(k[c] * 100)}%`}>
           <div className="h-1.5 overflow-hidden rounded-sm bg-ops-line/70">
@@ -260,6 +260,7 @@ const CLASS_ADVICE: Record<ThreatClass, string> = {
   cruise: 'cruise missiles: fly very low; short/medium-range missiles (NASAMS, IRIS-T) with a radar nearby or airborne early warning',
   rocket: 'rockets: fast and short-lived; Iron Dome-class systems near the sites they target',
   ballistic: 'ballistic missiles: only upper-tier or long-range systems reach them (Patriot PAC-3, THAAD, Arrow, SM-3/SM-6)',
+  hypersonic: 'hypersonic gliders: very fast and they swerve; only THAAD, Aegis SM-6, Patriot PAC-3, SAMP/T and Arrow 2 have a chance, so stack two',
 };
 
 /** The phase's storms and nights in a region, in one line. */
@@ -272,6 +273,10 @@ function weatherOutlook(s: SimState, region: RegionId): string {
     : 'no storms expected';
   return `Weather: ${st}. Nights run 20:00–05:00 local; some raids are timed for the dark, when Stinger, Avenger and ZU-23-2 are less accurate.`;
 }
+
+/** A letter for a share stopped: A (85%+) down to F (under 40%). */
+const gradeOf = (x: number) => (x >= 0.85 ? 'A' : x >= 0.7 ? 'B' : x >= 0.55 ? 'C' : x >= 0.4 ? 'D' : 'F');
+const GRADE_TONE: Record<string, string> = { A: 'border-ops-green/50 text-ops-green', B: 'border-ops-green/40 text-ops-green', C: 'border-ops-amber/50 text-ops-amber', D: 'border-ops-amber/50 text-ops-amber', F: 'border-ops-red/50 text-ops-red' };
 
 /** Forecast check: the expected threats in this region and how the current layout would do against them. */
 function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
@@ -297,6 +302,13 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
         <span className="label mr-2">Forecast check · {s.regions[region].name}</span>
         Simulated outcome with this layout: <b className={tone}>about {pct}% of the expected damage prevented</b>{' '}
         <span className="text-ops-dim">(likely {Math.round(p.range[0] * 100)}–{Math.round(p.range[1] * 100)}%; {Math.round(p.stopRate * 100)}% of ~{p.threats} threats stopped) · what works ▾</span>
+        <span className="mt-1 flex flex-wrap items-center gap-1" aria-label="Grade against each kind of threat">
+          <span className="text-ops-dim">Against each threat:</span>
+          {classes.map(([c, n]) => {
+            const g = gradeOf(p.byClass[c] ?? 0);
+            return <span key={c} className={`rounded-sm border px-1 ${GRADE_TONE[g]}`} title={`${THREAT_LABELS[c]}: about ${Math.round((p.byClass[c] ?? 0) * 100)}% of ~${n} stopped`}>{THREAT_LABELS[c]}s <b>{g}</b></span>;
+          })}
+        </span>
         {exposed.length > 0 && (
           <span className="mt-0.5 block text-ops-amber">
             ⚠ Targeted sites outside your coverage: {exposed.slice(0, 4).map((x) => x.site.name).join(', ')}{exposed.length > 4 ? ` +${exposed.length - 4} more` : ''}
@@ -308,6 +320,7 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
         {targets.length > 0 && <li>▸ Likely targets, most threatened first: {targets.slice(0, 5).map((x) => x.site.name).join(', ')}</li>}
         {classes.map(([c, n]) => <li key={c}>▸ ~{n} × {CLASS_ADVICE[c]}</li>)}
         <li>▸ {weatherOutlook(s, region)}</li>
+        {s.settings.mode === 'campaign' && s.phaseIndex > 0 && <li>▸ Some missiles will go for your radars instead of a site. Keep close-in defense beside them.</li>}
       </ul>
       <div className="mt-1 text-[10px] text-ops-dim">
         An estimate from replaying the forecast waves against your layout many times. Luck matters: the real result can land anywhere in the likely range, and sometimes outside it. Surprise attacks are not included.
@@ -333,6 +346,10 @@ export function DeployPanel({ s }: { s: SimState }) {
   const [hideGuide, setHideGuide] = useState(guideHidden);
   const spentNow = s.commands.filter((c) => c.t === s.hour && (c.kind === 'deploy' || c.kind === 'relocate')).reduce((a, c) => a + c.credits, 0);
   const showGuide = s.phaseIndex === 0 && !hideGuide && s.settings.mode === 'campaign'; // training lessons have their own coach
+  // What the last phase's review said would have helped most here: shown as a ghost on the map until it is placed.
+  const fix = useMemo(() => (s.phaseIndex > 0 && s.status === 'briefing' ? suggestFixes(s, 7).find((f) => f.region === region) : undefined), [s.phaseIndex, s.status, region, s.campaignId]);
+  const fixSpec = fix ? EQUIPMENT_MAP.get(fix.equipmentId)! : null;
+  const fixDone = !!fix && t.deployments.some((d) => d.region === region && d.equipmentId === fix.equipmentId && d.deployedAt === s.hour && Math.hypot(d.x - fix.x, d.y - fix.y) < 30);
   const guideTarget = showGuide && !guideSteps(s, region).find((x) => x.id === 'cover')!.done
     ? guideSites(s, region)[0] : undefined;
 
@@ -370,7 +387,21 @@ export function DeployPanel({ s }: { s: SimState }) {
         )}
       </div>
 
-      <div className="order-2 space-y-1"><ForecastCheck s={s} region={region} /><RadarPicture s={s} region={region} /></div>
+      <div className="order-2 space-y-1">
+        <ForecastCheck s={s} region={region} />
+        <RadarPicture s={s} region={region} />
+        {fix && fixSpec && !fixDone && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1 text-[11px]">
+            <span><span className="label mr-2 text-ops-amber">From the last review</span>{fix.text} <span className="text-ops-dim">The amber ring on the map marks the spot.</span></span>
+            <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); }}>Pick {fixSpec.name}</button>
+          </div>
+        )}
+        {s.settings.mode === 'campaign' && s.settings.enemy && s.settings.enemy !== 'planner' && (
+          <div className="rounded border border-ops-line px-2 py-1 text-[11px] text-ops-dim">
+            <span className="label mr-2">Opponent</span><span className="text-white">{ENEMY_STYLES[s.settings.enemy].name}, {ENEMY_STYLES[s.settings.enemy].title}.</span> {ENEMY_STYLES[s.settings.enemy].text} <span className="text-ops-text">Answer: {ENEMY_STYLES[s.settings.enemy].counter}</span>
+          </div>
+        )}
+      </div>
 
       {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
@@ -411,7 +442,7 @@ export function DeployPanel({ s }: { s: SimState }) {
             <div className="min-w-[560px] md:min-w-0">
               <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
                 fitClass="md:max-h-[max(15rem,calc(100dvh-24rem-var(--coach-h,0px)))]"
-                highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : null}
+                highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : fix && fixSpec && !fixDone ? { x: fix.x, y: fix.y, label: `Suggested: ${fixSpec.name}` } : null}
                 onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
             </div>
           </div>
@@ -427,10 +458,10 @@ export function DeployPanel({ s }: { s: SimState }) {
           {dep && depSpec && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-cyan/40 p-2">
               <div className="min-w-0">
-                <div className="font-sans text-[14px] font-semibold text-white">{depAsset?.name ?? depSpec.name}</div>
+                <div className="font-sans text-[14px] font-semibold text-white">{unitName(s, dep)}{veteranOf(dep) ? <span className="ml-1.5 rounded-sm border border-ops-amber/50 px-1 text-[10px] text-ops-amber">★ {veteranOf(dep)!.label}</span> : null}</div>
                 <div className="text-[10px] text-ops-dim">
                   {LAYER_LABELS[depSpec.layer]} · at {dep.x}, {dep.y} km · condition {Math.round(depAsset?.condition ?? 0)}%
-                  {isEffector(depSpec) ? ` · ${isUnlimited(depSpec) ? 'unlimited' : `${dep.stock}/${depSpec.magazine} rds`}` : ''}
+                  {isEffector(depSpec) ? ` · ${isUnlimited(depSpec) ? 'unlimited' : `${dep.stock}/${depSpec.magazine} rds`} · ${dep.kills ?? 0} stopped` : ''}
                 </div>
               </div>
               {isEffector(depSpec) && <div className="order-last basis-full"><DoctrinePicker d={dep} /></div>}

@@ -222,6 +222,14 @@ system's reach against low fliers to `cuedHorizonMult` horizons, not to its full
 enemy jams the radar band the defense fields most (`EnemyPlan.jam`, `JAMMING`). Quick Battle is a seed-generated
 one-region drill (`QUICK_BATTLE` in `training.ts`).
 
+**Opponents, strikes, research and stories.** A campaign's enemy commander (`settings.enemy`, `ENEMY_STYLES`) reweights
+the threat mix, wave size and count, surprises, turns, decoys and strikes. From phase 2 some missiles home on the
+defender's radars (`TACTICAL_CONFIG.strikes`; `Track.depTarget` / `aim`), damaging the system they hit. Hypersonic
+gliders are a sixth threat class. Research programmes are one-off investments recorded in `SimState.research`. Each
+deployment keeps a callsign and a count of threats stopped (`veteranOf`). `story.ts` turns recorded results into the
+narrated replay (`narrateWave`), a single threat's story (`trackStory`), the per-phase front page (`phaseDispatch`) and
+medals (`MEDALS`); medals live in the browser (`src/ui/medals.ts`) and unlock theater map themes.
+
 **Radar bands.** Each radar has a band (`RADAR_BANDS` in `equipment.ts`, long waves to short: UHF, L, S, C, X, Ku) with
 three game values: the share of range it keeps in a storm, the chance it recognises a decoy it is tracking (recognised
 decoys draw no fire), and the quality of the track it hands to a shooter whose own sensor cannot see the threat. Wave

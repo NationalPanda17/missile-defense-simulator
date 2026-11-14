@@ -2,7 +2,7 @@
 //
 // The tactical layer draws from its own RNG stream (`tactical.rng`), so adding it does not change how the
 // management simulation plays out for a given seed.
-import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, levelOf } from './config';
+import { SIM_CONFIG, STOCKPILES, TACTICAL_CONFIG, enemyStyleOf, levelOf } from './config';
 import { EQUIPMENT, EQUIPMENT_MAP, RADAR_BAND_IDS, equipmentCost, isEffector, sensorTraits, type EquipmentSpec, type RadarBand } from './equipment';
 import { availability } from './metrics';
 import { clamp, rand } from './rng';
@@ -21,7 +21,7 @@ import { REGION_IDS } from './types';
 type Rng = { rng: number };
 
 const AXES: ThreatAxis[] = ['north', 'south', 'east', 'west'];
-const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic'];
+const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic', 'hypersonic'];
 
 const emptyStats = (): TacticalStats => ({ tracks: 0, stopped: 0, leaked: 0, decoysEngaged: 0, shots: 0, siteDamage: 0 });
 
@@ -184,10 +184,13 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   if (lv.surpriseMult !== 1) sc.surpriseRate = Math.min(0.9, sc.surpriseRate * lv.surpriseMult);
   // Commander: the enemy adapts to what it saw in earlier phases.
   const plan = enemyPlan(s);
-  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c] * (plan?.mix[c] ?? 1)])) as Record<ThreatClass, number>;
+  // The enemy commander's style: the Planner changes nothing.
+  const style = enemyStyleOf(s.settings);
+  if (style.surprise !== 1) sc.surpriseRate = Math.min(0.9, sc.surpriseRate * style.surprise);
+  const scaledMix = Object.fromEntries(CLASSES.map((c) => [c, base.mix[c] * sc.mix[c] * (plan?.mix[c] ?? 1) * (style.mix[c] ?? 1)])) as Record<ThreatClass, number>;
   const profile = {
-    count: Math.max(1, Math.round(base.count * sc.waveCount)),
-    tracks: [Math.max(1, Math.round(base.tracks[0] * sc.waveSize)), Math.max(1, Math.round(base.tracks[1] * sc.waveSize))] as const,
+    count: Math.max(1, Math.round(base.count * sc.waveCount * style.waveCount)),
+    tracks: [Math.max(1, Math.round(base.tracks[0] * sc.waveSize * style.waveSize)), Math.max(1, Math.round(base.tracks[1] * sc.waveSize * style.waveSize))] as const,
     mix: CLASSES.some((c) => scaledMix[c] > 0) ? scaledMix : base.mix, // never leave a phase with no possible threat
   };
 
@@ -230,8 +233,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
       const cls = weighted(t, CLASSES.map((c) => ({ item: c, w: profile.mix[c] })));
       const tr = makeTrack(t, region, cls, axis, false);
       if (!tr) continue;
-      const turnChance = TACTICAL_CONFIG.turning.chanceByPhase[s.phaseIndex] ?? 0;
+      const turnChance = Math.min(0.9, (TACTICAL_CONFIG.turning.chanceByPhase[s.phaseIndex] ?? 0) * style.turn);
       if (turnChance > 0 && TACTICAL_CONFIG.turning.classes.includes(cls) && rand(t) < turnChance) tr.via = turnPoint(t, tr);
+      if (TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
       tracks.push(tr);
     }
     const w: ThreatWave = {
@@ -285,6 +289,7 @@ function scheduleLessonWaves(s: SimState, t: TacticalState, waves: ScriptedWave[
     for (const cls of CLASSES) {
       for (let i = 0; i < (sw.tracks[cls] ?? 0); i++) {
         const tr = makeTrack(t, sw.region, cls, sw.axis, false);
+        if (tr && TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
         if (tr) tracks.push(tr);
       }
     }
@@ -401,7 +406,7 @@ export const canEngageClass = (spec: EquipmentSpec, cls: ThreatClass) =>
  * the last 40 km into the point from every direction.
  */
 export function coverageAt(s: SimState, region: RegionId, x: number, y: number): Record<ThreatClass, number> {
-  const out = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0 };
+  const out = { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 0, hypersonic: 0 };
   const t = s.tactical;
   if (!t) return out;
   const terrain = t.terrain?.[region];
@@ -470,11 +475,39 @@ function tlog(s: SimState, level: LogLevel, text: string, region?: RegionId) {
   if (s.log.length > 800) s.log.splice(0, s.log.length - 800);
 }
 
-function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[]) {
+/** Where a track is headed: the site it is aimed at, or the spot where the system it is hunting stood. */
+export function trackTarget(t: Pick<TacticalState, 'sites'>, tr: Pick<Track, 'siteId' | 'aim'>): [number, number] | null {
+  if (tr.aim) return tr.aim;
   const site = t.sites.find((x) => x.id === tr.siteId);
-  if (!site) return;
+  return site ? [site.x, site.y] : null;
+}
+
+/** What a threat is worth to the protection score: its damage × the importance of what it is aimed at. */
+export function trackValue(t: Pick<TacticalState, 'sites'>, tr: Track): number {
+  const importance = tr.depTarget ? TACTICAL_CONFIG.strikes.value : t.sites.find((x) => x.id === tr.siteId)?.importance ?? 1;
+  return TACTICAL_CONFIG.threatDamage[tr.cls] * importance;
+}
+
+/** A unit's standing from its service record (threats stopped), or null for a new unit. */
+export function veteranOf(d: Pick<Deployment, 'kills'>) {
+  return TACTICAL_CONFIG.veteran.find((v) => (d.kills ?? 0) >= v.kills) ?? null;
+}
+
+export const hasResearch = (s: SimState, id: string) => !!s.research?.includes(id);
+
+/** Share of a wave's missiles that go for the defender's radars, for this scenario and phase. */
+function strikeShare(s: SimState, w: ThreatWave): number {
+  if (s.settings.mode !== 'campaign') return 0;
+  const style = enemyStyleOf(s.settings);
+  if (w.phaseIndex < style.strikeFrom) return 0;
+  const base = TACTICAL_CONFIG.strikes.byPhase[w.phaseIndex] || TACTICAL_CONFIG.strikes.byPhase[1];
+  return Math.min(0.5, base * style.strike * (s.settings.level === 'commander' ? 1.5 : s.settings.level === 'recruit' ? 0.5 : 1));
+}
+
+function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, deps: Deployment[]) {
+  const target = trackTarget(t, tr);
+  if (!target) return;
   const region = s.regions[w.region];
-  const target: [number, number] = [site.x, site.y];
   const path = trackPath(tr, target);
   const assetOf = (d: Deployment) => s.assets.find((a) => a.id === d.assetId);
   const terrain = t.terrain?.[w.region];
@@ -487,8 +520,8 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
   // Commander: the enemy jams one radar band for the phase, shortening those radars' range and blurring their picture.
   const jam = t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.jam;
-  const jammed = (spec: EquipmentSpec) => !!jam && spec.radar?.band === jam;
-  const sharpOf = (spec: EquipmentSpec) => sensorTraits(spec).sharp * (jammed(spec) ? JAMMING.sharp : 1);
+  const jammed = (spec: EquipmentSpec) => !!jam && spec.radar?.band === jam && !hasResearch(s, 'r_ecm');
+  const sharpOf = (spec: EquipmentSpec) => Math.min(0.97, (sensorTraits(spec).sharp + (spec.radar && hasResearch(s, 'r_discrim') ? TACTICAL_CONFIG.research.discrim : 0)) * (jammed(spec) ? JAMMING.sharp : 1));
   const watchers = working
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
     .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1) * (jammed(spec) ? JAMMING.range : 1), false) > 0);
@@ -504,6 +537,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const trackQuality = (d: Deployment) => {
     if (!seen) return unseen;
     if (watchers.some((x) => x.d === d)) return 1;
+    if (hasResearch(s, 'r_network')) return 1; // networked fire control: any track is as good as its own
     return Math.max(unseen, ...watchers.map((x) => sensorTraits(x.spec).cue));
   };
   const awarenessF = (0.7 + 0.3 * (region.awareness / 100)) * (alert ? 1 + A.detectionBonus : 1);
@@ -552,7 +586,8 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     if (stopped) { why.set(d.id, 'done'); continue; }
     const avail = Math.min(1, availability(s, asset!));
     if (avail <= 0) { why.set(d.id, 'oa'); continue; }
-    const reaction = spec.reactionSec * (seen ? 1 : 2) * (alert ? A.reactionMult : 1);
+    const vet = veteranOf(d);
+    const reaction = spec.reactionSec * (seen ? 1 : 2) * (alert ? A.reactionMult : 1) * (vet?.reaction ?? 1);
     const window = chord / speed - reaction;
     if (window <= 0) { why.set(d.id, seen ? 'fast' : 'late'); continue; }
     const shots = Math.min(TACTICAL_CONFIG.maxShotsPerSystem, 1 + Math.floor(window / Math.max(reaction, 30)));
@@ -569,9 +604,10 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
       const quality = trackQuality(d);
       if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
-      if (rand(t) < spec.killRate[tr.cls] * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
+      if (rand(t) < Math.min(0.98, spec.killRate[tr.cls] + (vet?.kill ?? 0)) * avail * Math.min(1, quality * awarenessF) * commsF * dark) {
         stopped = true;
         tr.stoppedBy = d.id;
+        if (!tr.decoy) d.kills = (d.kills ?? 0) + 1;
         // Where along the path it dies: inside the stopper's reach, later for each extra shot it took.
         const span = reachSpanPath(terrain, d, spec, tr.cls, path, spec.rangeKm, cued);
         if (span) tr.stopAt = Math.min(0.97, span[0] + (span[1] - span[0]) * (0.25 + 0.3 * i));
@@ -601,7 +637,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
 /** "A —", "A and B —", "A, B and C —": the systems a reason applies to. */
 const listNames = (names: string[]) => `${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]} —`;
 
-const THREAT_WORDS: Record<ThreatClass, string> = { slowDrone: 'slow drone', fastDrone: 'fast drone', cruise: 'cruise missile', rocket: 'rocket', ballistic: 'ballistic missile' };
+const THREAT_WORDS: Record<ThreatClass, string> = { slowDrone: 'slow drone', fastDrone: 'fast drone', cruise: 'cruise missile', rocket: 'rocket', ballistic: 'ballistic missile', hypersonic: 'hypersonic glider' };
 
 /** What each reason code means, for a threat class. */
 export function reasonText(code: string, cls: ThreatClass): string {
@@ -647,6 +683,19 @@ function applyImpacts(s: SimState, t: TacticalState, w: ThreatWave) {
   const region = s.regions[w.region];
   for (const tr of w.tracks) {
     if (tr.decoy || tr.outcome !== 'leaked') continue;
+    if (tr.depTarget) {
+      // It was hunting one of the defender's systems: the system takes the hit, not a site.
+      tr.damage = 0;
+      const d = t.deployments.find((x) => x.id === tr.depTarget);
+      const a = d && s.assets.find((x) => x.id === d.assetId);
+      // A system that has since moved away from where it stood is missed.
+      if (d && a && !d.transit && d.region === w.region && Math.hypot(d.x - tr.aim![0], d.y - tr.aim![1]) < 5) {
+        a.condition = clamp(a.condition - TACTICAL_CONFIG.strikes.damage);
+        t.stats.systemsHit = (t.stats.systemsHit ?? 0) + 1;
+        tlog(s, 'crit', `${a.name} was hit by a ${THREAT_WORDS[tr.cls]} and is down to ${Math.round(a.condition)}% condition. Send it for maintenance.`, w.region);
+      }
+      continue;
+    }
     const site = t.sites.find((x) => x.id === tr.siteId);
     if (!site) continue;
     const damage = Math.min(site.integrity, TACTICAL_CONFIG.threatDamage[tr.cls]);
@@ -677,13 +726,26 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave) {
   const region = s.regions[w.region];
   const phase = s.phases[s.phaseIndex];
   // Poor awareness means more false tracks that draw fire.
-  const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult * (t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.decoys ?? 1);
+  const decoyScale = normalizeTactical(s.settings.tactical).decoys * levelOf(s.settings).decoyMult * enemyStyleOf(s.settings).decoys * (t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.decoys ?? 1);
   const decoys = Math.round(w.tracks.length * phase.falseRate * (1.4 - region.awareness / 100) * TACTICAL_CONFIG.decoysPerTrack * decoyScale);
   for (let i = 0; i < decoys; i++) {
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);
     if (tr) w.tracks.push(tr);
   }
   const deps = t.deployments.filter((d) => d.region === w.region);
+  // Some missiles home on the defender's radars instead of a site (their emissions give them away).
+  const share = strikeShare(s, w);
+  if (share > 0) {
+    const emitters = deps.filter((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return !!sp.radar && sp.domain !== 'air' && !d.transit; });
+    for (const tr of w.tracks) {
+      if (tr.decoy || tr.depTarget || !emitters.length || !TACTICAL_CONFIG.strikes.classes.includes(tr.cls) || rand(t) >= share) continue;
+      // The farther a radar reaches, the brighter it shines.
+      const d = weighted(t, emitters.map((x) => ({ item: x, w: 20 + (EQUIPMENT_MAP.get(x.equipmentId)!.radar?.rangeKm ?? 0) })));
+      tr.depTarget = d.id;
+      tr.aim = [d.x, d.y];
+      if (tr.via) tr.via = undefined; // it flies straight down the beam
+    }
+  }
   w.conditions = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
   for (const tr of w.tracks) {
     tr.launchAt = w.atHour - TACTICAL_CONFIG.flightHours[tr.cls];
@@ -703,6 +765,8 @@ export interface DefensePreview {
   /** The middle 80% of outcomes (10th to 90th percentile) of the damage prevented: how much luck can move it. */
   range: [number, number];
   mix: Partial<Record<ThreatClass, number>>; // threats by class
+  /** Expected share (0-1) of each class stopped: where the layout is strong and where it is not. */
+  byClass: Partial<Record<ThreatClass, number>>;
 }
 
 /**
@@ -715,7 +779,6 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   if (!t?.enabled) return null;
   const waves = t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved && w.forecast);
   if (!waves.length) return null;
-  const sites = new Map(t.sites.map((x) => [x.id, x]));
   const mix: Partial<Record<ThreatClass, number>> = {};
   for (const w of waves) for (const tr of w.tracks) if (!tr.decoy) mix[tr.cls] = (mix[tr.cls] ?? 0) + 1;
   let stopped = 0;
@@ -723,6 +786,8 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   let saved = 0;
   let potential = 0;
   const perRun: number[] = [];
+  const seenBy: Partial<Record<ThreatClass, number>> = {};
+  const stoppedBy: Partial<Record<ThreatClass, number>> = {};
   for (let k = 0; k < runs; k++) {
     let runSaved = 0;
     let runPotential = 0;
@@ -730,7 +795,7 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
       ...t,
       rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
       deployments: t.deployments.map((d) => ({ ...d })),
-      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined, cueQ: undefined, band: undefined, rejected: undefined })) })),
+      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined, cueQ: undefined, band: undefined, rejected: undefined, depTarget: undefined, aim: undefined })) })),
       stats: emptyStats(),
     };
     const s2 = { ...s, tactical: t2, log: [] } as SimState;
@@ -738,8 +803,10 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
       resolveWave(s2, t2, w);
       for (const tr of w.tracks) {
         if (tr.decoy) continue;
-        const v = TACTICAL_CONFIG.threatDamage[tr.cls] * (sites.get(tr.siteId)?.importance ?? 1);
+        const v = trackValue(t, tr);
         total++;
+        seenBy[tr.cls] = (seenBy[tr.cls] ?? 0) + 1;
+        if (tr.outcome === 'stopped') stoppedBy[tr.cls] = (stoppedBy[tr.cls] ?? 0) + 1;
         potential += v;
         runPotential += v;
         if (tr.outcome === 'stopped') { stopped++; saved += v; runSaved += v; }
@@ -752,6 +819,7 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24): Defens
   return {
     waves: waves.length, threats: Math.round(total / runs), stopRate: total ? stopped / total : 0,
     prevented: potential ? saved / potential : 0, range: [q(0.1), q(0.9)], mix,
+    byClass: Object.fromEntries(CLASSES.filter((c) => seenBy[c]).map((c) => [c, (stoppedBy[c] ?? 0) / seenBy[c]!])),
   };
 }
 
@@ -986,6 +1054,17 @@ export function insideTheater(x: number, y: number): boolean {
   return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= width && y >= 0 && y <= height;
 }
 
+/** Callsigns for fielded units, handed out in order. */
+const CALLSIGNS = ['Kestrel', 'Heron', 'Osprey', 'Lynx', 'Badger', 'Marten', 'Falcon', 'Otter', 'Raven', 'Viper', 'Bison', 'Curlew', 'Jackal', 'Pike', 'Harrier', 'Wolverine',
+  'Gannet', 'Mantis', 'Ibex', 'Stoat', 'Condor', 'Adder', 'Tern', 'Bobcat', 'Shrike', 'Marlin', 'Wren', 'Caracal', 'Petrel', 'Hornet', 'Dingo', 'Swift', 'Moray', 'Plover', 'Coyote Two',
+  'Egret', 'Mongoose', 'Skua', 'Puma', 'Lapwing'];
+
+/** A unit's display name with its callsign: NASAMS 2 “Heron”. */
+export function unitName(s: SimState, d: Deployment): string {
+  const base = s.assets.find((a) => a.id === d.assetId)?.name ?? EQUIPMENT_MAP.get(d.equipmentId)?.name ?? 'Unit';
+  return d.callsign ? `${base} “${d.callsign}”` : base;
+}
+
 /** Create the deployment and its backing asset. Validation and charging happen in actions.ts. */
 export function addDeployment(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number, upkeep: number): Deployment {
   const t = ensureTactical(s);
@@ -1001,7 +1080,7 @@ export function addDeployment(s: SimState, spec: EquipmentSpec, region: RegionId
     hoursToService: SIM_CONFIG.serviceInterval[spec.domain], maintenanceRemaining: 0, upkeep,
     pos: theaterToLonLat(s, region, x, y), history: [100],
   });
-  const d: Deployment = { id: `DEP-${n}`, equipmentId: spec.id, assetId, region, x, y, stock: spec.magazine, deployedAt: s.hour };
+  const d: Deployment = { id: `DEP-${n}`, equipmentId: spec.id, assetId, region, x, y, stock: spec.magazine, deployedAt: s.hour, callsign: CALLSIGNS[n % CALLSIGNS.length] };
   t.deployments.push(d);
   // Fielding a unit brings its share of the national reserve.
   const sp = stockpileRules(s);
@@ -1047,12 +1126,14 @@ export interface FixSuggestion {
   reason: string; // the most common reason they got through
   equipmentId: string;
   near: string; // site the suggested system goes beside
+  x: number; // where it would stand
+  y: number;
   cost: number;
   stoppedMore: number; // extra threats it would have stopped, on average
   text: string;
 }
 
-const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles' };
+const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles', hypersonic: 'hypersonic gliders' };
 
 /** A legal spot near a point, searching outwards (for placing a suggested system). */
 function spotNear(s: SimState, spec: EquipmentSpec, region: RegionId, x: number, y: number): [number, number] | null {
@@ -1085,7 +1166,7 @@ function replayRegion(s: SimState, region: RegionId, extra: { spec: EquipmentSpe
     if (extra) deployments.push({ id: 'WHATIF', equipmentId: extra.spec.id, assetId: 'WHATIF', region, x: extra.x, y: extra.y, stock: extra.spec.magazine, deployedAt: 0 });
     const t2: TacticalState = {
       ...t, rng: (0x7f4a7c15 + k * 2246822519) >>> 0, deployments, stats: emptyStats(), alerts: [],
-      waves: waves.map((w) => ({ ...w, resolved: false, tracks: w.tracks.filter((x) => !x.decoy).map((tr) => ({ id: tr.id, cls: tr.cls, siteId: tr.siteId, from: tr.from, via: tr.via, decoy: false, shots: 0 })) })),
+      waves: waves.map((w) => ({ ...w, resolved: false, tracks: w.tracks.filter((x) => !x.decoy).map((tr) => ({ id: tr.id, cls: tr.cls, siteId: tr.siteId, from: tr.from, via: tr.via, depTarget: tr.depTarget, aim: tr.aim, decoy: false, shots: 0 })) })),
     };
     // Defended sites as they were before the waves hit, and the same weather and daylight at each launch.
     const s2 = { ...s, tactical: t2, log: [], assets: extraAsset ? [...s.assets, extraAsset] : s.assets } as SimState;
@@ -1124,18 +1205,18 @@ export function suggestFixes(s: SimState, max = 3): FixSuggestion[] {
     const candidates = EQUIPMENT.filter((e) => isEffector(e) && e.domain !== 'air' && canEngageClass(e, mainClass))
       .sort((a, b) => equipmentCost(a) - equipmentCost(b)).slice(0, 4);
     const base = replayRegion(s, region, null);
-    let best: { spec: EquipmentSpec; gain: number; value: number } | null = null;
+    let best: { spec: EquipmentSpec; gain: number; value: number; p: [number, number] } | null = null;
     for (const spec of candidates) {
       const p = spotNear(s, spec, region, site.x, site.y);
       if (!p) continue;
       const gain = replayRegion(s, region, { spec, x: p[0], y: p[1] }) - base;
       const value = gain / Math.max(1, equipmentCost(spec));
-      if (gain >= 1 && (!best || value > best.value)) best = { spec, gain, value };
+      if (gain >= 1 && (!best || value > best.value)) best = { spec, gain, value, p };
     }
     if (!best) continue;
     const n = Math.round(best.gain);
     out.push({
-      region, leaked: leaked.length, mainClass, reason, equipmentId: best.spec.id, near: site.name, cost: equipmentCost(best.spec), stoppedMore: n,
+      region, leaked: leaked.length, mainClass, reason, equipmentId: best.spec.id, near: site.name, x: best.p[0], y: best.p[1], cost: equipmentCost(best.spec), stoppedMore: n,
       text: `${leaked.length} threats got through in ${s.regions[region].name}, mostly ${PLURAL[mainClass]}. ${reason ? `Typical reason: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, '')}. ` : ''}`
         + `${/^[AEIOU]/i.test(best.spec.name) ? 'An' : 'A'} ${best.spec.name} beside ${site.name} (${equipmentCost(best.spec)} cr) would have stopped about ${n} more of them.`,
     });

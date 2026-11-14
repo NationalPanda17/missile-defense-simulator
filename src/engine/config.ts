@@ -1,5 +1,5 @@
 // All tunable simulation rules live here so they can be adjusted without touching engine logic.
-import type { CommandLevel, Domain, Investment, PhaseConfig, RegionId, SiteType, ThreatClass } from './types';
+import type { CommandLevel, Domain, EnemyStyle, Investment, PhaseConfig, RegionId, SiteType, ThreatClass } from './types';
 
 export const SIM_CONFIG = {
   /** Real milliseconds per simulated hour at 1x speed. */
@@ -111,6 +111,26 @@ export const INVESTMENTS: Investment[] = [
     id: 'recovery', label: 'Regional Recovery Package', category: 'recovery', scope: 'region',
     description: '+20 stability and +8 infrastructure in the region on completion.',
     credits: 200, personnel: 10, hours: 18,
+  },
+  {
+    id: 'r_network', label: 'Research: Networked Fire Control', category: 'research', scope: 'global', once: true,
+    description: 'Every shooter can fire on any sensor’s track as if it were its own: shared tracks are full quality, whatever the radar band.',
+    credits: 320, personnel: 6, hours: 40,
+  },
+  {
+    id: 'r_discrim', label: 'Research: Decoy Discrimination', category: 'research', scope: 'global', once: true,
+    description: 'Better signal processing for every radar: +20 points to the chance of recognising a decoy, on every band.',
+    credits: 260, personnel: 4, hours: 32,
+  },
+  {
+    id: 'r_ecm', label: 'Research: Counter-Jamming', category: 'research', scope: 'global', once: true,
+    description: 'Frequency-hopping modes make your radars immune to enemy band jamming (Commander).',
+    credits: 240, personnel: 4, hours: 28,
+  },
+  {
+    id: 'r_reload', label: 'Research: Rapid Resupply', category: 'research', scope: 'global', once: true,
+    description: 'Pre-packed reload convoys: resupplying any magazine takes half as long.',
+    credits: 220, personnel: 6, hours: 24,
   },
   {
     id: 'modernize', label: 'Long-Term Modernization', category: 'modernization', scope: 'global',
@@ -262,21 +282,21 @@ export const TACTICAL_CONFIG = {
     cuedHorizonMult: 3,
   },
   /** Altitude (km) at which each class is engaged; a system whose ceiling is lower can't engage it. */
-  threatAltitudeKm: { slowDrone: 0.1, fastDrone: 0.3, cruise: 0.05, rocket: 3, ballistic: 12 } as Record<ThreatClass, number>,
+  threatAltitudeKm: { slowDrone: 0.1, fastDrone: 0.3, cruise: 0.05, rocket: 3, ballistic: 12, hypersonic: 22 } as Record<ThreatClass, number>,
   /**
    * Time in flight (sim hours) from launch to impact, per class (game values, chosen to be watchable). A wave
    * launches early enough that its slowest threat arrives at the wave's impact hour; interception is decided at launch.
    */
-  flightHours: { slowDrone: 3, fastDrone: 1.5, cruise: 1.2, rocket: 0.4, ballistic: 0.6 } as Record<ThreatClass, number>,
+  flightHours: { slowDrone: 3, fastDrone: 1.5, cruise: 1.2, rocket: 0.4, ballistic: 0.6, hypersonic: 0.5 } as Record<ThreatClass, number>,
   /** Threat speed in km per second (game values). Sets how long a threat stays in each system's range. */
-  threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2 } as Record<ThreatClass, number>,
+  threatSpeedKmS: { slowDrone: 0.05, fastDrone: 0.15, cruise: 0.25, rocket: 0.8, ballistic: 2, hypersonic: 3 } as Record<ThreatClass, number>,
   /**
    * Rough attacker cost of each threat, in the game's credits, for the after-action cost-exchange readout (a decoy
    * counts as a cheap drone). Game values, chosen to show the usual pattern: cheap drones, expensive missiles.
    */
-  threatCost: { slowDrone: 2, fastDrone: 5, cruise: 30, rocket: 1, ballistic: 70 } as Record<ThreatClass, number>,
+  threatCost: { slowDrone: 2, fastDrone: 5, cruise: 30, rocket: 1, ballistic: 70, hypersonic: 120 } as Record<ThreatClass, number>,
   /** Site integrity lost when a threat of each class gets through. */
-  threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15 } as Record<ThreatClass, number>,
+  threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15, hypersonic: 18 } as Record<ThreatClass, number>,
   /** Regional infrastructure and stability lost per point of site damage, scaled by site importance / 3. */
   infraPerDamage: 0.25,
   stabilityPerDamage: 0.12,
@@ -289,21 +309,37 @@ export const TACTICAL_CONFIG = {
    * scenario and the difficulty scale it. A sharp radar that tracks a decoy can recognise it (see RADAR_BANDS).
    */
   decoysPerTrack: 1.2,
+  /**
+   * Strikes on the defense itself: from the second phase a share of the missiles in a wave home on one of the
+   * defender's radars instead of a site. A hit costs the system `damage` condition (it is repaired by maintenance);
+   * `value` is the importance such a threat carries in the protection score. Aircraft and passive sensors cannot be
+   * targeted this way.
+   */
+  strikes: { byPhase: [0, 0.08, 0.12, 0.08], classes: ['cruise', 'fastDrone', 'ballistic', 'hypersonic'] as ThreatClass[], damage: 45, value: 2 },
+  /** A unit's service record: at these numbers of threats stopped it reacts faster (×reaction) and hits more often (+kill). */
+  veteran: [
+    { kills: 20, label: 'Elite', reaction: 0.7, kill: 0.05 },
+    { kills: 8, label: 'Veteran', reaction: 0.85, kill: 0 },
+  ],
+  /** Research: points added to every radar's decoy recognition, and the share of normal reload time. */
+  research: { discrim: 0.2, reload: 0.5 },
   /** Magazine size treated as unlimited (jammers, lasers, microwave). */
   unlimitedMagazine: 999,
   /** Standard scenario: chance each wave beyond one per forecast region strikes outside the forecast. */
   surpriseRate: 0.2,
   /** Waves per campaign phase (by phase index): count, tracks per wave and threat mix weights. */
   waves: [
-    { count: 2, tracks: [5, 8], mix: { slowDrone: 6, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 0 } },
-    { count: 3, tracks: [8, 12], mix: { slowDrone: 5, fastDrone: 3, cruise: 2, rocket: 2, ballistic: 1 } },
-    { count: 4, tracks: [12, 18], mix: { slowDrone: 5, fastDrone: 3, cruise: 3, rocket: 2, ballistic: 2 } },
-    { count: 2, tracks: [6, 9], mix: { slowDrone: 5, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 1 } },
+    { count: 2, tracks: [5, 8], mix: { slowDrone: 6, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 0, hypersonic: 0 } },
+    { count: 3, tracks: [8, 12], mix: { slowDrone: 5, fastDrone: 3, cruise: 2, rocket: 2, ballistic: 1, hypersonic: 0 } },
+    { count: 4, tracks: [12, 18], mix: { slowDrone: 5, fastDrone: 3, cruise: 3, rocket: 2, ballistic: 2, hypersonic: 1 } },
+    { count: 2, tracks: [6, 9], mix: { slowDrone: 5, fastDrone: 2, cruise: 1, rocket: 1, ballistic: 1, hypersonic: 0.5 } },
   ] as { count: number; tracks: [number, number]; mix: Record<ThreatClass, number> }[],
   /**
    * Threats that change direction mid-flight: a share of drones and cruise missiles in later phases fly a dog-leg
    * around the defenses' expected axis, so a defense built for one approach can be outflanked.
    */
+  /** Hypersonic gliders always manoeuvre: every one flies a dog-leg. */
+  alwaysTurn: ['hypersonic'] as ThreatClass[],
   turning: { classes: ['slowDrone', 'fastDrone', 'cruise'] as ThreatClass[], chanceByPhase: [0, 0.15, 0.2, 0.1], offsetKm: [50, 110] as [number, number] },
   /** Standard scenario: regions named in each briefing's forecast. */
   forecastRegions: 2,
@@ -328,6 +364,43 @@ export const TACTICAL_CONFIG = {
   /** Share of a region's site value that must be covered to count as protected, or thin. */
   protection: { protected: 0.7, thin: 0.3 },
 };
+
+/**
+ * Enemy commanders (campaign). Each fights by the same rules with different weights, so campaigns differ. All are
+ * fictional. The Planner is the campaign as designed (every multiplier 1).
+ */
+export const ENEMY_STYLES: Record<EnemyStyle, {
+  name: string; title: string; text: string; counter: string;
+  mix: Partial<Record<ThreatClass, number>>; waveSize: number; waveCount: number; surprise: number; turn: number; decoys: number;
+  /** Multiplier on the share of missiles that go for the defender's radars, and the first phase (index) they do. */
+  strike: number; strikeFrom: number;
+}> = {
+  planner: {
+    name: 'Marshal Venn', title: 'the Planner', text: 'Methodical and balanced: a mixed threat, forecastable attacks, no favourite trick.',
+    counter: 'A layered defense over the forecast sites.',
+    mix: {}, waveSize: 1, waveCount: 1, surprise: 1, turn: 1, decoys: 1, strike: 1, strikeFrom: 1,
+  },
+  swarm: {
+    name: 'General Halvard', title: 'the Swarm', text: 'Buries the defense in cheap drones and decoys, in bigger waves, and saves his missiles.',
+    counter: 'Guns and jammers on every site, a sharp radar for the decoys, and big interceptors set to “Missiles only”.',
+    mix: { slowDrone: 1.8, fastDrone: 1.5, cruise: 0.7, ballistic: 0.6, hypersonic: 0.5 }, waveSize: 1.25, waveCount: 1, surprise: 1, turn: 1, decoys: 1.4, strike: 0.5, strikeFrom: 1,
+  },
+  fox: {
+    name: 'Admiral Sorrel', title: 'the Fox', text: 'More, smaller raids that strike outside the forecast twice as often and turn in flight to come round your defenses.',
+    counter: 'Cover more than the forecast regions, keep all-round coverage rather than facing one way, and be ready to redeploy.',
+    mix: { cruise: 1.3 }, waveSize: 0.85, waveCount: 1.34, surprise: 2, turn: 2, decoys: 1, strike: 1, strikeFrom: 1,
+  },
+  hunter: {
+    name: 'Colonel Drax', title: 'the Hunter', text: 'Goes for your radars from the very first phase, then sends missiles through the gap.',
+    counter: 'Point defense beside your radars, passive sensors and aircraft (which he cannot target), and spare radars on other bands.',
+    mix: { cruise: 1.4, ballistic: 1.3, slowDrone: 0.8 }, waveSize: 1, waveCount: 1, surprise: 1, turn: 1, decoys: 1, strike: 2.5, strikeFrom: 0,
+  },
+};
+export const ENEMY_STYLE_IDS: EnemyStyle[] = ['planner', 'swarm', 'fox', 'hunter'];
+
+/** The commander faced: only campaigns have one; anything else fights the Planner's unmodified rules. */
+export const enemyStyleOf = (settings: { mode: string; enemy?: EnemyStyle }) =>
+  ENEMY_STYLES[settings.mode === 'campaign' && settings.enemy && settings.enemy in ENEMY_STYLES ? settings.enemy : 'planner'];
 
 /**
  * Campaign difficulty. Officer is the campaign as designed (every multiplier 1). Credits are added to the starting

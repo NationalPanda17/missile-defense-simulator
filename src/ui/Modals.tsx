@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
-import { Suspense, lazy, useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -12,6 +12,8 @@ import { loadProgress, startLesson } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
+import { DispatchCard } from './Dispatch';
+import { loadMedals, subscribeMedals } from './medals';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -207,7 +209,7 @@ export function AssetModal({ s }: { s: SimState }) {
             <button className="btn" onClick={() => dispatch({ type: 'cancelMaintenance', assetId: a.id })}>Cancel maintenance</button>
           ) : (
             <button data-coach="maintain" className="btn btn-primary" disabled={a.status === 'transit'} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>
-              ⛭ Schedule maintenance ({cost} cr, {SIM_CONFIG.maintenanceHours[a.domain]}h, 1 crew)
+              ⛭ Schedule maintenance ({cost} cr, 2 personnel, {SIM_CONFIG.maintenanceHours[a.domain]}h, 1 crew)
             </button>
           )}
           {mobile && (
@@ -364,6 +366,15 @@ export function BriefingModal({ s }: { s: SimState }) {
           <div className="text-ops-dim">Duration {phase.hours}h · starts T+{s.hour}h{phase.grant ? ` · funding release +${phase.grant} credits` : ''}</div>
         </div>
         <CarriedOver s={s} />
+        {s.phaseIndex > 0 && <DispatchCard s={s} phaseIndex={s.phaseIndex - 1} fold />}
+        {s.settings.mode === 'campaign' && (
+          <div className="rounded border border-ops-line px-3 py-2 text-[11px]">
+            <span className="label mr-2">Your opponent</span>
+            <span className="text-white">{ENEMY_STYLES[s.settings.enemy ?? 'planner'].name}, {ENEMY_STYLES[s.settings.enemy ?? 'planner'].title}.</span>{' '}
+            <span className="text-ops-dim">{ENEMY_STYLES[s.settings.enemy ?? 'planner'].text}</span>{' '}
+            <span>Answer: {ENEMY_STYLES[s.settings.enemy ?? 'planner'].counter}</span>
+          </div>
+        )}
         {prevResults.length > 0 && (
           <div className="rounded border border-ops-line p-3">
             <div className="label mb-1">Previous phase evaluation</div>
@@ -479,6 +490,53 @@ function LevelPicker({ value, onChange }: { value: CommandLevel; onChange: (l: C
   );
 }
 
+const ENEMY_KEY = 'mds.enemy';
+type EnemyChoice = EnemyStyle | 'random';
+function loadEnemy(): EnemyChoice {
+  try {
+    const v = localStorage.getItem(ENEMY_KEY) as EnemyChoice | null;
+    return v && (v === 'random' || ENEMY_STYLE_IDS.includes(v)) ? v : 'planner';
+  } catch { return 'planner'; }
+}
+
+function EnemyPicker({ value, onChange }: { value: EnemyChoice; onChange: (e: EnemyChoice) => void }) {
+  return (
+    <div className="mt-3 space-y-1">
+      <label className="label block" htmlFor="enemy-pick">Opponent</label>
+      <select id="enemy-pick" className="input w-full py-1" value={value} onChange={(e) => onChange(e.target.value as EnemyChoice)}>
+        {ENEMY_STYLE_IDS.map((id) => <option key={id} value={id}>{ENEMY_STYLES[id].name}, {ENEMY_STYLES[id].title}</option>)}
+        <option value="random">Surprise me</option>
+      </select>
+      <p className="text-[10px] leading-relaxed text-ops-dim">{value === 'random' ? 'One of the four, chosen when the campaign begins. The first briefing tells you who.' : ENEMY_STYLES[value].text}</p>
+    </div>
+  );
+}
+
+/** The player's medals: earned ones lit, the rest showing how to earn them. */
+export function MedalCase() {
+  const have = useSyncExternalStore(subscribeMedals, loadMedals);
+  const next = THEME_UNLOCKS.find((t) => t.medals > have.length);
+  return (
+    <div className="panel p-4" role="region" aria-label="Medals">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="font-sans text-sm font-semibold uppercase tracking-widest text-ops-cyan">Medals <span className="text-ops-dim">{have.length}/{MEDALS.length}</span></div>
+        <div className="text-[10px] text-ops-dim">{next ? `${next.medals - have.length} more to unlock the “${next.name}” map theme (Aa menu)` : 'Every map theme unlocked (Aa menu)'}</div>
+      </div>
+      <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {MEDALS.map((m) => {
+          const got = have.includes(m.id);
+          return (
+            <li key={m.id} className={`flex items-start gap-2 rounded border p-2 text-[11px] ${got ? 'border-ops-amber/50 bg-ops-amber/5' : 'border-ops-line'}`}>
+              <span aria-hidden className={`mt-0.5 text-base leading-none ${got ? 'text-ops-amber' : 'text-ops-line'}`}>✪</span>
+              <span><span className={got ? 'font-semibold text-white' : 'font-semibold text-ops-dim'}>{m.name}</span>{got && <span className="sr-only"> (earned)</span>}<br /><span className="text-[10px] leading-snug text-ops-dim">{m.text}</span></span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function AcademyProgressLine() {
   const p = loadProgress();
   const total = LESSONS.length - 1;
@@ -498,6 +556,11 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const saves = listSaves();
   const [scenario, setScenario] = useState<ChosenScenario>(loadChosenScenario);
   const tacticalOn = TACTICAL_CONFIG.enabledInCampaign;
+  const [enemy, setEnemyState] = useState<EnemyChoice>(loadEnemy);
+  const setEnemy = (e: EnemyChoice) => {
+    setEnemyState(e);
+    try { localStorage.setItem(ENEMY_KEY, e); } catch { /* ignore */ }
+  };
   const [level, setLevelState] = useState<CommandLevel>(loadLevel);
   const setLevel = (l: CommandLevel) => {
     setLevelState(l);
@@ -509,7 +572,8 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     if (!tacticalOn) return store.newGame(withLevel(defaultSettings('campaign'), level));
     const base = defaultSettings('campaign');
     const std = scenario.tactical.preset === 'standard';
-    store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical }, level));
+    const foe: EnemyStyle = enemy === 'random' ? ENEMY_STYLE_IDS[Math.floor(Math.random() * ENEMY_STYLE_IDS.length)] : enemy;
+    store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical, enemy: foe }, level));
   };
   const newcomer = isNewcomer(saves.length);
   const modes = [
@@ -555,6 +619,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
               <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{m.title}</div>
               <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{m.desc}</p>
               {m.id === 'campaign' && <LevelPicker value={level} onChange={setLevel} />}
+              {m.id === 'campaign' && tacticalOn && <EnemyPicker value={enemy} onChange={setEnemy} />}
               {m.id === 'campaign' && tacticalOn && (
                 <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
               )}
@@ -603,6 +668,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             </>
           )}
         </div>
+        <MedalCase />
         <div className="grid gap-3 lg:grid-cols-[1fr_2fr]">
           <ServerSavesPanel canSave={false} />
           <ServiceRecord limit={6} />

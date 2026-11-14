@@ -8,7 +8,7 @@ export const REGION_IDS: RegionId[] = ['NAM', 'SAM', 'EUR', 'AFR', 'MDE', 'IPA',
 
 export type AssetRole = 'sensor' | 'comms' | 'support' | 'command' | 'defense'; // defense = tactical layer equipment
 
-export type ThreatClass = 'slowDrone' | 'fastDrone' | 'cruise' | 'rocket' | 'ballistic';
+export type ThreatClass = 'slowDrone' | 'fastDrone' | 'cruise' | 'rocket' | 'ballistic' | 'hypersonic';
 export type AssetStatus = 'operational' | 'degraded' | 'maintenance' | 'offline' | 'transit';
 
 export interface Asset {
@@ -151,7 +151,9 @@ export interface Investment {
   id: string;
   label: string;
   description: string;
-  category: 'infrastructure' | 'resilience' | 'maintenance' | 'personnel' | 'comms' | 'sensors' | 'recovery' | 'modernization';
+  category: 'infrastructure' | 'resilience' | 'maintenance' | 'personnel' | 'comms' | 'sensors' | 'recovery' | 'modernization' | 'research';
+  /** Can be done once per scenario (research). */
+  once?: boolean;
   credits: number;
   personnel: number;
   hours: number; // project duration
@@ -299,10 +301,13 @@ export interface ScenarioSettings {
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
   level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
   waves?: boolean; // sandbox and crisis: turn the tactical layer (threat waves, Deploy defenses) on
+  /** Campaign: the enemy commander faced (absent: the Planner, the campaign as designed). See ENEMY_STYLES. */
+  enemy?: EnemyStyle;
   challenge?: { score: number; grade: string }; // played from a challenge link: the challenger's score (-1 if none)
 }
 
 export type CommandLevel = 'recruit' | 'officer' | 'commander';
+export type EnemyStyle = 'planner' | 'swarm' | 'fox' | 'hunter';
 
 // ── Tactical layer ─────────────────────────────────────────────────────
 // Each region has a theater map (TACTICAL_CONFIG.theaterKm). Positions are km from the theater's top-left corner.
@@ -320,6 +325,10 @@ export interface Deployment {
   reloadRounds?: number; // rounds that resupply brings (absent: a full magazine)
   transit?: { region: RegionId; x: number; y: number; remaining: number; hours?: number }; // emergency redeploy under way
   deployedAt: number; // sim hour
+  /** Genuine threats this unit has stopped: its service record (absent in older saves). */
+  kills?: number;
+  /** The unit's callsign, given when it is fielded. */
+  callsign?: string;
   /** Standing fire orders (absent: engage everything). */
   doctrine?: FireDoctrine;
 }
@@ -371,6 +380,9 @@ export interface Track {
   why?: ([string, string] | { dep: string; reason: string })[];
   leak?: string; // older saves only: why it got through, written out (now built on demand by leakText)
   via?: [number, number]; // a turn point: the threat flies from → via → target, changing direction mid-flight
+  /** Aimed at one of the defender's own systems instead of a site: that deployment's id, and where it stood. */
+  depTarget?: string;
+  aim?: [number, number];
   /** Radar band of the sharpest sensor that tracked it ('passive' for acoustic or RF sensors); absent if unseen. */
   band?: string;
   /** A decoy that a sharp radar recognised, so nothing fired at it. */
@@ -398,6 +410,7 @@ export interface TacticalStats {
   stopped: number;
   leaked: number;
   decoysEngaged: number; // decoys that drew at least one shot
+  systemsHit?: number; // strikes that landed on the defender's own systems (absent in older saves)
   decoysSpotted?: number; // decoys a sharp radar recognised, so nothing fired (absent in older saves)
   shots: number;
   siteDamage: number; // total integrity lost across sites
@@ -462,6 +475,8 @@ export interface SimState {
   crewsBusy: number;
   resilience: number; // 0-100 network resilience investment level
   modernization: number; // 0-30 capability bonus %
+  /** Research programmes completed (investment ids; absent in older saves). */
+  research?: string[];
   logistics: number; // 0-100 logistics capacity
 
   regions: Record<RegionId, Region>;

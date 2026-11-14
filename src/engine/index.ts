@@ -19,3 +19,4 @@ export * from './challenge';
 export * from './autopause';
 export * from './weather';
 export * from './adaptation';
+export * from './story';

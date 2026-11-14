@@ -3,8 +3,8 @@ import { store } from '../../store/simStore';
 import { describeChanges, type AnnounceMemo } from './announce';
 
 const KEY = 'mds.a11y';
-export interface A11ySettings { contrast: boolean; reduceMotion: boolean; announce: boolean }
-const DEFAULTS: A11ySettings = { contrast: false, reduceMotion: false, announce: true };
+export interface A11ySettings { contrast: boolean; reduceMotion: boolean; announce: boolean; mapTheme: string }
+const DEFAULTS: A11ySettings = { contrast: false, reduceMotion: false, announce: true, mapTheme: 'standard' };
 
 let current: A11ySettings = load();
 const listeners = new Set<() => void>();
@@ -34,6 +34,8 @@ function apply() {
   const el = document.documentElement;
   el.classList.toggle('hc', current.contrast);
   el.classList.toggle('reduce-motion', current.reduceMotion);
+  el.classList.toggle('map-amber', current.mapTheme === 'amber');
+  el.classList.toggle('map-arctic', current.mapTheme === 'arctic');
 }
 
 /** Live regions a screen reader reads out: polite for news, assertive for attacks and critical reports. */

@@ -3,9 +3,12 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { a11y, setA11y, subscribeA11y } from './settings';
 import { PacingSettings } from '../PausePrompt';
+import { THEME_UNLOCKS } from '../../engine';
+import { loadMedals, subscribeMedals } from '../medals';
 
 export function DisplaySettings() {
   const st = useSyncExternalStore(subscribeA11y, a11y);
+  const medals = useSyncExternalStore(subscribeMedals, loadMedals).length;
   const row = (label: string, desc: string, on: boolean, set: (v: boolean) => void) => (
     <div className="flex items-start justify-between gap-3">
       <div><div className="text-white">{label}</div><div className="text-[10px] leading-relaxed text-ops-dim">{desc}</div></div>
@@ -17,6 +20,21 @@ export function DisplaySettings() {
       {row('High contrast', 'Brighter text and borders, solid panels.', st.contrast, (v) => setA11y({ contrast: v }))}
       {row('Reduce motion', 'Stops pulsing, sweeping and gliding animations. Threats still move on the map.', st.reduceMotion, (v) => setA11y({ reduceMotion: v }))}
       {row('Screen-reader announcements', 'Reads out new reports, launches, wave results and phase changes.', st.announce, (v) => setA11y({ announce: v }))}
+      <div>
+        <div className="text-white">Theater map theme</div>
+        <div className="text-[10px] leading-relaxed text-ops-dim">Colours of the regional maps. Themes unlock as you earn medals (you have {medals}).</div>
+        <div className="mt-1 flex flex-wrap gap-1" role="radiogroup" aria-label="Theater map theme">
+          {THEME_UNLOCKS.map((t) => {
+            const locked = medals < t.medals;
+            return (
+              <button key={t.id} role="radio" aria-checked={st.mapTheme === t.id} disabled={locked} className={`btn ${st.mapTheme === t.id ? 'btn-active' : ''}`}
+                title={locked ? `Unlocks at ${t.medals} medals` : undefined} onClick={() => setA11y({ mapTheme: t.id })}>
+                {t.name}{locked ? ` · ${t.medals} medals` : ''}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

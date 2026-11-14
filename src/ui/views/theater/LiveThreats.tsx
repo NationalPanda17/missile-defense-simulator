@@ -1,13 +1,13 @@
 // Live threats on the theater map: launch point, icons moving along their paths, interceptions and impacts.
 // Re-renders every animation frame on its own, so the rest of the map doesn't.
-import { TACTICAL_CONFIG, pointAlong, trackPath, type RegionId, type SimState, type ThreatClass, type ThreatWave } from '../../../engine';
+import { TACTICAL_CONFIG, pointAlong, trackPath, trackTarget, type RegionId, type SimState, type ThreatClass, type ThreatWave } from '../../../engine';
 import { useSimTime } from '../../../store/simStore';
 import { LINGER, trackPhase, waveVisible } from '../../threatTimeline';
 
 const { width: W, height: H } = TACTICAL_CONFIG.theaterKm;
 
 export const THREAT_COLOR: Record<ThreatClass, string> = {
-  slowDrone: '#f5b13d', fastDrone: '#fb923c', cruise: '#f2545b', rocket: '#e879f9', ballistic: '#ff4d6d',
+  slowDrone: '#f5b13d', fastDrone: '#fb923c', cruise: '#f2545b', rocket: '#e879f9', ballistic: '#ff4d6d', hypersonic: '#f0f9ff',
 };
 
 /** A threat glyph pointing along +x (rotate to heading). */
@@ -18,6 +18,7 @@ export function ThreatGlyph({ cls, color, decoy }: { cls: ThreatClass; color: st
     case 'fastDrone': return <path d="M6,0 L-4,-3.5 L-2,0 L-4,3.5 Z M-1,-5 L1,-5 L0,-1 Z M-1,5 L1,5 L0,1 Z" fill={color} opacity={op} stroke="#06111f" strokeWidth={0.8} />;
     case 'cruise': return <g opacity={op}><rect x={-6} y={-1.4} width={11} height={2.8} rx={1.4} fill={color} stroke="#06111f" strokeWidth={0.7} /><path d="M-1,-1.4 L-3,-4 M-1,1.4 L-3,4" stroke={color} strokeWidth={1.2} /></g>;
     case 'rocket': return <g opacity={op}><path d="M6,0 L-5,-1.6 L-5,1.6 Z" fill={color} stroke="#06111f" strokeWidth={0.6} /><path d="M-5,0 L-9,0" stroke="#fde68a" strokeWidth={1.5} /></g>;
+    case 'hypersonic': return <g opacity={op}><path d="M7,0 L-5,-4 L-2,0 L-5,4 Z" fill={color} stroke="#ff4d6d" strokeWidth={1} /><path d="M-5,0 L-11,0" stroke="#ff4d6d" strokeWidth={1.6} /></g>;
     case 'ballistic': return <g opacity={op}><circle r={3.2} fill={color} stroke="#fff" strokeWidth={0.8} /><circle r={6} fill="none" stroke={color} strokeOpacity={0.6} /></g>;
   }
 }
@@ -32,12 +33,19 @@ function pointFraction(path: [number, number][]): number {
 
 const EDGE_LAUNCH: Record<ThreatWave['axis'], [number, number]> = { north: [W / 2, 6], south: [W / 2, H - 6], west: [6, H / 2], east: [W - 6, H / 2] };
 
-export function LiveThreats({ s, region, only, at }: { s: SimState; region: RegionId; only?: string | null; at?: number }) {
+export function LiveThreats({ s, region, only, at, onTrack }: {
+  s: SimState; region: RegionId; only?: string | null; at?: number;
+  /** Makes each threat clickable: called with its wave and track ids. */
+  onTrack?: (waveId: string, trackId: string) => void;
+}) {
   const live = useSimTime();
   const t = at ?? live; // `at` replays a past moment (after-action review)
   const tac = s.tactical;
   if (!tac) return null;
-  const sites = new Map(tac.sites.map((x) => [x.id, x]));
+  // A generous, invisible hit area on each threat, so it can be clicked or tapped for its story.
+  const hit = (w: ThreatWave, id: string) => (onTrack
+    ? <circle r={11} fill="transparent" pointerEvents="all" className="cursor-help" onClick={(e) => { e.stopPropagation(); onTrack(w.id, id); }}><title>What happened to this threat?</title></circle>
+    : null);
   const waves = tac.waves.filter((w) => w.region === region && (only ? w.id === only : waveVisible(w, t)));
   return (
     <g pointerEvents="none">
@@ -54,10 +62,11 @@ export function LiveThreats({ s, region, only, at }: { s: SimState; region: Regi
               </g>
             )}
             {w.tracks.map((tr) => {
-              const site = sites.get(tr.siteId);
-              if (!site) return null;
+              const target = trackTarget(tac, tr);
+              if (!target) return null;
+              const site = { x: target[0], y: target[1] };
               const ph = trackPhase(w, tr, t);
-              const path = trackPath(tr, [site.x, site.y]);
+              const path = trackPath(tr, target);
               const at = (f: number): [number, number] => pointAlong(path, f).p;
               const col = tr.decoy ? '#7d93b1' : THREAT_COLOR[tr.cls];
               if (ph.kind === 'flight') {
@@ -71,6 +80,7 @@ export function LiveThreats({ s, region, only, at }: { s: SimState; region: Regi
                     <polyline points={trail} fill="none" stroke={col} strokeOpacity={0.45} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
                     <polyline points={ahead} fill="none" stroke={col} strokeOpacity={0.12} strokeDasharray="2 4" />
                     <g transform={`translate(${x},${y}) rotate(${here.heading})`}><ThreatGlyph cls={tr.cls} color={col} decoy={tr.decoy} /></g>
+                    <g transform={`translate(${x},${y})`}>{hit(w, tr.id)}</g>
                   </g>
                 );
               }
@@ -81,6 +91,7 @@ export function LiveThreats({ s, region, only, at }: { s: SimState; region: Regi
                   <g key={tr.id} transform={`translate(${x},${y})`} opacity={1 - k}>
                     <circle r={4 + k * 10} fill="none" stroke={tr.decoy ? '#7d93b1' : '#34d399'} strokeWidth={1.6} />
                     <path d="M-4,-4 L4,4 M4,-4 L-4,4" stroke={tr.decoy ? '#7d93b1' : '#34d399'} strokeWidth={2} />
+                    {hit(w, tr.id)}
                   </g>
                 );
               }
@@ -90,6 +101,7 @@ export function LiveThreats({ s, region, only, at }: { s: SimState; region: Regi
                   <g key={tr.id} transform={`translate(${site.x},${site.y})`} opacity={1 - k * 0.85}>
                     <circle r={7 + Math.min(1, ph.age) * 9} fill="#f2545b" fillOpacity={0.25 * (1 - k)} stroke="#f2545b" strokeWidth={1.4} />
                     <path d="M0,-6 L1.6,-1.6 L6,0 L1.6,1.6 L0,6 L-1.6,1.6 L-6,0 L-1.6,-1.6 Z" fill="#fde68a" opacity={Math.max(0, 1 - ph.age)} />
+                    {hit(w, tr.id)}
                   </g>
                 );
               }

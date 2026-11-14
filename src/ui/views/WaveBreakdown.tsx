@@ -1,11 +1,10 @@
 // What happened to every threat in a wave, and why: shared by the after-action review and Mission Replay.
-import { EQUIPMENT_MAP, THREAT_LABELS, leakText, whyEntries, type SimState, type ThreatWave } from '../../engine';
+import { THREAT_LABELS, leakText, targetName, unitName, whyEntries, type SimState, type ThreatWave } from '../../engine';
 
 export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
   const t = s.tactical!;
-  const sites = new Map(t.sites.map((x) => [x.id, x]));
   const deps = new Map(t.deployments.map((d) => [d.id, d]));
-  const sys = (id: string) => EQUIPMENT_MAP.get(deps.get(id)?.equipmentId ?? '')?.name ?? 'a system since withdrawn';
+  const sys = (id: string) => { const d = deps.get(id); return d ? unitName(s, d) : 'a system since withdrawn'; };
   const real = wave.tracks.filter((x) => !x.decoy);
   const decoys = wave.tracks.filter((x) => x.decoy);
   if (!wave.resolved) return <p className="text-[11px] text-ops-dim">Not launched yet.</p>;
@@ -42,11 +41,11 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
             {real.map((tr) => (
               <tr key={tr.id}>
                 <td className="whitespace-nowrap text-white">{THREAT_LABELS[tr.cls]}{tr.via ? ' ↪' : ''}</td>
-                <td className="whitespace-nowrap">{sites.get(tr.siteId)?.name ?? '—'}</td>
+                <td className={tr.depTarget ? 'text-ops-amber' : 'whitespace-nowrap'}>{targetName(s, tr)}</td>
                 <td className={tr.detected ? 'text-ops-green' : 'text-ops-amber'}>{tr.detected === undefined ? '—' : tr.detected ? (tr.band ? (tr.band === 'passive' ? 'yes · passive' : `yes · ${tr.band}-band`) : 'yes') : 'no'}{tr.detected && (tr.cueQ ?? 1) < 0.9 ? <div className="text-[10px] text-ops-amber">shot on a shared track ({Math.round((tr.cueQ ?? 1) * 100)}% accuracy)</div> : null}</td>
                 <td>{tr.fired?.length ? tr.fired.map((f) => `${sys(f.dep)} ×${f.shots}`).join(', ') : <span className="text-ops-dim">nobody</span>}</td>
                 <td className={tr.outcome === 'stopped' ? 'text-ops-green' : 'text-ops-red'}>
-                  {tr.outcome === 'stopped' ? `stopped by ${sys(tr.stoppedBy ?? '')}` : <>got through{tr.damage ? ` (−${tr.damage})` : ''}<div className="text-[10px] leading-snug text-ops-dim">{leakText(tr, t.deployments)}</div></>}
+                  {tr.outcome === 'stopped' ? `stopped by ${sys(tr.stoppedBy ?? '')}` : <>got through{tr.depTarget ? ' and hit the system' : tr.damage ? ` (−${tr.damage})` : ''}<div className="text-[10px] leading-snug text-ops-dim">{leakText(tr, t.deployments)}</div></>}
                 </td>
               </tr>
             ))}

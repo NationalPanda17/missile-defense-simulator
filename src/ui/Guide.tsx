@@ -2,7 +2,7 @@
 // so the guide can never drift from what the simulation does. Opened with ? from anywhere, including the start screen.
 import type { ReactNode } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, EQUIPMENT, JAMMING, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
+  COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
   STOCKPILES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, type DefenseLayer, type FireDoctrine, type RadarBand, type ThreatClass,
 } from '../engine';
 import { Modal } from './components/ui';
@@ -52,7 +52,7 @@ export function Meter({ value, good = true }: { value: number; good?: boolean })
 
 // ── Threats ──────────────────────────────────────────────────────────────
 
-const THREAT_ABBR: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM' };
+const THREAT_ABBR: Record<ThreatClass, string> = { slowDrone: 'SD', fastDrone: 'FD', cruise: 'CM', rocket: 'RK', ballistic: 'BM', hypersonic: 'HG' };
 const THREAT_WHAT: Record<ThreatClass, { what: string; stop: string }> = {
   slowDrone: {
     what: 'A small propeller aircraft with a warhead. Slow and cheap, so they come in swarms. Flies low.',
@@ -74,6 +74,10 @@ const THREAT_WHAT: Record<ThreatClass, { what: string; stop: string }> = {
     what: 'A large missile that climbs high above the atmosphere and falls on its target at enormous speed. The most damaging threat.',
     stop: 'Only systems with a high ceiling: Patriot PAC-3, SAMP/T, David’s Sling, Arrow, THAAD and the Aegis ships.',
   },
+  hypersonic: {
+    what: 'A glider released at the edge of space that skims the upper atmosphere at enormous speed and always swerves on the way in. Rare, appears late in a campaign, and does the most damage of all.',
+    stop: 'Very little: THAAD, the Aegis SM-6 destroyer, Patriot PAC-3, SAMP/T and Arrow 2 each have a modest chance. Layer two of them over what you cannot afford to lose.',
+  },
 };
 
 function Threats() {
@@ -81,7 +85,7 @@ function Threats() {
   return (
     <>
       <H>The five kinds of threat</H>
-      <P>Every attack is a <B>wave</B>: a group of threats that arrives together from one side of the map, each aimed at one of your sites. There are five kinds, and no single weapon is good against all of them. The two-letter codes appear throughout the game.</P>
+      <P>Every attack is a <B>wave</B>: a group of threats that arrives together from one side of the map, each aimed at one of your sites. There are six kinds, and no single weapon is good against all of them. The two-letter codes appear throughout the game.</P>
       <div className="mt-2 overflow-x-auto">
         <table className="table-ops w-full text-[11px]">
           <thead><tr><th>Threat</th><th>What it is</th><th>What stops it</th><th>Flies at</th><th>Damage</th></tr></thead>
@@ -110,6 +114,8 @@ function Threats() {
       <H>Low fliers and the radar horizon</H>
       <P>Drones and cruise missiles fly <B>low</B>. The ground curves away and hills get in the way, so a radar on the ground cannot see a low flier until it is close: about <B>{C.lowAltitude.horizonKm} km</B>, or {C.lowAltitude.horizonKm * C.lowAltitude.massifHorizonMult} km from a radar placed on a mountain. This is the <B>radar horizon</B>. It applies to weapons too: a missile system with a 300 km range still only engages low fliers within {C.lowAltitude.horizonKm} km of itself. Rockets and ballistic missiles fly high, so the horizon does not hide them.</P>
       <P>Two things beat the horizon: put the system <B>close to the site</B> it protects, or deploy an <B>aircraft radar</B> (E-2D, E-7, GlobalEye), which looks down from above. While it tracks a low flier, ground systems can engage it out to {C.lowAltitude.cuedHorizonMult} times the horizon ({C.lowAltitude.horizonKm * C.lowAltitude.cuedHorizonMult} km), though on a shared track (see <B>Radar bands</B>).</P>
+      <H>Attacks on your own radars</H>
+      <P>From the second phase, some missiles in a wave ignore your sites and fly straight at one of your radars: a working radar gives its position away. A hit knocks {C.strikes.damage} points off that system’s condition, which can put it out of action until it has been through maintenance. Aircraft and passive sensors cannot be targeted. Keep a gun or short-range system beside the radars you rely on, and send damaged systems for maintenance (Ground or Sea screens) before the next raid.</P>
       <H>Decoys</H>
       <P>Some of the dots in a wave are <B>decoys</B>: cheap fakes that do no damage but look real enough to draw fire and empty your magazines. A sharp radar can tell them apart (see <B>Radar bands</B>). Better regional awareness also means fewer of them.</P>
     </>
@@ -152,7 +158,7 @@ function Defenses() {
         <><B>Per round</B>: what each shot costs to replace. Gun rounds cost almost nothing; a long-range interceptor costs more than the drone it might be fired at. Compare it with the threat: stopping a cheap drone with a 10-credit missile is a bad trade.</>,
         <><B>Radar</B>: the band of its own radar and how far that radar sees. “No radar” means it is aimed by eye or by heat-seeker: it needs another sensor nearby to warn it, and shoots worse at night.</>,
         <><B>Low-level ≤{C.lowAltitude.horizonKm} km</B>: a reminder that against low fliers this system only reaches the radar horizon, not its full range. The dotted ring on the map.</>,
-        <><B>The five bars</B> (SD FD CM RK BM): the chance one shot stops each kind of threat. No bar means it cannot engage that kind. Each system fires up to {C.maxShotsPerSystem} shots at a threat if there is time.</>,
+        <><B>The six bars</B> (SD FD CM RK BM HG): the chance one shot stops each kind of threat. No bar means it cannot engage that kind. Each system fires up to {C.maxShotsPerSystem} shots at a threat if there is time.</>,
       ]} />
       <H>What decides whether a threat is stopped</H>
       <Steps items={[
@@ -166,6 +172,8 @@ function Defenses() {
       <P>Each shooter follows standing <B>fire orders</B>, which you can change at any time from the deploy screen or the Tactical Theater (it costs nothing and takes effect at the next wave):</P>
       <List items={(Object.keys(DOCTRINES) as FireDoctrine[]).map((k) => <><B>{DOCTRINES[k].label}.</B> {DOCTRINES[k].text}</>)} />
       <P>By default the longest-ranged system fires first, which means your most expensive missiles are spent on whatever arrives first, often drones and decoys. Setting big systems to <B>Missiles only</B> or <B>Backup</B>, with guns underneath them for the drones, makes a limited stockpile last.</P>
+      <H>Service records</H>
+      <P>Every unit has a callsign and keeps count of the threats it has stopped. At {C.veteran[1].kills} it becomes a <B>Veteran</B> and reacts {Math.round((1 - C.veteran[1].reaction) * 100)}% faster; at {C.veteran[0].kills} it is <B>Elite</B>: {Math.round((1 - C.veteran[0].reaction) * 100)}% faster and a little more accurate. Withdrawing a unit loses its record, so think twice before selling a veteran crew.</P>
       <H>Terrain</H>
       <P>Ships go on water, everything else on land. Mountains block a ground radar’s view of low fliers behind them, but a radar <B>on</B> a mountain sees twice as far over the horizon.</P>
       <Tip>For your first defense: one medium-range battery (IRIS-T SLM or NASAMS) next to the most-threatened city, a gun system (Skynex) on the next site, and a cheap sensor facing the attack. The deploy screen’s first-deployment guide walks you through exactly this.</Tip>
@@ -297,7 +305,8 @@ function First() {
         <>Check the <B>Objectives</B> in the sidebar. Meeting them pays credits and adds to your score.</>,
       ]} />
       <H>When the phase ends</H>
-      <P>The next briefing opens with what was damaged and whether you met your objectives. Open the <B>After-Action Review</B> (key R) at any time to see every wave, why each threat was stopped or got through, and what one extra system would have changed.</P>
+      <P>The next briefing opens with a front page from <B>The Meridian Dispatch</B> reporting how the phase went, what was damaged and whether you met your objectives. If the review found one system that would have helped most, it appears as an amber ring on the next deploy map. Open the <B>After-Action Review</B> (key R) at any time to see every wave, why each threat was stopped or got through, and what one extra system would have changed.</P>
+      <P>In the Tactical Theater, press <B>Narrated replay</B> to watch a wave again with a caption for each key moment, and <B>click any threat on the map</B> to read what happened to it and why.</P>
       <Tip>If a wave went badly, the review’s “Systems that did not fire” list is the fastest way to learn. “Out of range” means move it closer; “below the radar horizon” means move it closer or add an aircraft radar; “magazine empty” means resupply sooner.</Tip>
     </>
   );
@@ -326,6 +335,9 @@ function Phase() {
         <><B>Storms</B> shorten radar range according to the radar’s band (see <B>Radar bands</B>): from no loss for UHF down to {pct(RADAR_BANDS.Ku.storm)} of normal range for Ku. Passive sensors keep {pct(PASSIVE_SENSOR.storm)}. The deploy screen lists the storms expected in each region.</>,
         <><B>Night</B> runs from {WEATHER.night[0]}:00 to 0{WEATHER.night[1]}:00 local time. Weapons aimed by eye or heat-seeker (Stinger, Avenger, ZU-23-2) hit {Math.round((1 - WEATHER.nightKill) * 100)}% less often in the dark. About {pct(WEATHER.nightRaids)} of raids are timed for night.</>,
       ]} />
+      <H>Research</H>
+      <P>The Logistics screen offers four research programmes. Each is paid for once, takes a day or two, and then lasts for the rest of the scenario:</P>
+      <List items={INVESTMENTS.filter((i) => i.once).map((i) => <><B>{i.label.replace('Research: ', '')}</B> ({i.credits} credits, {i.hours} hours). {i.description}</>)} />
       <H>Money</H>
       <P>Credits arrive every hour, more when regions are stable. Each asset costs a little upkeep. Credits above {SIM_CONFIG.reserve.threshold} are taken back at {SIM_CONFIG.reserve.ratePerHour * 100}% of the excess per hour, so a large unspent balance is wasted: put it into defenses, maintenance or long-term investments (Logistics screen).</P>
     </>
@@ -379,6 +391,13 @@ function Score() {
       <ul className="mt-1.5 space-y-1 text-[12px] leading-relaxed">
         {COMMAND_LEVEL_IDS.map((l) => <li key={l}><B>{COMMAND_LEVELS[l].label}.</B> {COMMAND_LEVELS[l].description}</li>)}
       </ul>
+      <H>Your opponent</H>
+      <P>In a campaign you choose who you fight. Each commander plays by the same rules with a different emphasis, and the briefing reminds you how to answer him:</P>
+      <ul className="mt-1.5 space-y-1 text-[12px] leading-relaxed">
+        {ENEMY_STYLE_IDS.map((id) => <li key={id}><B>{ENEMY_STYLES[id].name}, {ENEMY_STYLES[id].title}.</B> {ENEMY_STYLES[id].text} <span className="text-ops-dim">Answer: {ENEMY_STYLES[id].counter}</span></li>)}
+      </ul>
+      <H>Medals</H>
+      <P>Finished games earn medals, shown on the start screen. There are {MEDALS.length}. They also unlock theater map themes in the display menu (Aa): {THEME_UNLOCKS.filter((t) => t.medals > 0).map((t) => `“${t.name}” at ${t.medals} medals`).join(', ')}.</P>
       <H>The After-Action Review</H>
       <P>Open it at any time (key R). It breaks the score into its parts, lists every wave with the fate of each threat, compares what you spent on interceptors with what the attacker spent, and suggests the one system that would have helped most in each region.</P>
     </>
@@ -394,7 +413,7 @@ const GLOSSARY: [string, string][] = [
   ['Awareness', 'How well your sensors cover a region. Higher means more reliable reports, earlier warnings and fewer decoys.'],
   ['Axis', 'The side of the map an attack comes from: north, south, east or west.'],
   ['Band', 'The wavelength a radar uses. See the Radar bands tab.'],
-  ['BM, CM, FD, RK, SD', 'Ballistic missile, cruise missile, fast drone, rocket, slow drone.'],
+  ['BM, CM, FD, HG, RK, SD', 'Ballistic missile, cruise missile, fast drone, hypersonic glider, rocket, slow drone.'],
   ['Ceiling', 'The greatest height a weapon can hit.'],
   ['Confidence', 'How likely a report is to be real. A very high confidence is labelled CONFIRMED, but only a confirmation you tasked is certain.'],
   ['cr', 'Credits, the game’s money.'],
@@ -404,8 +423,10 @@ const GLOSSARY: [string, string][] = [
   ['Domain', 'One of the four parts of the network: Space, Air, Sea and Ground.'],
   ['Effector / shooter / interceptor', 'Anything that destroys threats: guns, missiles, lasers, jammers.'],
   ['Escalation', 'What happens when a report is left until its time runs out: lasting damage, and sometimes a new problem.'],
+  ['Elite / Veteran', 'Ranks a unit earns by stopping threats: it reacts faster.'],
   ['Fire orders', 'A shooter’s standing instructions: engage everything, missiles only, or backup.'],
   ['Forecast', 'The briefing’s prediction of which regions will be attacked this phase.'],
+  ['Hypersonic glider (HG)', 'The rarest and most damaging threat: very fast, swerves in flight, and only a few systems can touch it.'],
   ['Integrity', 'A site’s health, from 100 (untouched) to 0 (destroyed).'],
   ['Jamming', 'On Commander, the enemy blinds one radar band for a phase: the band most of your radars use.'],
   ['Layer', 'A family of defenses grouped by reach, from close-in guns to the upper tier.'],

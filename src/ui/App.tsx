@@ -4,6 +4,7 @@ import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { GuideModal } from './Guide';
+import { awardMedals } from './medals';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
@@ -105,7 +106,11 @@ function Root() {
 
   useEffect(() => {
     if (!s) return;
-    if (s.status === 'complete' && lastStatus.current !== 'complete' && lastStatus.current !== null) ui.setView('aar');
+    if (s.status === 'complete' && lastStatus.current !== 'complete' && lastStatus.current !== null) {
+      ui.setView('aar');
+      // Medals earned by the game that just ended.
+      for (const m of awardMedals(s)) store.toast('ok', `Medal earned: ${m.name}`);
+    }
     lastStatus.current = s.status;
     if (lastMode.current !== s.settings.name + s.settings.seed) {
       lastMode.current = s.settings.name + s.settings.seed;

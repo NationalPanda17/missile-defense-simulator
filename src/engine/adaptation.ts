@@ -22,8 +22,8 @@ export const ADAPTATION = {
   intelError: 0.3,
 };
 
-const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic'];
-const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles' };
+const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic', 'hypersonic'];
+const PLURAL: Record<ThreatClass, string> = { slowDrone: 'slow drones', fastDrone: 'fast drones', cruise: 'cruise missiles', rocket: 'rockets', ballistic: 'ballistic missiles', hypersonic: 'hypersonic gliders' };
 
 export const adaptiveEnemy = (s: SimState) => s.settings.mode === 'campaign' && s.settings.level === 'commander' && !!s.tactical?.enabled;
 
