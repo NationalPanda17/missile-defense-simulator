@@ -526,7 +526,7 @@ describe('tactical layer: scenarios', () => {
   });
 
   it('never leaves a phase without possible threats', () => {
-    const only = { ...standardTactical(), mix: { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 3 } };
+    const only = { ...standardTactical(), mix: { slowDrone: 0, fastDrone: 0, cruise: 0, rocket: 0, ballistic: 3, hypersonic: 0 } };
     const s = createInitialState(defaultSettings('campaign', { seed: 5, tactical: only })); // phase 1 has no ballistic weight
     expect(s.tactical!.waves.every((w) => w.tracks.length > 0)).toBe(true);
   });
