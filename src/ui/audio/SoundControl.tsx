@@ -5,7 +5,7 @@ import { sound } from './sound';
 
 let version = 0;
 const sub = (f: () => void) => sound.subscribe(() => { version++; f(); });
-const useSound = () => useSyncExternalStore(sub, () => version);
+const useSound = () => useSyncExternalStore(sub, () => version, () => version);
 
 export function SoundControl() {
   useSound();

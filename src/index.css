@@ -142,3 +142,13 @@ html.map-arctic .theater-map { filter: saturate(0.55) hue-rotate(150deg) brightn
 
 /* The coach never covers the game: the whole layout ends above it, so every panel stays readable and scrollable. */
 body.coach-on .app-root { padding-bottom: calc(var(--coach-h, 0px) + 12px); }
+
+/* Radar scope view: the theater map as an operator's display. */
+.scope-view .theater-map { filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(3.2) brightness(0.85) contrast(1.25); background: #020a04; }
+.scope-sweep { position: absolute; inset: 0; pointer-events: none; z-index: 1; border-radius: 4px; overflow: hidden; mix-blend-mode: screen; }
+.scope-sweep::before { content: ''; position: absolute; left: 50%; top: 50%; width: 200%; height: 200%; transform-origin: 0 0;
+  background: conic-gradient(from 0deg, rgba(60, 255, 120, 0.32), rgba(60, 255, 120, 0) 18%, rgba(60, 255, 120, 0) 100%); animation: scope-turn 5s linear infinite; }
+.scope-sweep::after { content: ''; position: absolute; inset: 0;
+  background: repeating-radial-gradient(circle at 50% 50%, rgba(60, 255, 120, 0) 0 58px, rgba(60, 255, 120, 0.22) 58px 59px); }
+@keyframes scope-turn { to { transform: rotate(360deg); } }
+html.reduce-motion .scope-sweep::before { animation: none; }

@@ -5,10 +5,12 @@ import { a11y, setA11y, subscribeA11y } from './settings';
 import { PacingSettings } from '../PausePrompt';
 import { THEME_UNLOCKS } from '../../engine';
 import { loadMedals, subscribeMedals } from '../medals';
+import { LANGS, setLang, translated, useLang, type Lang } from '../i18n';
 
 export function DisplaySettings() {
-  const st = useSyncExternalStore(subscribeA11y, a11y);
-  const medals = useSyncExternalStore(subscribeMedals, loadMedals).length;
+  const st = useSyncExternalStore(subscribeA11y, a11y, a11y);
+  const medals = useSyncExternalStore(subscribeMedals, loadMedals, loadMedals).length;
+  const language = useLang();
   const row = (label: string, desc: string, on: boolean, set: (v: boolean) => void) => (
     <div className="flex items-start justify-between gap-3">
       <div><div className="text-white">{label}</div><div className="text-[10px] leading-relaxed text-ops-dim">{desc}</div></div>
@@ -20,6 +22,12 @@ export function DisplaySettings() {
       {row('High contrast', 'Brighter text and borders, solid panels.', st.contrast, (v) => setA11y({ contrast: v }))}
       {row('Reduce motion', 'Stops pulsing, sweeping and gliding animations. Threats still move on the map.', st.reduceMotion, (v) => setA11y({ reduceMotion: v }))}
       {row('Screen-reader announcements', 'Reads out new reports, launches, wave results and phase changes.', st.announce, (v) => setA11y({ announce: v }))}
+      <div className="flex items-start justify-between gap-3">
+        <div><div className="text-white">Language</div><div className="text-[10px] leading-relaxed text-ops-dim">{language === 'en' ? 'The start screen, top bar, menu and briefing buttons are also available in Spanish.' : `Traducidos: pantalla de inicio, barra superior, menú y botones del informe (${translated(language)} textos). El resto sigue en inglés.`}</div></div>
+        <select className="input shrink-0 py-1" value={language} aria-label="Language" onChange={(e) => setLang(e.target.value as Lang)}>
+          {(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}
+        </select>
+      </div>
       <div>
         <div className="text-white">Theater map theme</div>
         <div className="text-[10px] leading-relaxed text-ops-dim">Colours of the regional maps. Themes unlock as you earn medals (you have {medals}).</div>

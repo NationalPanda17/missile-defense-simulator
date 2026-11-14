@@ -20,3 +20,5 @@ export * from './autopause';
 export * from './weather';
 export * from './adaptation';
 export * from './story';
+export * from './plan';
+export * from './range';

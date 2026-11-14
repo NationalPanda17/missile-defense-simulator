@@ -21,7 +21,7 @@ export function WaveActions({ s, region, compact }: { s: SimState; region: Regio
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
     return isEffector(spec) && !isUnlimited(spec) && d.reloadRemaining === undefined && d.stock < spec.magazine && resupplyRounds(s, d) > 0 && s.logistics >= TACTICAL_CONFIG.minLogisticsForResupply;
   });
-  const rCost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
+  const rCost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d), s), 0);
   const unsure = s.events.filter((e) => isActive(e) && e.reportedAt <= s.hour && e.status === 'reported' && e.confidence < 55);
   const go = (view: ViewId) => { if (view === 'theater') ui.setTheaterFocus(region); ui.setView(view); };
   const running = s.status === 'running';
@@ -49,7 +49,7 @@ const KIND_LABEL: Record<PauseReason['kind'], string> = { launch: 'launch warnin
  * corner without taking focus, so it never covers or swallows clicks on the form underneath.
  */
 export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
-  useSyncExternalStore(store.subscribe, version);
+  useSyncExternalStore(store.subscribe, version, version);
   const ui = useUI();
   const reasons = store.pausePrompt;
   if (!reasons?.length || s.status !== 'running') return null;
@@ -114,7 +114,7 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
 
 /** Auto-pause choices, for the settings panel. */
 export function PacingSettings() {
-  useSyncExternalStore(store.subscribe, version);
+  useSyncExternalStore(store.subscribe, version, version);
   const cur = store.autoPause() ?? store.pacing ?? { launch: true, deadline: true, report: false };
   const row = (kind: PauseReason['kind'], label: string) => (
     <label key={kind} className="flex items-center justify-between gap-2">

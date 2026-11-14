@@ -3,7 +3,7 @@ import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG } from './config';
 import { log, maintenanceCostMult, beginPhase as begin, advance, responseSuccessChance } from './engine';
 import { isEffector, EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
-  DOCTRINES, addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
+  DOCTRINES, reinforceOptions, addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
   resupplyCost, resupplyRounds, stockpileOf, stockpileRules, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
@@ -24,12 +24,18 @@ export type Command =
   | { type: 'withdraw'; deploymentId: string }
   | { type: 'setDoctrine'; deploymentId: string; doctrine: FireDoctrine }
   | { type: 'setAutoResupply'; region: RegionId; on: boolean }
+  | { type: 'setEmcon'; deploymentId: string; on: boolean }
+  | { type: 'setScoot'; deploymentId: string; on: boolean }
+  | { type: 'setPatrol'; deploymentId: string; on: boolean }
+  | { type: 'setLoadout'; deploymentId: string; loadout: string }
+  | { type: 'repairFirst'; siteId: string }
+  | { type: 'reinforce'; region: RegionId }
   | { type: 'resupply'; deploymentId: string }
   | { type: 'emergencyRedeploy'; deploymentId: string; region: RegionId; x: number; y: number }
   | { type: 'raiseAlert'; region: RegionId }
   | { type: 'beginPhase' }
   | { type: 'setPaused'; paused: boolean }
-  | { type: 'setSpeed'; speed: 1 | 2 | 4 | 8 }
+  | { type: 'setSpeed'; speed: 0.5 | 1 | 2 | 4 | 8 }
   | { type: 'setTurnBased'; on: boolean }
   | { type: 'advance'; hours: number };
 
@@ -217,6 +223,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (s.projects.some((p) => p.investmentId === inv.id && p.region === cmd.region && p.domain === cmd.domain))
         return fail('An identical project is already underway.');
       if (inv.id === 'modernize' && s.modernization >= 30) return fail('Modernization is at maximum.');
+      if (inv.id === 'industry' && (s.industry ?? 0) + s.projects.filter((p) => p.investmentId === 'industry').length >= TACTICAL_CONFIG.industry.max) return fail('The defense industry is at its largest.');
       if (inv.once && s.research?.includes(inv.id)) return fail('That research is already complete.');
       if (inv.id === 'rebuild' && cmd.region && !s.tactical?.sites.some((x) => x.region === cmd.region && x.integrity < 100)) return fail('No site in that region is damaged.');
       const err = canAfford(s, inv.credits, inv.personnel, 0);
@@ -267,6 +274,65 @@ function run(s: SimState, cmd: Command): CommandResult {
       record(s, 'relocate', `Relocated ${name} (${d.id}).`, TACTICAL_CONFIG.relocateCost, 'redeploy');
       return { ok: true, message: `${name} relocated` };
     }
+    case 'setEmcon': case 'setScoot': case 'setPatrol': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      const name = s.assets.find((a) => a.id === d.assetId)?.name ?? spec.name;
+      if (cmd.type === 'setEmcon') {
+        if (!spec.radar) return fail(`${spec.name} has no radar to switch off.`);
+        d.emcon = cmd.on || undefined;
+        record(s, 'emcon', `${name}: radar ${cmd.on ? 'silent' : 'transmitting'}.`, 0, 'response');
+        return { ok: true, message: `${name}: radar ${cmd.on ? 'silent (it sees nothing and cannot be hunted)' : 'on'}` };
+      }
+      if (cmd.type === 'setScoot') {
+        if (spec.domain !== 'ground' || !isEffector(spec)) return fail('Only ground-based shooters can shoot and scoot.');
+        d.scoot = cmd.on || undefined;
+        record(s, 'scoot', `${name}: shoot and scoot ${cmd.on ? 'on' : 'off'}.`, 0, 'response');
+        return { ok: true, message: `${name}: shoot and scoot ${cmd.on ? 'on' : 'off'}` };
+      }
+      if (spec.domain !== 'sea') return fail('Only ships patrol.');
+      d.patrol = cmd.on || undefined;
+      record(s, 'patrol', `${name}: ${cmd.on ? 'patrolling' : 'holding station'}.`, 0, 'response');
+      return { ok: true, message: `${name}: ${cmd.on ? 'patrolling toward each wave' : 'holding station'}` };
+    }
+    case 'setLoadout': {
+      const t = ensureTactical(s);
+      const d = t.deployments.find((x) => x.id === cmd.deploymentId);
+      if (!d) return fail('Unknown deployment.');
+      const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+      if (!spec.loadouts?.length) return fail(`${spec.name} carries one kind of interceptor.`);
+      if (s.status !== 'briefing') return fail('Launchers are reloaded with a different mix only between phases, in a briefing.');
+      if (cmd.loadout !== 'standard' && !spec.loadouts.some((l) => l.id === cmd.loadout)) return fail('Unknown interceptor load.');
+      d.loadout = cmd.loadout === 'standard' ? undefined : cmd.loadout;
+      const label = spec.loadouts.find((l) => l.id === cmd.loadout)?.label ?? 'Standard mix';
+      record(s, 'loadout', `${s.assets.find((a) => a.id === d.assetId)?.name ?? spec.name}: loaded with “${label}”.`, 0, 'response');
+      return { ok: true, message: `Interceptor load: ${label}` };
+    }
+    case 'repairFirst': {
+      const t = ensureTactical(s);
+      const site = t.sites.find((x) => x.id === cmd.siteId);
+      if (!site) return fail('Unknown site.');
+      t.repairFirst = [site.id, ...(t.repairFirst ?? []).filter((id) => id !== site.id)].slice(0, 12);
+      record(s, 'repair', `Repair crews sent to ${site.name} first.`, 0, 'maintenance');
+      return { ok: true, message: `Repair crews: ${site.name} first` };
+    }
+    case 'reinforce': {
+      const t = ensureTactical(s);
+      if (s.status !== 'briefing' || s.phaseIndex === 0) return fail('A region can be reinforced in the briefing before each later phase.');
+      if (s.branches?.[s.phaseIndex]) return fail('This phase’s reinforcement has already been sent.');
+      if (!reinforceOptions(s).includes(cmd.region)) return fail('That region is not on offer this phase.');
+      const R = TACTICAL_CONFIG.reinforce;
+      for (const site of t.sites) if (site.region === cmd.region) site.integrity = Math.min(100, site.integrity + R.integrity);
+      s.regions[cmd.region].stability = Math.min(100, s.regions[cmd.region].stability + R.stability);
+      t.freeResupply = { region: cmd.region, phaseIndex: s.phaseIndex };
+      s.branches = { ...(s.branches ?? {}), [s.phaseIndex]: cmd.region };
+      recomputeMetrics(s);
+      record(s, 'reinforce', `Reinforced ${s.regions[cmd.region].name}: sites repaired, stability up, resupply there free this phase.`, 0, 'investment');
+      log(s, 'success', `Reinforcements sent to ${s.regions[cmd.region].name}.`, cmd.region);
+      return { ok: true, message: `${s.regions[cmd.region].name} reinforced` };
+    }
     case 'setAutoResupply': {
       const t = ensureTactical(s);
       const rest = (t.autoResupply ?? []).filter((r) => r !== cmd.region);
@@ -294,7 +360,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       // withdrawing and redeploying is never a cheaper resupply.
       // Taking back a placement in the briefing it was made in is an undo: everything is returned.
       const undo = s.status === 'briefing' && d.deployedAt === s.hour && (isUnlimited(spec) || d.stock >= spec.magazine) && !d.kills;
-      const refund = undo ? equipmentCost(spec) : Math.max(0, Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(d));
+      const refund = undo ? equipmentCost(spec) : Math.max(0, Math.floor(equipmentCost(spec) * TACTICAL_CONFIG.withdrawRefund) - resupplyCost(d, undefined, s));
       const sp = stockpileRules(s);
       if (sp && t.stockpile?.[spec.id] !== undefined && isEffector(spec) && !isUnlimited(spec)) {
         t.stockpile[spec.id] = Math.max(0, t.stockpile[spec.id] - Math.floor(spec.magazine * sp.initial));
@@ -318,7 +384,7 @@ function run(s: SimState, cmd: Command): CommandResult {
       if (s.logistics < TACTICAL_CONFIG.minLogisticsForResupply) return fail('Logistics capacity is too low to resupply.');
       const rounds = resupplyRounds(s, d);
       if (rounds <= 0) return fail(`The national stockpile of ${spec.name} rounds is empty until it is restocked at the next phase.`);
-      const cost = resupplyCost(d, rounds);
+      const cost = resupplyCost(d, rounds, s);
       const err = canAfford(s, cost, 0, 0);
       if (err) return fail(err);
       spend(s, cost, 0, 'maintenance');
@@ -390,7 +456,7 @@ export function autoResupply(s: SimState) {
     const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
     if (!isEffector(spec) || isUnlimited(spec) || d.stock > spec.magazine / 2) continue;
     const rounds = resupplyRounds(s, d);
-    if (rounds <= 0 || s.credits - resupplyCost(d, rounds) < AUTO_RESUPPLY_RESERVE) continue;
+    if (rounds <= 0 || s.credits - resupplyCost(d, rounds, s) < AUTO_RESUPPLY_RESERVE) continue;
     execute(s, { type: 'resupply', deploymentId: d.id });
   }
 }

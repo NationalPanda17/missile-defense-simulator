@@ -8,6 +8,7 @@ import { dispatch, store, useSimTime } from '../store/simStore';
 import { SEVERITY_WORD, Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
 import { Term } from './Term';
+import { tr } from './i18n';
 import { ServerStatusChip } from './views/ServerPanels';
 
 const ALERT_TONE = { NORMAL: 'green', ELEVATED: 'cyan', HIGH: 'amber', SEVERE: 'red' } as const;
@@ -29,7 +30,7 @@ function PhaseProgress({ s }: { s: SimState }) {
 
 /** Picking a speed also resumes a paused clock (outside turn mode): choosing a speed means "run at this speed". */
 let warned8 = false;
-export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
+export function chooseSpeed(s: SimState, sp: 0.5 | 1 | 2 | 4 | 8) {
   if (sp === 8 && !warned8 && s.speed !== 8) {
     warned8 = true;
     const p = store.autoPause();
@@ -57,7 +58,7 @@ export function NextButton({ s }: { s: SimState }) {
     <button data-next className={`btn ${first ? 'border-ops-amber/70 text-ops-amber' : ''}`} disabled={!first}
       title={first ? `${first.text}${list.length > 1 ? ` (+${list.length - 1} more)` : ''} Press N.` : 'Nothing needs you right now (N)'}
       onClick={() => first && goToUrgent(ui, first)}>
-      ⚑ <span className="hidden sm:inline">{first ? 'Needs you' : 'All clear'}</span>{list.length > 0 && <span className="ml-1 rounded-sm bg-ops-amber/20 px-1 tabular-nums">{list.length}</span>}
+      ⚑ <span className="hidden sm:inline">{first ? tr('Needs you') : tr('All clear')}</span>{list.length > 0 && <span className="ml-1 rounded-sm bg-ops-amber/20 px-1 tabular-nums">{list.length}</span>}
     </button>
   );
 }
@@ -86,7 +87,7 @@ export function WaveCard({ s }: { s: SimState }) {
   }, [fresh?.id]);
   useEffect(() => { setCard(null); }, [s.campaignId]);
   const w = card ? t?.waves.find((x) => x.id === card) : undefined;
-  if (!t || !w || store.pausePrompt || s.status === 'briefing') return null;
+  if (!t || !w || store.pausePrompt || s.status !== 'running') return null; // not over a briefing or the final report
   const real = w.tracks.filter((x) => !x.decoy);
   if (!real.length) return null;
   const stopped = real.filter((x) => x.outcome === 'stopped').length;
@@ -96,7 +97,7 @@ export function WaveCard({ s }: { s: SimState }) {
     const sp = EQUIPMENT_MAP.get(d.equipmentId)!;
     return d.region === w.region && isEffector(sp) && !isUnlimited(sp) && d.reloadRemaining === undefined && d.stock < sp.magazine && resupplyRounds(s, d) > 0 && s.logistics >= 25;
   });
-  const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
+  const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d), s), 0);
   const tone = leaked === 0 ? 'border-ops-green/60' : leaked * 2 > real.length ? 'border-ops-red/60' : 'border-ops-amber/60';
   return (
     <div className={`fixed inset-x-2 top-32 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-28 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
@@ -135,12 +136,12 @@ export function MainMenuButton({ s, className = '' }: { s: SimState; className?:
     ui.setHelp(false);
     if (saved) store.toast('ok', 'Game saved. Find it under Browser saves to carry on.');
   };
-  if (!ask) return <button className={`btn ${className}`} onClick={() => setAsk(true)} title="Leave this game and go back to the start screen">☰ Main menu</button>;
+  if (!ask) return <button className={`btn ${className}`} onClick={() => setAsk(true)} title="Leave this game and go back to the start screen">{tr('☰ Main menu')}</button>;
   return (
     <span className={`inline-flex items-center gap-1 rounded border border-ops-amber/60 bg-ops-amber/10 px-1.5 py-0.5 ${className}`} role="group" aria-label="Leave to the main menu?">
       <span className="text-[11px] text-ops-amber">Leave? {s.status === 'complete' ? 'This game is over.' : 'Your game is saved.'}</span>
-      <button className="btn btn-primary px-2 py-0.5" autoFocus onClick={leave}>Main menu</button>
-      <button className="btn px-2 py-0.5" onClick={() => setAsk(false)}>Stay</button>
+      <button className="btn btn-primary px-2 py-0.5" autoFocus onClick={leave}>{tr('Main menu')}</button>
+      <button className="btn px-2 py-0.5" onClick={() => setAsk(false)}>{tr('Stay')}</button>
     </span>
   );
 }
@@ -169,7 +170,7 @@ export function TopBar({ s }: { s: SimState }) {
         <div className="max-w-[220px] truncate text-white">{s.settings.name}</div>
       </div>
       <div className="leading-tight">
-        <div className="label">Sim time</div>
+        <div className="label">{tr('Sim time')}</div>
         <SimClock s={s} />
       </div>
       <div className="hidden leading-tight md:block">
@@ -181,14 +182,15 @@ export function TopBar({ s }: { s: SimState }) {
       <div className="flex items-center gap-1" role="group" aria-label="Simulation controls">
         <button data-coach="pause" className={`btn w-20 ${running && !s.paused && !s.turnBased ? '' : 'btn-primary'}`} disabled={!running || s.turnBased}
           onClick={() => dispatch({ type: 'setPaused', paused: !s.paused })} title="Pause / resume (Space)">
-          {s.paused || s.turnBased ? '▶ Resume' : '❚❚ Pause'}
+          {s.paused || s.turnBased ? tr('▶ Resume') : tr('❚❚ Pause')}
         </button>
+        <button className={`btn px-2 ${s.speed === 0.5 ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, 0.5)} title="Study speed: half speed, for watching a wave closely" disabled={s.turnBased}>½x</button>
         {([1, 2, 4, 8] as const).map((sp, i) => (
           <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}
         <button data-coach="turn" role="switch" aria-checked={s.turnBased} className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })}
           title={s.turnBased ? 'Turn mode is on: the clock only moves when you advance a turn. Click to switch back to real time.' : 'Turn mode: stop the clock and advance it 6 hours at a time when you are ready.'}>
-          Turn mode{s.turnBased ? ': on' : ''}
+          {tr('Turn mode')}{s.turnBased ? ': on' : ''}
         </button>
         {store.viewHold && s.paused && <span className="max-w-[9rem] text-[10px] leading-tight text-ops-amber" title="The clock stops while you plan and restarts when you go back to an operations view. Press Resume to keep it running here.">Clock held while you plan</span>}
         {s.turnBased && (
@@ -203,7 +205,7 @@ export function TopBar({ s }: { s: SimState }) {
           <TopMetric label="Network" v={m.network} />
         </span>
         <div className={`rounded border px-2.5 py-1 leading-tight ${s.credits < 150 ? 'border-ops-red/60 bg-ops-red/10' : 'border-ops-green/50 bg-ops-green/10'}`} title="Credits: what you spend on defenses, maintenance, responses and investments">
-          <div className="label">Credits</div>
+          <div className="label">{tr('Credits')}</div>
           <div className={`whitespace-nowrap font-sans text-[17px] font-bold tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-ops-green'}`} aria-label={`${Math.round(s.credits)} credits`}>
             {Math.round(s.credits).toLocaleString('en-US')}<span className="ml-1 text-[11px] font-semibold opacity-80">cr</span>
             {reserveDrain(s) >= 1 && (
@@ -214,7 +216,7 @@ export function TopBar({ s }: { s: SimState }) {
           </div>
         </div>
         <div className="leading-tight">
-          <div className="label">Alert</div>
+          <div className="label">{tr('Alert')}</div>
           <Chip t={ALERT_TONE[m.alert]}><span className={m.alert === 'SEVERE' ? 'blink' : ''}>{m.alert}</span></Chip>
         </div>
         <span className="hidden sm:contents"><ServerStatusChip /></span>
@@ -225,7 +227,7 @@ export function TopBar({ s }: { s: SimState }) {
         ) : null; })()}
         <NextButton s={s} />
         <MainMenuButton s={s} />
-        <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">Guide</span></button>
+        <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">{tr('Guide')}</span></button>
       </div>
     </header>
   );
@@ -301,11 +303,11 @@ export function LeftNav({ s }: { s: SimState }) {
         const act = ui.view === n.id;
         return (
           <div key={n.id} className="contents">
-            {n.group && <div className="label mt-2 hidden px-2 pb-1 lg:block">{n.group}</div>}
+            {n.group && <div className="label mt-2 hidden px-2 pb-1 lg:block">{tr(n.group)}</div>}
             <button data-coach={`nav-${n.id}`} onClick={() => ui.setView(n.id)} aria-current={act ? 'page' : undefined}
               className={`group flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] uppercase tracking-wider transition-colors ${act ? 'border-ops-cyan/50 bg-ops-cyan/10 text-white' : 'border-transparent text-ops-text/80 hover:border-ops-line hover:bg-ops-panel2 hover:text-white'}`}>
               <span className="w-4 text-center text-ops-cyan" style={v !== null ? { color: DOMAIN_COLOR[n.id as keyof typeof DOMAIN_COLOR] } : undefined}>{n.icon}</span>
-              <span className="flex-1 whitespace-nowrap">{n.label}</span>
+              <span className="flex-1 whitespace-nowrap">{tr(n.label)}</span>
               {v !== null && <span className={`hidden tabular-nums lg:inline ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</span>}
               {v !== null && dueCount(s, n.id as Domain) > 0 && (
                 <span className="rounded bg-ops-amber/20 px-1 text-ops-amber" title={`${dueCount(s, n.id as Domain)} asset(s) due or overdue for maintenance`}>⛭{dueCount(s, n.id as Domain)}</span>

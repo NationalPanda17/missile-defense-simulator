@@ -242,3 +242,48 @@ export const THEME_UNLOCKS: { id: string; name: string; medals: number }[] = [
   { id: 'amber', name: 'Amber scope', medals: 3 },
   { id: 'arctic', name: 'Arctic', medals: 6 },
 ];
+
+// ── Radio chatter ────────────────────────────────────────────────────────
+
+export interface Chatter { at: number; who: string; text: string; tone: 'info' | 'good' | 'bad' }
+
+const NUM = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const say = (n: number) => NUM[n] ?? String(n);
+
+/**
+ * Short radio lines from the crews for a wave in flight, each with the share of the flight (0-1) at which it is
+ * heard. Built from what was decided at launch, so it never gives away more than the map does.
+ */
+export function waveChatter(s: SimState, w: ThreatWave): Chatter[] {
+  const t = s.tactical;
+  if (!t || !w.resolved) return [];
+  const out: Chatter[] = [];
+  const real = w.tracks.filter((x) => !x.decoy);
+  const call = (id: string | undefined) => t.deployments.find((d) => d.id === id)?.callsign ?? 'Battery';
+  out.push({ at: 0.02, who: 'Command', tone: 'info', text: `All stations, raid inbound from the ${w.axis}${w.axis2 ? ` and the ${w.axis2}` : ''}. ${real.length} tracks${w.tracks.length > real.length ? ', some may be decoys' : ''}.` });
+  const unseen = real.filter((x) => x.detected === false).length;
+  if (unseen) out.push({ at: 0.12, who: 'Command', tone: 'bad', text: `${say(unseen)[0].toUpperCase()}${say(unseen).slice(1)} not on anyone’s scope. Watch your sectors.` });
+  const spotted = w.tracks.filter((x) => x.rejected).length;
+  if (spotted) out.push({ at: 0.2, who: 'Command', tone: 'good', text: `${say(spotted)[0].toUpperCase()}${say(spotted).slice(1)} classified as ${spotted === 1 ? 'a decoy' : 'decoys'}. Hold fire on ${spotted === 1 ? 'it' : 'those'}.` });
+  if (real.some((x) => x.depTarget)) out.push({ at: 0.25, who: 'Command', tone: 'bad', text: 'Missiles homing on our radars. Emitters, look to yourselves.' });
+  const byDep = new Map<string, { tracked: number; stopped: number; at: number }>();
+  for (const tr of w.tracks) {
+    for (const f of tr.fired ?? []) {
+      const e = byDep.get(f.dep) ?? { tracked: 0, stopped: 0, at: 1 };
+      e.tracked += 1;
+      if (tr.stoppedBy === f.dep && !tr.decoy) e.stopped += 1;
+      e.at = Math.min(e.at, tr.stopAt ?? 0.8);
+      byDep.set(f.dep, e);
+    }
+  }
+  for (const [dep, e] of [...byDep].sort((a, b) => a[1].at - b[1].at).slice(0, 8)) {
+    out.push({ at: Math.max(0.28, e.at - 0.12), who: call(dep), tone: 'info', text: `Tracking ${say(e.tracked)}, engaging.` });
+    out.push({ at: Math.min(0.96, e.at + 0.05), who: call(dep), tone: e.stopped ? 'good' : 'bad', text: e.stopped ? `Splash ${say(e.stopped)}.` : 'No joy, they are through us.' });
+  }
+  const sat = [...new Set(w.tracks.flatMap((tr) => (tr.why ?? []).filter((x) => Array.isArray(x) && x[1] === 'sat').map((x) => (x as [string, string])[0])))];
+  if (sat[0]) out.push({ at: 0.6, who: call(sat[0]), tone: 'bad', text: 'Saturated, too many for us. Need help here.' });
+  const leaked = real.filter((x) => x.outcome === 'leaked');
+  if (leaked.length) out.push({ at: 0.97, who: 'Command', tone: 'bad', text: `${say(leaked.length)[0].toUpperCase()}${say(leaked.length).slice(1)} through. Brace: ${[...new Set(leaked.map((x) => targetName(s, x)))].slice(0, 2).join(' and ')}.` });
+  else if (real.length) out.push({ at: 0.97, who: 'Command', tone: 'good', text: 'Scope is clear. Good shooting, all stations.' });
+  return out.sort((a, b) => a.at - b.at);
+}

@@ -1,22 +1,23 @@
 // The field guide: everything a new player needs, in plain language, with the numbers read from the game's own rules
 // so the guide can never drift from what the simulation does. Opened with ? from anywhere, including the start screen.
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
-  STOCKPILES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, type DefenseLayer, type FireDoctrine, type RadarBand, type ThreatClass,
+  STOCKPILES, STORIES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, channelsOf, equipmentCost, isEffector, isUnlimited, type DefenseLayer, type EquipmentSpec, type FireDoctrine, type RadarBand, type ThreatClass,
 } from '../engine';
 import { Modal } from './components/ui';
 import { DisplaySettings } from './a11y/DisplayControl';
 import { LAYER_COLOR } from './views/theater/icons';
 import { useUI } from './uiState';
 
-export type GuideTab = 'start' | 'first' | 'threats' | 'defenses' | 'bands' | 'phase' | 'network' | 'score' | 'glossary' | 'keys';
+export type GuideTab = 'start' | 'first' | 'threats' | 'defenses' | 'equipment' | 'bands' | 'phase' | 'network' | 'score' | 'glossary' | 'keys';
 
 const TABS: { id: GuideTab; label: string }[] = [
   { id: 'start', label: 'Start here' },
   { id: 'first', label: 'Your first phase' },
   { id: 'threats', label: 'Threats' },
   { id: 'defenses', label: 'Defenses' },
+  { id: 'equipment', label: 'Equipment' },
   { id: 'bands', label: 'Radar bands' },
   { id: 'phase', label: 'During a phase' },
   { id: 'network', label: 'Network & reports' },
@@ -116,6 +117,12 @@ function Threats() {
       <P>Two things beat the horizon: put the system <B>close to the site</B> it protects, or deploy an <B>aircraft radar</B> (E-2D, E-7, GlobalEye), which looks down from above. While it tracks a low flier, ground systems can engage it out to {C.lowAltitude.cuedHorizonMult} times the horizon ({C.lowAltitude.horizonKm * C.lowAltitude.cuedHorizonMult} km), though on a shared track (see <B>Radar bands</B>).</P>
       <H>Attacks on your own radars</H>
       <P>From the second phase, some missiles in a wave ignore your sites and fly straight at one of your radars: a working radar gives its position away. A hit knocks {C.strikes.damage} points off that system’s condition, which can put it out of action until it has been through maintenance. Aircraft and passive sensors cannot be targeted. Keep a gun or short-range system beside the radars you rely on, and send damaged systems for maintenance (Ground or Sea screens) before the next raid.</P>
+      <H>How raids are put together</H>
+      <List items={[
+        <><B>Two sides at once.</B> From the second phase some waves split and come from two directions. The map shows a red arrow for each.</>,
+        <><B>Timed raids.</B> Sometimes the drones go in first and the missiles arrive an hour behind them, when magazines are low. If a wave was all drones, check your rounds before you relax.</>,
+        <><B>Escalation.</B> The enemy judges how the war is going. If your defense has stopped {pct(C.escalation.high)} or more of what was sent, it brings heavier weapons: more ballistic and cruise missiles, and gliders. If it is getting through easily, it keeps to cheap drones. The briefing tells you which.</>,
+      ]} />
       <H>Decoys</H>
       <P>Some of the dots in a wave are <B>decoys</B>: cheap fakes that do no damage but look real enough to draw fire and empty your magazines. A sharp radar can tell them apart (see <B>Radar bands</B>). Better regional awareness also means fewer of them.</P>
     </>
@@ -172,11 +179,126 @@ function Defenses() {
       <P>Each shooter follows standing <B>fire orders</B>, which you can change at any time from the deploy screen or the Tactical Theater (it costs nothing and takes effect at the next wave):</P>
       <List items={(Object.keys(DOCTRINES) as FireDoctrine[]).map((k) => <><B>{DOCTRINES[k].label}.</B> {DOCTRINES[k].text}</>)} />
       <P>By default the longest-ranged system fires first, which means your most expensive missiles are spent on whatever arrives first, often drones and decoys. Setting big systems to <B>Missiles only</B> or <B>Backup</B>, with guns underneath them for the drones, makes a limited stockpile last.</P>
+      <H>Too many at once</H>
+      <P>A system can only handle so many threats in one wave: a gun crew a few, a missile battery a dozen, a destroyer thirty (the “Handles” figure on each card). Decoys count. Past that it is <B>saturated</B> and the rest fly by, however many rounds it has left. One big battery does not stop a big swarm; several smaller ones, or a jammer or microwave weapon (which have no limit), do.</P>
+      <H>Hand-offs between layers</H>
+      <P>When an outer system fires at a threat and misses, the next layer to engage it already has a track and knows where the first shot went: its chance to hit is {Math.round(C.handoff * 100)}% better. The debrief and the replay mark these hand-offs. It is one more reason to put a second layer behind the first.</P>
+      <H>More orders for a unit</H>
+      <List items={[
+        <><B>Radar silent.</B> Switch a radar off and missiles that hunt radars cannot find it, but it sees nothing while it is off. A shooter with a silent radar can still fire on another sensor’s track, at that sensor’s track quality.</>,
+        <><B>Shoot and scoot</B> (ground shooters). After firing in a wave the unit moves a few kilometres. It is out of action for {C.scoot.hours} hours, and anything aimed at where it stood misses.</>,
+        <><B>Patrol</B> (ships). The ship steams up to {C.patrol.km} km toward each wave before it arrives, staying at sea. It wears faster.</>,
+        <><B>Interceptors.</B> Five systems can be loaded with a cheaper or a more capable mix of missiles, chosen in a briefing: NASAMS, Patriot, Barak MX, the Aegis destroyer and the Type 45. The Equipment tab lists each load.</>,
+      ]} />
+      <P>A <B>decoy emitter</B> (in the Detection layer) is a cheap transmitter that looks like a radar. Missiles hunting your radars mostly go for it instead.</P>
       <H>Service records</H>
       <P>Every unit has a callsign and keeps count of the threats it has stopped. At {C.veteran[1].kills} it becomes a <B>Veteran</B> and reacts {Math.round((1 - C.veteran[1].reaction) * 100)}% faster; at {C.veteran[0].kills} it is <B>Elite</B>: {Math.round((1 - C.veteran[0].reaction) * 100)}% faster and a little more accurate. Withdrawing a unit loses its record, so think twice before selling a veteran crew.</P>
       <H>Terrain</H>
       <P>Ships go on water, everything else on land. Mountains block a ground radar’s view of low fliers behind them, but a radar <B>on</B> a mountain sees twice as far over the horizon.</P>
+      <List items={[
+        <><B>Valleys</B> (dashed green lines running in from a map edge). After the first phase, low fliers coming from that side often follow the valley in. While they are in it, only ground systems within {C.valley.widthKm} km of the valley’s line can see or engage them. Put something in the valley’s mouth, or use an aircraft radar.</>,
+        <><B>Cities.</B> Guns, lasers and microwave weapons need a clear line of fire. Placed within {C.urban.km} km of a city’s centre, among the buildings, they lose {Math.round((1 - C.urban.reach) * 100)}% of their reach. Place them on the city’s edge. Missile systems are not affected.</>,
+      ]} />
       <Tip>For your first defense: one medium-range battery (IRIS-T SLM or NASAMS) next to the most-threatened city, a gun system (Skynex) on the next site, and a cheap sensor facing the attack. The deploy screen’s first-deployment guide walks you through exactly this.</Tip>
+    </>
+  );
+}
+
+// ── Equipment encyclopedia ───────────────────────────────────────────────
+
+/** What a system is good and bad at, read from its own figures. */
+function prosCons(e: EquipmentSpec): { pros: string[]; cons: string[] } {
+  const pros: string[] = [];
+  const cons: string[] = [];
+  const C = TACTICAL_CONFIG;
+  if (e.lure) return { pros: ['Draws most of the missiles that hunt radars onto itself', 'Costs almost nothing'], cons: ['Sees and shoots nothing', 'A hit still has to be repaired'] };
+  if (!isEffector(e)) {
+    if (e.domain === 'air') pros.push('Looks down from above: the radar horizon does not hide low fliers from it', 'Cannot be targeted by missiles that hunt radars');
+    if (e.rangeKm >= 400) pros.push('Sees a very long way');
+    if (!e.radar) pros.push('Passive: cannot be hunted or jammed', 'Very cheap'), cons.push('Detects drones only', 'Very short range');
+    if (e.radar && RADAR_BANDS[e.radar.band].storm >= 0.9) pros.push('Keeps almost all its range in a storm');
+    if (e.radar && RADAR_BANDS[e.radar.band].sharp >= 0.8) pros.push('Sharp enough to recognise most decoys');
+    if (e.radar && RADAR_BANDS[e.radar.band].storm <= 0.5) cons.push('A storm more than halves its range');
+    if (e.radar && RADAR_BANDS[e.radar.band].sharp <= 0.15) cons.push('Cannot tell decoys from real threats');
+    if (e.radar && e.domain !== 'air') cons.push(`Sees low fliers only within the radar horizon (${C.lowAltitude.horizonKm} km)`);
+    cons.push('Shoots nothing itself');
+    return { pros, cons };
+  }
+  const best = [...THREAT_CLASSES].filter((c) => e.killRate[c] >= 0.75);
+  const none = THREAT_CLASSES.filter((c) => e.killRate[c] <= 0 || e.altitudeKm < C.threatAltitudeKm[c]);
+  if (best.length) pros.push(`Strong against ${best.map((c) => THREAT_LABELS[c].toLowerCase() + 's').join(', ')}`);
+  if (isUnlimited(e)) pros.push('Never runs out of shots');
+  if ((e.roundCr ?? 99) <= 0.2) pros.push('Rounds cost almost nothing');
+  if (e.rangeKm >= 100) pros.push('Covers a wide area against high fliers');
+  if (e.reactionSec <= 4) pros.push('Reacts very quickly');
+  if (Number.isFinite(channelsOf(e)) && channelsOf(e) >= 6) pros.push('Handles many threats at once');
+  if (e.loadouts) pros.push('Can be loaded with a cheaper or a more capable mix of interceptors');
+  if (none.length) cons.push(`Cannot engage ${none.map((c) => THREAT_LABELS[c].toLowerCase() + 's').join(', ')}`);
+  if (e.rangeKm <= 6) cons.push('Reaches only a few kilometres: it must stand at the site it protects');
+  if (!e.radar) cons.push('No radar of its own: needs another sensor nearby, and is less accurate at night if aimed by eye or heat-seeker');
+  if ((e.roundCr ?? 0) >= 8) cons.push('Very expensive rounds: wasteful against drones and decoys');
+  if (e.magazine <= 8 && !isUnlimited(e)) cons.push('Small magazine');
+  if (channelsOf(e) <= 1) cons.push('Engages one threat at a time: easily saturated');
+  if (e.domain === 'sea') cons.push('Must be placed at sea');
+  return { pros, cons };
+}
+
+function Equipment() {
+  const [open, setOpen] = useState<string | null>(null);
+  const layers = Object.keys(LAYER_LABELS) as DefenseLayer[];
+  return (
+    <>
+      <H>Every system in the catalog</H>
+      <P>Range, ceiling and radar band follow official public statements by the manufacturer or a government, listed under each entry, where such statements exist. Chances to stop a threat, reaction times, prices, round prices and the number of threats handled at once are the game’s own values, chosen for play. Nothing here comes from classified or leaked material.</P>
+      {layers.map((l) => (
+        <section key={l}>
+          <H><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45" style={{ background: LAYER_COLOR[l] }} />{LAYER_LABELS[l]}</H>
+          <ul className="mt-1 space-y-1">
+            {EQUIPMENT.filter((e) => e.layer === l).map((e) => {
+              const isOpen = open === e.id;
+              const { pros, cons } = prosCons(e);
+              return (
+                <li key={e.id} className="rounded border border-ops-line">
+                  <button className="flex w-full items-baseline justify-between gap-2 px-2 py-1.5 text-left hover:bg-ops-cyan/5" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : e.id)}>
+                    <span><span className="font-sans text-[13px] font-semibold text-white">{e.name}</span> <span className="text-[10px] text-ops-dim">{e.origin}{e.generic ? ' · a kind of equipment, not a named product' : ''}</span></span>
+                    <span className="shrink-0 text-[11px] text-ops-green">{equipmentCost(e)} cr {isOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="space-y-1.5 border-t border-ops-line px-2 py-2 text-[12px] leading-relaxed">
+                      <p>{e.description}</p>
+                      <p className="text-ops-dim">
+                        {e.lure ? 'Range: none. ' : `${isEffector(e) ? 'Range' : 'Detects to'} ${e.rangeKm} km. `}
+                        {isEffector(e) && `Ceiling ${e.altitudeKm} km. ${isUnlimited(e) ? 'Unlimited shots. ' : `${e.magazine} rounds${e.roundCr !== undefined ? ` at ${e.roundCr} cr each` : ''}. `}Reacts in ${e.reactionSec} s. Handles ${Number.isFinite(channelsOf(e)) ? `${channelsOf(e) * TACTICAL_CONFIG.saturationPasses} threats a wave` : 'any number of threats'}. `}
+                        {e.radar ? `Radar: ${e.radar.name}, ${e.radar.band}-band, sees ${e.radar.rangeKm} km.` : e.lure ? '' : 'No radar.'}
+                      </p>
+                      {isEffector(e) && (
+                        <p className="text-ops-dim">Chance one shot stops: {THREAT_CLASSES.filter((c) => e.killRate[c] > 0).map((c) => `${THREAT_LABELS[c].toLowerCase()} ${pct(e.killRate[c])}`).join(' · ') || 'nothing'}.</p>
+                      )}
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div><div className="label text-ops-green">Good at</div><ul className="list-disc pl-4">{pros.map((x) => <li key={x}>{x}</li>)}{!pros.length && <li className="text-ops-dim">No particular strength: a generalist.</li>}</ul></div>
+                        <div><div className="label text-ops-amber">Watch out</div><ul className="list-disc pl-4">{cons.map((x) => <li key={x}>{x}</li>)}{!cons.length && <li className="text-ops-dim">Nothing in particular.</li>}</ul></div>
+                      </div>
+                      {e.loadouts && (
+                        <div><div className="label">Interceptor loads (chosen in a briefing)</div>
+                          <ul className="list-disc pl-4"><li><B>Standard mix.</B> The figures above.</li>{e.loadouts.map((x) => <li key={x.id}><B>{x.label}.</B> {x.text}</li>)}</ul>
+                        </div>
+                      )}
+                      <div>
+                        <div className="label">Official sources</div>
+                        {e.sources.length ? (
+                          <ul className="list-disc pl-4 text-[11px]">
+                            {e.sources.map((src) => <li key={src.name}>{src.url ? <a className="text-ops-cyan underline" href={src.url} target="_blank" rel="noreferrer noopener">{src.name}</a> : src.name}</li>)}
+                          </ul>
+                        ) : <p className="text-[11px] text-ops-dim">{e.generic ? 'A generic kind of equipment: every figure is the game’s own.' : 'No official figures were used: every figure is the game’s own.'}</p>}
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </>
   );
 }
@@ -266,8 +388,18 @@ function Start() {
       <List items={[
         <>New to all of this: open the <B>Training Academy</B> from the start screen. Lesson 1 takes five minutes and a coach points at every control.</>,
         <>Want to try the fighting first: play a <B>Quick Battle</B> from the start screen. One region, three waves, five minutes, and no reports or maintenance to think about.</>,
+        <>Want to see why a shot hits or misses: the <B>Practice range</B> at the top of the Training Academy fires one system at one threat and shows the dice.</>,
+        <>Want it done for you the first time: on the deploy screen, <B>Propose a defense</B> has the adjutant lay out a complete defense for a region, which you can accept, change or ignore.</>,
         <>Want the whole game: start a <B>Campaign</B> on <B>Recruit</B> and read <B>Your first phase</B> on the next tab.</>,
         <>Stuck on a word: the <B>Glossary</B> tab explains every term and abbreviation the game uses.</>,
+      ]} />
+      <H>Ways to play</H>
+      <List items={[
+        <><B>Campaign.</B> Four phases across seven regions. Choose an open campaign or a written one: {Object.values(STORIES).map((x) => x.name).join(' or ')}.</>,
+        <><B>Quick Battle.</B> One region, three waves.</>,
+        <><B>Endless Defense.</B> One region, a bigger wave every time, a briefing between each. Your score is the waves survived.</>,
+        <><B>Raid Designer.</B> Play the attacker: write a raid and hand it to a friend (by passing the keyboard or sending a code), or send it against the computer’s defense.</>,
+        <><B>Crisis</B> and <B>Sandbox.</B> Network management without, or with, the fighting.</>,
       ]} />
       <H>How to do well</H>
       <List items={[
@@ -337,6 +469,12 @@ function Phase() {
         <><B>Storms</B> shorten radar range according to the radar’s band (see <B>Radar bands</B>): from no loss for UHF down to {pct(RADAR_BANDS.Ku.storm)} of normal range for Ku. Passive sensors keep {pct(PASSIVE_SENSOR.storm)}. The deploy screen lists the storms expected in each region.</>,
         <><B>Night</B> runs from {WEATHER.night[0]}:00 to 0{WEATHER.night[1]}:00 local time. Weapons aimed by eye or heat-seeker (Stinger, Avenger, ZU-23-2) hit {Math.round((1 - WEATHER.nightKill) * 100)}% less often in the dark. About {pct(WEATHER.nightRaids)} of raids are timed for night.</>,
       ]} />
+      <H>Repair crews</H>
+      <P>Maintenance crews with nothing else to do will rebuild damaged sites, but only the ones you send them to. In the Tactical Theater, the Damaged sites panel lists what is broken: press <B>Send crews</B>, and reorder the queue with <B>Move to first</B>. Crews busy with maintenance or responses repair nothing, so when crews are short you are choosing what gets rebuilt first.</P>
+      <H>Reinforcements and the campaign path</H>
+      <P>Before each phase after the first, one region can be reinforced: its sites are repaired by {C.reinforce.integrity} points, its stability rises, and resupply there is free for that phase. You are offered the forecast regions and the worst-hit region outside the forecast. The briefing shows the path your choices have traced.</P>
+      <H>Defense industry</H>
+      <P>The Defense Industry Expansion investment (three levels) adds a quarter of a magazine per unit to every interceptor stockpile and cuts round prices by {Math.round(C.industry.price * 100)}% a level.</P>
       <H>Research</H>
       <P>The Logistics screen offers four research programmes. Each is paid for once, takes a day or two, and then lasts for the rest of the scenario:</P>
       <List items={INVESTMENTS.filter((i) => i.once).map((i) => <><B>{i.label.replace('Research: ', '')}</B> ({i.credits} credits, {i.hours} hours). {i.description}</>)} />
@@ -426,21 +564,26 @@ export const GLOSSARY: [string, string][] = [
   ['cr', 'Credits, the game’s money.'],
   ['Crew', 'A maintenance team. Each can do one job at a time.'],
   ['Cue', 'When one sensor tells a shooter where to look. How good the cue is depends on the sensor’s radar band.'],
+  ['Decoy emitter', 'A cheap fake radar of your own, placed to be shot at instead of the real ones.'],
   ['Decoy / false track', 'A fake threat that does no damage but can draw fire.'],
   ['Domain', 'One of the four parts of the network: Space, Air, Sea and Ground.'],
   ['Effector / shooter / interceptor', 'Anything that destroys threats: guns, missiles, lasers, jammers.'],
   ['Escalation', 'What happens when a report is left until its time runs out: lasting damage, and sometimes a new problem.'],
   ['Elite / Veteran', 'Ranks a unit earns by stopping threats: it reacts faster.'],
+  ['Escalation', 'The enemy bringing heavier weapons because your defense has held.'],
   ['Fire orders', 'A shooter’s standing instructions: engage everything, missiles only, or backup.'],
   ['Forecast', 'The briefing’s prediction of which regions will be attacked this phase.'],
   ['Hypersonic glider (HG)', 'The rarest and most damaging threat: very fast, swerves in flight, and only a few systems can touch it.'],
   ['Integrity', 'A site’s health, from 100 (untouched) to 0 (destroyed).'],
   ['Jamming', 'On Commander, the enemy blinds one radar band for a phase: the band most of your radars use.'],
+  ['Hand-off', 'A later layer stopping a threat an earlier one fired at and missed.'],
   ['Layer', 'A family of defenses grouped by reach, from close-in guns to the upper tier.'],
   ['Magazine / rounds', 'The shots a system holds before it needs resupply.'],
   ['Network health', 'The state of communications worldwide. Every domain depends on it.'],
   ['Phase', 'One chapter of a campaign: a briefing followed by two or three simulated days.'],
   ['Quick Battle', 'A five-minute game: one region, three waves, a fixed budget, nothing else to manage.'],
+  ['Saturated', 'A system already engaging as many threats as it can handle in one wave.'],
+  ['Shoot and scoot', 'Orders for a ground unit to move a short way after firing, so it cannot be hit where it stood.'],
   ['Radar horizon', 'The distance beyond which a ground radar cannot see low-flying threats, because the ground and hills are in the way.'],
   ['Raw / effective readiness', 'Raw is a domain’s own equipment condition. Effective is what is left after weakness in the domains it depends on.'],
   ['Readiness', 'How fit for use your equipment is, as a percentage.'],
@@ -479,7 +622,7 @@ function Keys() {
   return (
     <div className="space-y-4">
       <table className="table-ops w-full"><tbody>{KEYS.map(([k, d]) => <tr key={k}><td className="w-36"><kbd className="rounded border border-ops-line px-1.5 text-ops-cyan">{k}</kbd></td><td>{d}</td></tr>)}</tbody></table>
-      <p className="text-[11px] text-ops-dim">Shortcuts are off while a window such as a briefing or a report is open. On the deploy map you can also Tab to the map, move with the arrow keys and press Enter to place.</p>
+      <p className="text-[11px] text-ops-dim">Shortcuts are off while a window such as a briefing or a report is open. The deploy screen can be worked entirely from the keyboard: Tab to a system in the catalog and press Enter, move the cursor on the map with the arrow keys (Shift for bigger steps), Enter to place. [ and ] change region, U undoes the last placement, Tab reaches placed systems, M moves the selected one and Delete takes it back. The ½x speed button slows the game for watching a wave closely.</p>
       <div className="rounded border border-ops-line p-3">
         <div className="label mb-2">Display & accessibility</div>
         <DisplaySettings />
@@ -488,8 +631,9 @@ function Keys() {
   );
 }
 
-const PAGES: Record<GuideTab, () => JSX.Element> = {
-  start: Start, first: First, threats: Threats, defenses: Defenses, bands: Bands, phase: Phase, network: Network, score: Score, glossary: Glossary, keys: Keys,
+/** Each section of the guide, by tab. Exported so tests can render every page. */
+export const PAGES: Record<GuideTab, () => JSX.Element> = {
+  start: Start, first: First, threats: Threats, defenses: Defenses, equipment: Equipment, bands: Bands, phase: Phase, network: Network, score: Score, glossary: Glossary, keys: Keys,
 };
 
 export function GuideModal() {

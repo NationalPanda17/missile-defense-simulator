@@ -3,8 +3,8 @@
 // Shift for bigger steps — and press Enter); without it, a read-only display.
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
-  EQUIPMENT_MAP, TACTICAL_CONFIG, TERRAIN_PROFILES, canEngage, canEngageClass, detectionRange, isEffector, isUnlimited,
-  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState, conditionsAt } from '../../../engine';
+  EQUIPMENT_MAP, TACTICAL_CONFIG, TERRAIN_PROFILES, canEngage, canEngageClass, detectionRange, engageRange, inCity, isEffector, isUnlimited, sensorTraits,
+  lowHorizonKm, masked, placementError, type Deployment, type EquipmentSpec, type RegionId, type SimState, conditionsAt, localHour } from '../../../engine';
 import { store } from '../../../store/simStore';
 import { LAYER_COLOR, SiteMarker, SystemIcon } from './icons';
 import { fanOut, layoutLabels, textWidth, type Box, type LabelRequest } from './labels';
@@ -61,7 +61,8 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
   const terrain = t.terrain?.[region];
   const sites = t.sites.filter((x) => x.region === region);
   const deps = t.deployments.filter((d) => d.region === region && (replayAt === undefined || d.deployedAt <= replayAt));
-  const axes = [...new Set(t.waves.filter((w) => w.phaseIndex === s.phaseIndex && w.forecast && w.region === region).map((w) => w.axis))];
+  const axes = [...new Set(t.waves.filter((w) => w.phaseIndex === s.phaseIndex && w.forecast && w.region === region).flatMap((w) => (w.axis2 ? [w.axis, w.axis2] : [w.axis])))];
+  const stormNow = conditionsAt(s, region, Math.floor(replayAt ?? s.hour)).storm;
   const topImportance = Math.max(...sites.map((x) => x.importance));
 
   // Systems redeploying inside this region glide to their new spot: a light per-frame loop rewrites their transform.
@@ -199,13 +200,14 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
       {deps.map((d) => {
         const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
         const col = LAYER_COLOR[spec.layer];
-        const sensorR = spec.layer === 'detection' ? spec.rangeKm : spec.radar?.rangeKm ?? 0;
+        // A silent radar sees nothing; a storm shortens what the others see, by their band.
+        const sensorR = d.emcon || spec.lure ? 0 : (spec.layer === 'detection' ? spec.rangeKm : spec.radar?.rangeKm ?? 0) * (stormNow ? sensorTraits(spec).storm : 1);
         const sel = d.id === selectedId;
         const lowR = spec.domain === 'air' ? 0 : horizon(d);
         return (
           <g key={`r${d.id}`} pointerEvents="none">
             {sensorR > 0 && <circle cx={d.x} cy={d.y} r={Math.min(sensorR, 1200)} fill="none" stroke={col} strokeOpacity={sel ? 0.55 : 0.28} strokeDasharray="4 5" />}
-            {isEffector(spec) && <circle cx={d.x} cy={d.y} r={Math.min(spec.rangeKm, 1200)} fill={col} fillOpacity={sel ? 0.06 : 0.025} stroke={col} strokeOpacity={sel ? 1 : 0.6} strokeWidth={sel ? 2 : 1} />}
+            {isEffector(spec) && <circle cx={d.x} cy={d.y} r={Math.min(engageRange(terrain, d, spec), 1200)} fill={col} fillOpacity={sel ? 0.06 : 0.025} stroke={col} strokeOpacity={sel ? 1 : 0.6} strokeWidth={sel ? 2 : 1} />}
             {isEffector(spec) && lowR > 0 && spec.rangeKm > lowR && (
               <circle cx={d.x} cy={d.y} r={lowR} fill="none" stroke={col} strokeOpacity={sel ? 0.9 : 0.45} strokeDasharray="1 3" strokeWidth={1.5} />
             )}
@@ -289,6 +291,10 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
             <SystemIcon spec={ghost} status={ghostError ? 'down' : 'ok'} />
             {ghostError && <rect x={-11} y={-11} width={22} height={22} rx={4} fill="#f2545b" fillOpacity={0.35} />}
           </g>
+          {!ghostError && inCity(terrain, ghost, ghostAt[0], ghostAt[1]) && (
+            <text x={Math.min(W - 6, Math.max(6, ghostAt[0]))} y={ghostAt[1] + 26} textAnchor={ghostAt[0] < 150 ? 'start' : ghostAt[0] > W - 150 ? 'end' : 'middle'}
+              fontSize={10.5} fontWeight={600} fill="#f5b13d" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>Among the buildings: {Math.round((1 - TACTICAL_CONFIG.urban.reach) * 100)}% less reach. Place it on the city’s edge.</text>
+          )}
           {ghostError && (
             <text x={Math.min(W - 6, Math.max(6, ghostAt[0]))} y={ghostAt[1] + 26} textAnchor={ghostAt[0] < 120 ? 'start' : ghostAt[0] > W - 120 ? 'end' : 'middle'}
               fontSize={11} fontWeight={600} fill="#f2545b" style={{ paintOrder: 'stroke' }} stroke="#06111f" strokeWidth={3}>{ghostError}</text>
@@ -305,19 +311,48 @@ export function TheaterMap({ s, region, ghost = null, selectedId, onPoint, onPic
   );
 }
 
-/** Darkness at night and rain hatching in a storm, over the whole theater. */
+/**
+ * Light and weather over the theater: dusk and dawn tint, darkness at night, and in a storm drifting cells of cloud
+ * with rain under them. The radar rings drawn above shrink in a storm by each radar's band.
+ */
 function WeatherOverlay({ s, region, hour }: { s: SimState; region: RegionId; hour: number }) {
   const c = conditionsAt(s, region, Math.floor(hour));
-  if (!c.night && !c.storm) return null;
+  const local = localHour(s, region, hour);
+  // 0 in full day, 1 in full night, easing through an hour and a half of dusk and dawn.
+  const dark = local >= 20 || local < 5 ? 1 : local >= 18.5 ? (local - 18.5) / 1.5 : local < 6.5 ? 1 - (local - 5) / 1.5 : 0;
+  const twilight = dark > 0 && dark < 1;
+  if (!dark && !c.storm) return null;
+  // Storm cells: placed from the hour's block so they hold still across renders, then drift on their own.
+  const block = Math.floor(hour / 12);
+  const cells = c.storm ? Array.from({ length: 5 }, (_, i) => ({
+    x: ((block * 97 + i * 151) % 100) / 100 * W, y: ((block * 53 + i * 89) % 100) / 100 * H, r: 90 + ((block * 31 + i * 47) % 70), dur: 26 + i * 7,
+  })) : [];
   return (
     <g pointerEvents="none" aria-hidden>
       <defs>
         <pattern id={`rain-${region}`} width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(20)">
           <line x1="0" y1="0" x2="0" y2="9" stroke="#9fb7d6" strokeOpacity="0.35" strokeWidth="1" />
         </pattern>
+        <radialGradient id={`cell-${region}`}>
+          <stop offset="0%" stopColor="#8fa6c4" stopOpacity={0.5} />
+          <stop offset="60%" stopColor="#6b84a6" stopOpacity={0.28} />
+          <stop offset="100%" stopColor="#6b84a6" stopOpacity={0} />
+        </radialGradient>
+        <linearGradient id={`dusk-${region}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={local < 12 ? '#3b2a5c' : '#c2622a'} stopOpacity={0.3} />
+          <stop offset="100%" stopColor={local < 12 ? '#c2622a' : '#3b2a5c'} stopOpacity={0.3} />
+        </linearGradient>
       </defs>
-      {c.night && <rect x={0} y={0} width={W} height={H} fill="#02040a" fillOpacity={0.28} />}
-      {c.storm && <rect x={0} y={0} width={W} height={H} fill={`url(#rain-${region})`} />}
+      {twilight && <rect x={0} y={0} width={W} height={H} fill={`url(#dusk-${region})`} opacity={1 - Math.abs(dark - 0.5) * 2 + 0.25} />}
+      {dark > 0 && <rect x={0} y={0} width={W} height={H} fill="#02040a" fillOpacity={0.3 * dark} />}
+      {c.storm && <rect x={0} y={0} width={W} height={H} fill={`url(#rain-${region})`} opacity={0.6} />}
+      {cells.map((cell, i) => (
+        <g key={i}>
+          <ellipse cx={cell.x} cy={cell.y} rx={cell.r * 1.4} ry={cell.r} fill={`url(#cell-${region})`}>
+            <animateTransform attributeName="transform" type="translate" values={`-60 0; 60 ${i % 2 ? 18 : -18}; -60 0`} dur={`${cell.dur}s`} repeatCount="indefinite" />
+          </ellipse>
+        </g>
+      ))}
     </g>
   );
 }
@@ -332,6 +367,7 @@ export function MapLegend({ region }: { region: RegionId }) {
       <span className="flex items-center gap-1">{sw('#38d6f5', '1 3', 1.5)}reach vs low-flying threats</span>
       <span className="flex items-center gap-1">{sw('#a78bfa', '4 5')}radar</span>
       <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#7a6a45]" />high ground: blocks low line of sight, doubles radar horizon</span>
+      <span className="flex items-center gap-1">{sw('#7fb58a', '6 4', 1.5)}valley: low fliers inside are hidden from systems outside it</span>
       <span className="flex items-center gap-1"><span className="inline-block h-1 w-4 rounded bg-ops-green" />rounds left</span>
       <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-ops-green" />status</span>
       <span className="flex items-center gap-1"><svg width="14" height="14" viewBox="-7 -7 14 14" aria-hidden><circle r={5.5} fill="none" stroke="#dbe7f6" strokeWidth={1.6} strokeDasharray="22 40" transform="rotate(-90)" /></svg>site integrity</span>

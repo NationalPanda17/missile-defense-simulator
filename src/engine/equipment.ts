@@ -101,7 +101,25 @@ export interface EquipmentSpec {
    */
   roundCr?: number;
   generic?: boolean; // a class of equipment rather than a named product
+  /** A decoy emitter: it does nothing but draw the missiles that hunt radars. */
+  lure?: boolean;
+  /**
+   * Interceptor loads the system can be given in a briefing. That the system fires more than one interceptor type
+   * is from the listed official sources; what each load does in the game (price and effect) is the game's own.
+   */
+  loadouts?: Loadout[];
   sources: Source[];
+}
+
+/** One way of loading a system's launchers. Multipliers apply to the standard figures. */
+export interface Loadout {
+  id: string;
+  label: string;
+  text: string;
+  /** × the price of each round. */
+  price: number;
+  /** × the chance to stop each threat class (classes left out are unchanged). */
+  kill: Partial<Record<ThreatClass, number>>;
 }
 
 /** An official public reference (manufacturer or government). `url` only where a working page was found. */
@@ -162,6 +180,12 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Listens for drone control and video links. Cheap, short range, invisible to the enemy.',
     rangeKm: 10, altitudeKm: 3, unitCostUsdM: 0.5, killRate: NONE, reactionSec: 1,
     radar: null, magazine: 0, reloadHours: 0, generic: true, sources: [],
+  },
+  {
+    id: 'decoy-emitter', name: 'Decoy emitter', origin: 'Generic', domain: 'ground', layer: 'detection',
+    description: 'A cheap transmitter that looks like a radar to the missiles that hunt radars. It sees nothing; it is there to be shot at instead of the real thing.',
+    rangeKm: 1, altitudeKm: 1, unitCostUsdM: 1, killRate: NONE, reactionSec: 1,
+    radar: null, magazine: 0, reloadHours: 0, generic: true, lure: true, sources: [],
   },
   {
     id: 'acoustic-net', name: 'Acoustic sensor network', origin: 'Generic', domain: 'ground', layer: 'detection',
@@ -263,7 +287,11 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Networked launchers firing AMRAAM missiles, cued by the Sentinel radar.',
     rangeKm: 30, altitudeKm: 16, unitCostUsdM: 150, killRate: kr(0.85, 0.85, 0.8, 0.1, 0), reactionSec: 8,
     radar: { name: 'AN/MPQ-64F1', band: 'X', rangeKm: 75 }, magazine: 18, roundCr: 4, reloadHours: 4,
-    sources: [{ name: 'Kongsberg, NASAMS brochure (2026)', url: 'https://www.kongsberg.com/globalassets/kongsberg/1.-what-we-do/1.-defence-and-security/intergrated-air-and-missile-defence/nasams-air-defence-system/nasams_brochure_2026.pdf' }],
+    loadouts: [
+      { id: 'short', label: 'More AIM-9X', text: 'Weighted toward the short-range missile: cheaper rounds, a little better against drones, weaker against cruise missiles.', price: 0.6, kill: { slowDrone: 1.05, fastDrone: 1.05, cruise: 0.8 } },
+      { id: 'long', label: 'More AMRAAM-ER', text: 'Weighted toward the extended-range missile: dearer rounds, better against cruise missiles.', price: 1.5, kill: { cruise: 1.12 } },
+    ],
+    sources: [{ name: 'Kongsberg, NASAMS air defence system page (AMRAAM, AMRAAM-ER and AIM-9X-2)', url: 'https://www.kongsberg.com/kda/what-we-do/defence-and-security/integrated-air-and-missile-defence/nasams-air-defence-system/' }, { name: 'Kongsberg, NASAMS brochure (2026)', url: 'https://www.kongsberg.com/globalassets/kongsberg/1.-what-we-do/1.-defence-and-security/intergrated-air-and-missile-defence/nasams-air-defence-system/nasams_brochure_2026.pdf' }],
   },
   {
     id: 'iris-t-slm', name: 'IRIS-T SLM', origin: 'Germany', domain: 'ground', layer: 'shortMedium',
@@ -298,6 +326,10 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Modular system that mixes 35, 70 and 150 km interceptors from one launcher. Medium-range set here.',
     rangeKm: 70, altitudeKm: 20, unitCostUsdM: 200, killRate: kr(0.8, 0.85, 0.85, 0.3, 0.3), reactionSec: 7,
     radar: { name: 'EL/M-2084', band: 'S', rangeKm: 250 }, magazine: 24, roundCr: 4, reloadHours: 4,
+    loadouts: [
+      { id: 'mr', label: 'More medium-range interceptors', text: 'Weighted toward the 35 km interceptor: cheaper rounds, weaker against ballistic missiles.', price: 0.65, kill: { ballistic: 0.6 } },
+      { id: 'er', label: 'More extended-range interceptors', text: 'Weighted toward the 150 km interceptor: dearer rounds, better against ballistic missiles.', price: 1.5, kill: { ballistic: 1.3 } },
+    ],
     sources: [{ name: 'Israel Aerospace Industries, Barak MX product page', url: 'https://www.iai.co.il/product/barak-mx-naval/' }, { name: 'Israel Aerospace Industries, Barak ER product page', url: 'https://www.iai.co.il/p/barak-er' }],
   },
   {
@@ -314,7 +346,11 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Hit-to-kill interceptors against ballistic missiles, cruise missiles and aircraft.',
     rangeKm: 60, altitudeKm: 30, unitCostUsdM: 1100, killRate: kr(0.7, 0.8, 0.85, 0.3, 0.75, 0.35), reactionSec: 9,
     radar: { name: 'AN/MPQ-65', band: 'C', rangeKm: 150 }, magazine: 48, roundCr: 10, reloadHours: 6,
-    sources: [{ name: 'Lockheed Martin, PAC-3 MSE product card', url: 'https://www.lockheedmartin.com/content/dam/lockheed-martin/mfc/pc/meads/mfc-pac-3-mse-pc.pdf' }],
+    loadouts: [
+      { id: 'gem', label: 'More GEM-family missiles', text: 'Weighted toward the lower-cost Guidance Enhanced Missile: cheaper rounds, good against aircraft-like threats, weaker against ballistic missiles.', price: 0.55, kill: { ballistic: 0.7, hypersonic: 0.6 } },
+      { id: 'mse', label: 'All PAC-3 MSE', text: 'Only hit-to-kill interceptors: the dearest rounds, at their best against ballistic missiles.', price: 1.35, kill: { ballistic: 1.1, hypersonic: 1.1 } },
+    ],
+    sources: [{ name: 'RTX (Raytheon), Global Patriot Solutions page (Guidance Enhanced Missile family)', url: 'https://www.rtx.com/raytheon/what-we-do/integrated-air-and-missile-defense/global-patriot-solutions' }, { name: 'Lockheed Martin, PAC-3 MSE product card', url: 'https://www.lockheedmartin.com/content/dam/lockheed-martin/mfc/pc/meads/mfc-pac-3-mse-pc.pdf' }],
   },
   {
     id: 'samp-t-ng', name: 'SAMP/T NG', origin: 'France / Italy', domain: 'ground', layer: 'long',
@@ -360,6 +396,10 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Guided-missile destroyer defending a wide area against aircraft and cruise missiles.',
     rangeKm: 240, altitudeKm: 30, unitCostUsdM: 2200, killRate: kr(0.7, 0.85, 0.9, 0.2, 0.6, 0.5), reactionSec: 8,
     radar: { name: 'AN/SPY-1D', band: 'S', rangeKm: 320 }, magazine: 40, roundCr: 12, reloadHours: 24,
+    loadouts: [
+      { id: 'sm2', label: 'More SM-2', text: 'Weighted toward SM-2: cheaper rounds for aircraft-like threats, weaker against ballistic missiles and gliders.', price: 0.6, kill: { ballistic: 0.6, hypersonic: 0.6 } },
+      { id: 'sm6', label: 'More SM-6', text: 'Weighted toward SM-6: dearer rounds, better against ballistic missiles and gliders.', price: 1.4, kill: { ballistic: 1.15, hypersonic: 1.15 } },
+    ],
     sources: [{ name: 'RTX (Raytheon), Standard Missile-6 product information' }],
   },
   {
@@ -374,6 +414,10 @@ export const EQUIPMENT: EquipmentSpec[] = [
     description: 'Air defense destroyer with Aster 15 and Aster 30 missiles and the SAMPSON radar.',
     rangeKm: 120, altitudeKm: 20, unitCostUsdM: 1300, killRate: kr(0.75, 0.85, 0.9, 0.2, 0.3), reactionSec: 7,
     radar: { name: 'SAMPSON', band: 'S', rangeKm: 400 }, magazine: 48, roundCr: 8, reloadHours: 24,
+    loadouts: [
+      { id: 'a15', label: 'More Aster 15', text: 'Weighted toward the shorter-range Aster 15: cheaper rounds, weaker against ballistic missiles.', price: 0.65, kill: { ballistic: 0.6 } },
+      { id: 'a30', label: 'More Aster 30', text: 'Weighted toward Aster 30: dearer rounds, better against ballistic missiles.', price: 1.4, kill: { ballistic: 1.25 } },
+    ],
     sources: [{ name: 'Royal Navy, Daring class (Type 45) page', url: 'https://www.royalnavy.mod.uk/equipment/ships/daring-class' }, { name: 'UK Government, Royal Navy fires Sea Viper from Type 45 destroyer', url: 'https://gov.uk/government/news/royal-navy-fires-sea-viper-from-type-45-destroyer' }],
   },
 ];
@@ -400,3 +444,20 @@ export function equipmentCost(spec: EquipmentSpec): number {
 export function equipmentUpkeep(spec: EquipmentSpec): number {
   return Math.max(0.01, Math.round(equipmentCost(spec) * TACTICAL_CONFIG.upkeepRate * 100) / 100);
 }
+
+/**
+ * How many threats a system can engage in one pass of a wave: a game value by kind of system, not a published
+ * figure. Area weapons (jammers, microwave) have no limit.
+ */
+export function channelsOf(spec: EquipmentSpec): number {
+  if (!isEffector(spec)) return 0;
+  if (spec.magazine >= TACTICAL_CONFIG.unlimitedMagazine && spec.layer === 'pointDefense') return Infinity; // jammers, microwave
+  if (spec.layer === 'directedEnergy') return 1;
+  if (spec.domain === 'sea') return 10;
+  if (spec.layer === 'upper' || spec.layer === 'long') return 6;
+  if (spec.layer === 'shortMedium') return 4;
+  return spec.radar ? 2 : 1; // guns and launcher teams
+}
+
+/** A deployment's chosen interceptor load, or null for the standard mix. */
+export const loadoutOf = (spec: EquipmentSpec, id: string | undefined): Loadout | null => spec.loadouts?.find((l) => l.id === id) ?? null;

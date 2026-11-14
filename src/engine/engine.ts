@@ -2,6 +2,7 @@
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
 import { restockStockpiles } from './tactical';
 import { autoResupply } from './actions';
+import { lessonOf } from './training';
 import { siteDamageShare } from './sites';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
 import { isActive, isLive, recomputeMetrics } from './metrics';
@@ -347,6 +348,9 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
         s.regions[region].infrastructure = clamp(s.regions[region].infrastructure + 8);
       }
       break;
+    case 'industry':
+      s.industry = Math.min(TACTICAL_CONFIG.industry.max, (s.industry ?? 0) + 1);
+      break;
     case 'modernize':
       s.modernization = Math.min(30, s.modernization + 6);
       for (const a of s.assets) a.upkeep *= 0.9;
@@ -480,9 +484,12 @@ export function endPhase(s: SimState) {
   const met = results.filter((r) => r.met).length;
   log(s, met === results.length ? 'success' : 'warn', `PHASE ${phase.id} "${phase.name}" complete — ${met}/${results.length} objectives met.`);
   s.paused = true;
-  if (s.phaseIndex < s.phases.length - 1) {
+  // Endless Defense ends when half the region's site value is gone.
+  const fallen = !!lessonOf(s)?.endless && REGION_IDS.some((r) => s.tactical?.forecast.includes(r) && siteDamageShare(s, r) >= lessonOf(s)!.endless!.fallAt);
+  if (s.phaseIndex < s.phases.length - 1 && !fallen) {
     // Where the next phase starts from, for its "raise it during the phase" objectives: taken now, before the
     // briefing, so maintenance ordered in the briefing cannot lower the starting line.
+    recomputeMetrics(s);
     s.phaseStart = { readiness: s.metrics.globalReadiness, infrastructure: s.metrics.infrastructure };
     s.phaseIndex += 1;
     s.status = 'briefing';

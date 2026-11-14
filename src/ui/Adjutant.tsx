@@ -48,7 +48,7 @@ const ICON: Record<Advice['level'], string> = { urgent: '⚠', warn: '▲', info
 
 /** The current advice the player hasn't dismissed. */
 export function useAdvice(s: SimState): Advice[] {
-  useSyncExternalStore(subscribe, pref);
+  useSyncExternalStore(subscribe, pref, pref);
   if (!adjutantOn(s)) return [];
   const gone = dismissedFor(s);
   return advise(s).filter((a) => !gone.has(a.id));
@@ -90,7 +90,7 @@ export function AdviceList({ s, items, onDeploy, compact }: { s: SimState; items
 
 /** Sidebar section. Announces new urgent advice with a toast so it isn't missed while looking elsewhere. */
 export function AdjutantSection({ s }: { s: SimState }) {
-  const on = useSyncExternalStore(subscribe, () => adjutantOn(s));
+  const on = useSyncExternalStore(subscribe, () => adjutantOn(s), () => adjutantOn(s));
   const items = useAdvice(s);
   const seen = useRef(new Set<string>());
   useEffect(() => {
