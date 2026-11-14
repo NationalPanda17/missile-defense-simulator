@@ -5,7 +5,7 @@ import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
-  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour } from '../../engine';
+  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, pointAlong, trackPath } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
 import { CLASS_SHORT, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
@@ -24,6 +24,7 @@ const reducedMotion = () => {
 /** Where along its path (0-1) a track ends: where it was stopped, or 1 at its target. */
 function endFraction(s: SimState, tr: Track, target: [number, number]): number {
   if (!tr.stoppedBy) return 1;
+  if (tr.stopAt !== undefined) return tr.stopAt; // recorded when the wave was decided
   const d = s.tactical!.deployments.find((x) => x.id === tr.stoppedBy);
   const spec = d && EQUIPMENT_MAP.get(d.equipmentId);
   if (!d || !spec) return 0.8;
@@ -70,14 +71,16 @@ function WaveReplay({ s, wave }: { s: SimState; wave: ThreatWave }) {
         const delay = (i / Math.max(1, wave.tracks.length)) * 0.35; // stagger launches
         const local = Math.max(0, Math.min(1, (p - delay) / (1 - delay - 0.1)));
         const f = local * end;
-        const x = tr.from[0] + (target[0] - tr.from[0]) * f;
-        const y = tr.from[1] + (target[1] - tr.from[1]) * f;
+        // Along the real path, including any turn mid-flight.
+        const path = trackPath(tr, target);
+        const [x, y] = pointAlong(path, f).p;
+        const flown = [...path.slice(0, -1).filter((_, k) => k === 0 || f > 0.5), [x, y]] as [number, number][];
         const done = local >= 1;
         const hit = tr.outcome === 'leaked';
         const col = tr.decoy ? '#7088a8' : hit ? '#f2545b' : '#f5b13d';
         return (
           <g key={tr.id}>
-            <line x1={tr.from[0]} y1={tr.from[1]} x2={x} y2={y} stroke={col} strokeOpacity={0.35} strokeDasharray={tr.decoy ? '2 4' : undefined} />
+            <polyline points={(tr.via ? flown : [tr.from, [x, y]]).map((q) => q.join(',')).join(' ')} fill="none" stroke={col} strokeOpacity={0.35} strokeDasharray={tr.decoy ? '2 4' : undefined} />
             {!done && <circle cx={x} cy={y} r={3.5} fill={col} />}
             {done && (tr.outcome === 'stopped' || tr.outcome === 'decoyStopped') && (
               <g transform={`translate(${x},${y})`}><circle r={7} fill="none" stroke="#34d399" strokeWidth={2} /><path d="M-4,-4 L4,4 M4,-4 L-4,4" stroke="#34d399" strokeWidth={2} /></g>
@@ -115,8 +118,8 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
             {d.reloadRemaining !== undefined ? `Resupplying, ${d.reloadRemaining}h left` : `${d.stock}/${spec.magazine} rounds`}
             {Number.isFinite(reserve) && <span className={reserve === 0 ? 'text-ops-red' : ''} title="National stockpile for this type: resupply draws from it; restocked at each phase start"> · stockpile {reserve}</span>}
           </span>
-          <button data-coach="resupply" className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || rounds <= 0 || s.credits < cost}
-            title={rounds <= 0 && d.stock < spec.magazine ? 'The national stockpile is empty until the next phase' : rounds < spec.magazine - d.stock ? `Only ${rounds} rounds left in the stockpile` : undefined}
+          <button data-coach="resupply" className="btn px-2 py-0.5" disabled={d.reloadRemaining !== undefined || d.stock >= spec.magazine || rounds <= 0 || s.credits < cost || s.logistics < TACTICAL_CONFIG.minLogisticsForResupply}
+            title={s.logistics < TACTICAL_CONFIG.minLogisticsForResupply ? `Logistics capacity is below ${TACTICAL_CONFIG.minLogisticsForResupply}: no resupply runs until it recovers` : s.credits < cost && rounds > 0 ? 'Not enough credits' : rounds <= 0 && d.stock < spec.magazine ? 'The national stockpile is empty until the next phase' : rounds < spec.magazine - d.stock ? `Only ${rounds} rounds left in the stockpile` : undefined}
             onClick={() => dispatch({ type: 'resupply', deploymentId: d.id })}>
             Resupply{cost ? ` (${cost} cr)` : ''}
           </button>
@@ -201,7 +204,7 @@ export function TheaterView({ s }: { s: SimState }) {
 
   const prot = regionProtection(s, region);
   const regionWaves = t.waves.filter((w) => w.region === region && w.resolved).sort((a, b) => b.atHour - a.atHour);
-  const replay = t.waves.find((w) => w.id === replayId && w.region === region) ?? null;
+  const replay = regionWaves.find((w) => w.id === replayId) ?? regionWaves[0] ?? null;
   const deps = t.deployments.filter((d) => d.region === region);
   const st = t.stats;
   const real = replay?.tracks.filter((x) => !x.decoy) ?? [];
@@ -247,7 +250,7 @@ export function TheaterView({ s }: { s: SimState }) {
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
             ) : (
               <button data-coach="alert" className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
-                title={`Better detection and ${Math.round((1 - TACTICAL_CONFIG.alert.reactionMult) * 100)}% faster reactions for ${TACTICAL_CONFIG.alert.hours}h; equipment wears faster`}
+                title={s.status !== 'running' ? 'Alerts can be raised once the phase is running' : !deps.length ? 'Nothing is deployed here to put on alert' : s.credits < alertCost(s, region) ? 'Not enough credits' : `Better detection and ${Math.round((1 - TACTICAL_CONFIG.alert.reactionMult) * 100)}% faster reactions for ${TACTICAL_CONFIG.alert.hours}h; equipment wears faster`}
                 onClick={() => dispatch({ type: 'raiseAlert', region })}>
                 Raise alert ({alertCost(s, region)} cr, {TACTICAL_CONFIG.alert.hours}h)
               </button>
@@ -291,14 +294,14 @@ export function TheaterView({ s }: { s: SimState }) {
               <span className="text-ops-dim">No waves have reached {s.regions[region].name} yet this campaign.</span>
             )}
           </div>
-          {regionWaves.length > 1 && (
+          {regionWaves.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {regionWaves.map((w) => {
                 const r = w.tracks.filter((x) => !x.decoy);
                 const leaked = r.filter((x) => x.outcome === 'leaked').length;
                 if (w.applied === false) return <span key={w.id} className="chip border-ops-red/50 text-ops-red">T+{w.atHour}h in flight</span>;
                 return (
-                  <button key={w.id} className={`btn px-2 py-0.5 ${w.id === replayId ? 'btn-active' : ''}`} onClick={() => { setReplayId(w.id); setPlaying(null); }}>
+                  <button key={w.id} className={`btn px-2 py-0.5 ${w.id === replay?.id ? 'btn-active' : ''}`} onClick={() => { setReplayId(w.id); setPlaying(null); }}>
                     T+{w.atHour}h <span className={leaked ? 'text-ops-red' : 'text-ops-green'}>{r.length - leaked}/{r.length}</span>
                   </button>
                 );

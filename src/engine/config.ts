@@ -157,7 +157,7 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
     objectives: [
       { id: 'p3_net', text: 'Keep network health at or above 55%', metric: 'network', target: 55, reward: 200 },
       { id: 'p3_res', text: 'Resolve at least 14 events in total', metric: 'resolved', target: 14, reward: 150 },
-      { id: 'p3_false', text: 'Correctly dismiss at least 3 false reports', metric: 'falseDismissed', target: 3, reward: 120 },
+      { id: 'p3_false', text: 'Expose or correctly dismiss false reports: at least 3', metric: 'falseDismissed', target: 3, byLevel: { recruit: 1, commander: 4 }, reward: 120 },
     ],
   },
   {

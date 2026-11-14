@@ -5,6 +5,8 @@ import type { AlertLevel, Asset, Domain, EffectSpec, GameEvent, RegionId, SimSta
 import { DOMAINS, REGION_IDS } from './types';
 
 export const isActive = (e: GameEvent) => e.status === 'reported' || e.status === 'confirming' || e.status === 'responding';
+/** Still doing harm: active, or a genuine event that was dismissed and is developing out of sight. */
+export const isLive = (e: GameEvent) => isActive(e) || !!e.hiddenLive;
 export const isKnown = (s: SimState, e: GameEvent) => e.reportedAt <= s.hour;
 
 export function deriveStatus(a: Asset): Asset['status'] {
@@ -21,7 +23,7 @@ function collectPenalties(s: SimState) {
   const domain: Partial<Record<string, number>> = {};
   let global = 0;
   for (const e of s.events) {
-    if (!isActive(e) || !e.isGenuine) continue;
+    if (!isLive(e) || !e.isGenuine) continue;
     for (const f of e.effects) applyFlat(f, e.region);
   }
   function applyFlat(f: EffectSpec, r: RegionId) {
@@ -104,7 +106,7 @@ export function recomputeMetrics(s: SimState): void {
     r.readiness = clamp(homeR * 100 * (0.6 + 0.4 * (r.infrastructure / 100)));
 
     r.threatLevel = s.events
-      .filter((e) => isActive(e) && e.isGenuine && e.region === id)
+      .filter((e) => isLive(e) && e.isGenuine && e.region === id)
       .reduce((x, e) => x + e.severity * 6, 0);
   }
 

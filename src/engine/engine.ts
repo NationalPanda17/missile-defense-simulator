@@ -2,7 +2,7 @@
 import { INVESTMENTS, SIM_CONFIG, TACTICAL_CONFIG, levelOf } from './config';
 import { restockStockpiles, siteDamageShare } from './tactical';
 import { SEV_FACTOR, TEMPLATE_MAP, maybeGenerateEvent, spawnEvent } from './events';
-import { isActive, recomputeMetrics } from './metrics';
+import { isActive, isLive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
 import { evaluateObjectives } from './scoring';
 import { scheduleWaves, tickTactical } from './tactical';
@@ -46,7 +46,7 @@ function targetAssets(s: SimState, e: GameEvent | null, domain?: string): Asset[
 export function maintenanceCostMult(s: SimState): number {
   let m = 1;
   for (const e of s.events) {
-    if (!isActive(e) || !e.isGenuine) continue;
+    if (!isLive(e) || !e.isGenuine) continue;
     for (const f of e.effects) if (f.kind === 'maintenanceCostMult') m = Math.max(m, f.value);
   }
   return m;
@@ -72,7 +72,7 @@ function releaseCrews(s: SimState, n: number) {
 }
 
 function tickAssets(s: SimState) {
-  const weatherRegions = new Set(s.events.filter((e) => isActive(e) && e.category === 'weather' && e.isGenuine).map((e) => e.region));
+  const weatherRegions = new Set(s.events.filter((e) => isLive(e) && e.category === 'weather' && e.isGenuine).map((e) => e.region));
   for (const a of s.assets) {
     if (a.status === 'maintenance') {
       a.maintenanceRemaining -= 1;
@@ -289,8 +289,9 @@ function tickProjects(s: SimState) {
   for (const p of s.projects) {
     p.progress = Math.min(100, p.progress + 100 / p.hours);
   }
-  const done = s.projects.filter((p) => p.progress >= 100);
-  s.projects = s.projects.filter((p) => p.progress < 100);
+  // 100 / hours does not always add up to exactly 100.
+  const done = s.projects.filter((p) => p.progress >= 99.999);
+  s.projects = s.projects.filter((p) => p.progress < 99.999);
   for (const p of done) completeProject(s, p.investmentId, p.region, p.domain, p.label);
 }
 
@@ -342,9 +343,14 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
   log(s, 'success', `Project complete: ${label ?? inv?.label}.`, region);
 }
 
+/** Credits earned per hour: the base income, scaled by difficulty and by average regional stability. */
+export function incomePerHour(s: SimState): number {
+  return SIM_CONFIG.baseIncomePerHour * levelOf(s.settings).incomeMult * (0.5 + s.metrics.stability / 200);
+}
+
 function tickEconomy(s: SimState) {
   const upkeep = s.assets.reduce((x, a) => x + a.upkeep, 0);
-  const income = SIM_CONFIG.baseIncomePerHour * levelOf(s.settings).incomeMult * (0.5 + s.metrics.stability / 200);
+  const income = incomePerHour(s);
   s.credits = Math.max(0, s.credits + income - upkeep);
   const drain = reserveDrain(s);
   if (drain > 0) {
@@ -352,7 +358,7 @@ function tickEconomy(s: SimState) {
     s.reserveLost = (s.reserveLost ?? 0) + drain;
   }
   s.personnel = clamp(s.personnel + SIM_CONFIG.personnelRegenPerHour, 0, s.personnelMax);
-  const shortage = s.events.some((e) => isActive(e) && e.isGenuine && e.category === 'logistics');
+  const shortage = s.events.some((e) => isLive(e) && e.isGenuine && e.category === 'logistics');
   s.logistics = clamp(s.logistics + (shortage ? -0.6 : 0.3));
 }
 

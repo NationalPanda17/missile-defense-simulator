@@ -51,7 +51,7 @@ export function isStorm(s: SimState, region: RegionId, hour: number): boolean {
   const block = Math.floor(hour / 12);
   if (hash01(s.settings.seed, REGION_NUM[region], block, 0x57) < WEATHER.stormChance[region]) return true;
   return s.events.some((e) => e.templateId === 'storm' && e.region === region && e.isGenuine
-    && e.occurredAt <= hour && (e.resolvedAt ?? e.deadline) >= hour && e.status !== 'dismissed' && e.status !== 'expired');
+    && e.occurredAt <= hour && (e.resolvedAt ?? e.deadline) >= hour && (e.status !== 'dismissed' || !!e.hiddenLive) && e.status !== 'expired');
 }
 
 export interface Conditions { night: boolean; storm: boolean }
