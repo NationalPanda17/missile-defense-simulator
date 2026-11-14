@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { QUICK_BATTLE_ID, SIM_CONFIG, lessonOf, saveGame, urgentList } from '../engine';
+import { SIM_CONFIG, lessonOf, saveGame, urgentList } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
@@ -116,7 +116,7 @@ function Root() {
       lastMode.current = s.settings.name + s.settings.seed;
       ui.setTutorial(s.settings.mode === 'training' && !lessonOf(s));
       // A new or loaded game starts on the main screen with nothing left open from the last one.
-      ui.setView(s.settings.lesson === QUICK_BATTLE_ID ? 'theater' : 'global'); // a Quick Battle opens on its map
+      ui.setView(lessonOf(s)?.makeWaves ? 'theater' : 'global'); // a Quick Battle opens on its map
       ui.setRegion(null);
       ui.openEvent(null);
       ui.openAsset(null);

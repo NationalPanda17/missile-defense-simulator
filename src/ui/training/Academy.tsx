@@ -1,4 +1,5 @@
 // Training Academy: the course outline, progress and certification record.
+import { PracticeRange } from '../Extras';
 import { useEffect, useState } from 'react';
 import { DRILLS, EXAM_PASS, LESSONS, defaultSettings } from '../../engine';
 import { Stars } from './Stars';
@@ -31,6 +32,7 @@ export function AcademyModal() {
         {next && <button className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => go(next)}>{p.done.length ? 'Continue' : 'Start'}: {LESSONS.find((l) => l.id === next)!.title} ▶</button>}
       </>}>
       <div className="space-y-4">
+        <PracticeRange />
         <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
           <div className="space-y-2">
             <p className="leading-relaxed">

@@ -500,7 +500,7 @@ export interface SimState {
   startDate: number; // epoch ms of fictional start date
   rng: number;
   paused: boolean;
-  speed: 1 | 2 | 4 | 8;
+  speed: 0.5 | 1 | 2 | 4 | 8;
   turnBased: boolean;
   status: 'briefing' | 'running' | 'complete';
   phaseIndex: number;

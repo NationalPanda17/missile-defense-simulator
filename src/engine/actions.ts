@@ -35,7 +35,7 @@ export type Command =
   | { type: 'raiseAlert'; region: RegionId }
   | { type: 'beginPhase' }
   | { type: 'setPaused'; paused: boolean }
-  | { type: 'setSpeed'; speed: 1 | 2 | 4 | 8 }
+  | { type: 'setSpeed'; speed: 0.5 | 1 | 2 | 4 | 8 }
   | { type: 'setTurnBased'; on: boolean }
   | { type: 'advance'; hours: number };
 

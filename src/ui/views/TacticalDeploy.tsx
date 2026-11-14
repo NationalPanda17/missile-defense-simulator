@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  DOCTRINES, ENEMY_STYLES, resupplyCost, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  DOCTRINES, ENEMY_STYLES, resupplyCost, channelsOf, loadoutOf, proposeDefense, killRateOf, roundCostOf, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { TONE_HEX } from '../components/ui';
@@ -52,6 +52,92 @@ export function DoctrinePicker({ d }: { d: Deployment }) {
       </select>
       <span className="basis-full leading-snug">{DOCTRINES[cur].text}</span>
     </label>
+  );
+}
+
+/**
+ * Everything a unit can be told: fire orders, a silent radar, shoot and scoot, patrol, and which interceptors to
+ * load. Shown wherever a unit is selected, in a briefing or during a phase.
+ */
+export function UnitOrders({ s, d }: { s: SimState; d: Deployment }) {
+  const spec = EQUIPMENT_MAP.get(d.equipmentId)!;
+  const toggle = (label: string, on: boolean, title: string, set: (v: boolean) => void) => (
+    <label className="flex cursor-pointer items-center gap-1.5 text-[10px] text-ops-dim" title={title}>
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />{label}
+    </label>
+  );
+  const load = loadoutOf(spec, d.loadout);
+  return (
+    <div className="space-y-1.5">
+      {isEffector(spec) && <DoctrinePicker d={d} />}
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {spec.radar && toggle('Radar silent', !!d.emcon, 'Switch the radar off: it sees nothing, and missiles that hunt radars cannot find it. A shooter can still fire on another sensor’s track.',
+          (v) => dispatch({ type: 'setEmcon', deploymentId: d.id, on: v }))}
+        {isEffector(spec) && spec.domain === 'ground' && toggle('Shoot and scoot', !!d.scoot, `After firing in a wave it moves a few km and is out of action for ${TACTICAL_CONFIG.scoot.hours} hours: missiles aimed at where it stood miss.`,
+          (v) => dispatch({ type: 'setScoot', deploymentId: d.id, on: v }))}
+        {spec.domain === 'sea' && toggle('Patrol', !!d.patrol, `Steam up to ${TACTICAL_CONFIG.patrol.km} km toward each wave before it arrives, staying at sea. The ship wears faster.`,
+          (v) => dispatch({ type: 'setPatrol', deploymentId: d.id, on: v }))}
+      </div>
+      {spec.loadouts && (
+        <label className="flex flex-wrap items-center gap-1.5 text-[10px] text-ops-dim">
+          <span>Interceptors</span>
+          <select className="input py-0.5 text-[11px]" value={d.loadout ?? 'standard'} disabled={s.status !== 'briefing'} aria-label="Interceptor load"
+            title={s.status !== 'briefing' ? 'Launchers are reloaded with a different mix only in a briefing' : undefined}
+            onChange={(e) => dispatch({ type: 'setLoadout', deploymentId: d.id, loadout: e.target.value })}>
+            <option value="standard">Standard mix</option>
+            {spec.loadouts.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+          <span className="basis-full leading-snug">
+            {load ? load.text : 'The system’s usual load.'} {Math.round(roundCostOf(s, d, spec) * 10) / 10} cr a round
+            {(['cruise', 'ballistic'] as ThreatClass[]).filter((c) => spec.killRate[c] > 0).map((c) => `, ${THREAT_LABELS[c].toLowerCase()} ${Math.round(killRateOf(d, spec, c) * 100)}%`).join('')}.
+            {s.status !== 'briefing' && ' Can be changed in the next briefing.'}
+          </span>
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** Side view: how high each deployed system reaches against how high each forecast threat flies. */
+function AltitudeStrip({ s, region }: { s: SimState; region: RegionId }) {
+  const t = s.tactical!;
+  const deps = t.deployments.filter((d) => d.region === region && isEffector(EQUIPMENT_MAP.get(d.equipmentId)!));
+  const classes = [...new Set(t.waves.filter((w) => w.region === region && w.phaseIndex === s.phaseIndex && !w.resolved).flatMap((w) => w.tracks.map((x) => x.cls)))];
+  if (!deps.length || !classes.length) return null;
+  // Log scale from 50 m to 200 km, so drones and space both fit.
+  const H = 86;
+  const y = (km: number) => H - 4 - ((Math.log10(Math.max(0.05, Math.min(200, km))) - Math.log10(0.05)) / (Math.log10(200) - Math.log10(0.05))) * (H - 18);
+  const kinds = [...new Map(deps.map((d) => [d.equipmentId, EQUIPMENT_MAP.get(d.equipmentId)!])).values()].sort((a, b) => a.altitudeKm - b.altitudeKm).slice(0, 9);
+  const W = 560;
+  const col = (W - 150) / Math.max(1, kinds.length);
+  const alts = classes.map((c) => ({ c, km: TACTICAL_CONFIG.threatAltitudeKm[c] })).sort((a, b) => a.km - b.km);
+  return (
+    <details className="rounded border border-ops-line px-2 py-1 text-[11px]">
+      <summary className="cursor-pointer text-ops-dim hover:text-white">
+        <span className="label mr-2">Altitude</span>
+        {alts.filter((a) => !deps.some((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return sp.altitudeKm >= a.km && sp.killRate[a.c] > 0; })).length
+          ? <span className="text-ops-amber">Nothing here reaches: {alts.filter((a) => !deps.some((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return sp.altitudeKm >= a.km && sp.killRate[a.c] > 0; })).map((a) => `${THREAT_LABELS[a.c].toLowerCase()}s (${a.km} km)`).join(', ')}. </span>
+          : <span className="text-ops-green">Something here can reach every kind of threat forecast. </span>}
+        Side view ▸
+      </summary>
+      <svg viewBox={`0 0 ${W} ${H + 14}`} className="mt-1 block h-auto w-full max-w-2xl" role="img" aria-label="Side view of system ceilings against threat altitudes">
+        {alts.map((a) => (
+          <g key={a.c}>
+            <line x1={0} x2={W - 150} y1={y(a.km)} y2={y(a.km)} stroke="#f2545b" strokeOpacity={0.7} strokeDasharray="4 3" />
+            <text x={W - 146} y={y(a.km) + 3} fontSize={9} fill="#f2545b">{THREAT_LABELS[a.c]} · {a.km} km</text>
+          </g>
+        ))}
+        {kinds.map((sp, i) => (
+          <g key={sp.id}>
+            <rect x={i * col + col * 0.25} width={col * 0.5} y={y(sp.altitudeKm)} height={H - 4 - y(sp.altitudeKm)} fill={LAYER_COLOR[sp.layer]} fillOpacity={0.55} stroke={LAYER_COLOR[sp.layer]} />
+            <text x={i * col + col / 2} y={y(sp.altitudeKm) - 2} textAnchor="middle" fontSize={8.5} fill="#dbe7f6">{sp.altitudeKm} km</text>
+            <text x={i * col + col / 2} y={H + 8} textAnchor="middle" fontSize={8} fill="#7d93b1">{sp.name.replace(/\s*\(.*\)$/, '').slice(0, 13)}</text>
+          </g>
+        ))}
+        <line x1={0} x2={W - 150} y1={H - 4} y2={H - 4} stroke="#7d93b1" />
+      </svg>
+      <p className="text-[10px] text-ops-dim">Bars are how high each system you have here can hit; red lines are how high each forecast threat flies. A bar must reach a line for that system to engage it.</p>
+    </details>
   );
 }
 
@@ -133,7 +219,7 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
           </button>
         ))}
       </div>
-      <ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[max(16rem,calc(100dvh-22rem-var(--coach-h,0px)))]">
+      <ul data-catalog className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[max(16rem,calc(100dvh-22rem-var(--coach-h,0px)))]">
         {list.map((e) => {
           const cost = equipmentCost(e);
           const sel = e.id === selected;
@@ -153,20 +239,22 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
                 </div>
                 <div className="truncate text-[10px] text-ops-dim">{e.origin} · {DOMAIN_WORD[e.domain]}</div>
                 <div className="mt-1 flex flex-wrap gap-1 text-[9.5px]">
-                  <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />
+                  {e.lure ? <StatChip label="Lure" value="draws missiles that hunt radars" tone="green" /> : <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />}
+                  {isEffector(e) && <StatChip label="Handles" value={Number.isFinite(channelsOf(e)) ? `${channelsOf(e) * TACTICAL_CONFIG.saturationPasses} a wave` : 'any number'} />}
+                  {e.loadouts && <StatChip label="Loads" value={`${e.loadouts.length + 1}`} />}
                   {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
                   {isEffector(e) && <StatChip label="Rounds" value={isUnlimited(e) ? '∞' : String(e.magazine)} />}
                   {e.radar && <StatChip label={jammedBand(s) === e.radar.band ? 'Radar (jammed)' : 'Radar'} tone={jammedBand(s) === e.radar.band ? 'amber' : 'dim'} value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
                   {isEffector(e) && e.roundCr !== undefined && <StatChip label="Per round" value={`${e.roundCr} cr`} />}
                   {!e.radar && isEffector(e) && <StatChip label="No radar" value="needs a sensor nearby" tone="amber" />}
-                  {!e.radar && !isEffector(e) && <StatChip label="Passive" value="drones only" />}
+                  {!e.radar && !isEffector(e) && !e.lure && <StatChip label="Passive" value="drones only" />}
                   {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
                   {e.domain !== 'air' && isEffector(e) && e.rangeKm > TACTICAL_CONFIG.lowAltitude.horizonKm && (
                     <StatChip label="Low-level" value={`≤${TACTICAL_CONFIG.lowAltitude.horizonKm} km`} tone="amber" />
                   )}
                 </div>
                 {sel && <p className="mt-1 text-[11px] leading-snug text-ops-text">{e.description}</p>}
-                {sel && (e.radar || !isEffector(e)) && <BandLine band={e.radar?.band ?? null} />}
+                {sel && (e.radar || !isEffector(e)) && !e.lure && <BandLine band={e.radar?.band ?? null} />}
                 {isEffector(e) && <div className="mt-1"><KillBars k={e.killRate} /></div>}
               </button>
             </li>
@@ -357,6 +445,31 @@ export function DeployPanel({ s }: { s: SimState }) {
   const [hideGuide, setHideGuide] = useState(guideHidden);
   const spentNow = s.commands.filter((c) => c.t === s.hour && (c.kind === 'deploy' || c.kind === 'relocate')).reduce((a, c) => a + c.credits, 0);
   const showGuide = s.phaseIndex === 0 && !hideGuide && s.settings.mode === 'campaign'; // training lessons have their own coach
+  // The adjutant's proposed defense for a region, worked out when asked for.
+  const [planFor, setPlanFor] = useState<RegionId | null>(null);
+  const budget = Math.max(0, Math.floor(s.credits * 0.75));
+  const plan = useMemo(() => (planFor === region ? proposeDefense(s, region, budget) : null), [planFor, region, t.deployments.length, s.phaseIndex]);
+  // Keyboard: [ and ] change region, U undoes, M moves and Delete takes back the selected system.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelectorAll('.modal-overlay').length > 1) return; // the guide is open on top
+      const i = REGION_IDS.indexOf(region);
+      if (e.key === '[' || e.key === ']') { setRegion(REGION_IDS[(i + (e.key === ']' ? 1 : REGION_IDS.length - 1)) % REGION_IDS.length]); setSelectedDep(null); setMoving(false); }
+      else if (e.key.toLowerCase() === 'u' && undoable) { dispatch({ type: 'withdraw', deploymentId: undoable.id }); setSelectedDep(null); }
+      else if (e.key.toLowerCase() === 'm' && dep) { setMoving(!moving); setEquipment(null); }
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && dep) { e.preventDefault(); dispatch({ type: 'withdraw', deploymentId: dep.id }); setSelectedDep(null); setMoving(false); }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  });
+  // Picking a system with the keyboard hands the arrow keys straight to the map.
+  useEffect(() => {
+    if (!equipment && !moving) return;
+    const el = document.activeElement as HTMLElement | null;
+    if (el && el.tagName === 'BUTTON' && el.closest('[data-catalog]')) (document.querySelector('[data-coach="deploy-map"] svg.theater-map') as SVGSVGElement | null)?.focus();
+  }, [equipment, moving]);
   // What the last phase's review said would have helped most here: shown as a ghost on the map until it is placed.
   const fix = useMemo(() => (s.phaseIndex > 0 && s.status === 'briefing' ? suggestFixes(s, 7).find((f) => f.region === region) : undefined), [s.phaseIndex, s.status, region, s.campaignId]);
   const fixSpec = fix ? EQUIPMENT_MAP.get(fix.equipmentId)! : null;
@@ -381,7 +494,7 @@ export function DeployPanel({ s }: { s: SimState }) {
 
   const hint = moving ? `Click the map to move ${depSpec?.name}. Relocating costs ${TACTICAL_CONFIG.relocateCost} credits.`
     : spec ? `Click the map to place ${spec.name} (${equipmentCost(spec)} credits).`
-    : 'Pick equipment from the catalog, then click the map to place it (or Tab to the map, move with the arrow keys and press Enter). Click or Tab to a placed system to move or withdraw it.';
+    : 'Pick equipment from the catalog, then click the map to place it. Keyboard: Enter on a system, arrow keys to move the cursor (Shift for bigger steps), Enter to place; [ and ] change region, U undoes, Tab reaches placed systems, M moves and Delete takes back the selected one.';
 
   return (
     // Short screens: region tabs, the forecast check and the map come first; the forecast note and guide follow.
@@ -401,6 +514,28 @@ export function DeployPanel({ s }: { s: SimState }) {
       <div className="order-2 space-y-1">
         <ForecastCheck s={s} region={region} />
         <RadarPicture s={s} region={region} />
+        <AltitudeStrip s={s} region={region} />
+        {t.forecast.includes(region) && (
+          <div className="rounded border border-ops-line px-2 py-1 text-[11px]">
+            <span className="label mr-2">Adjutant’s proposal</span>
+            {!plan && <><span className="text-ops-dim">Not sure where to start? </span><button className="btn px-2 py-0.5" onClick={() => setPlanFor(region)}>Propose a defense for {s.regions[region].name}</button></>}
+            {plan && plan.length === 0 && <span className="text-ops-dim">Nothing more to add within about {budget} credits. <button className="underline" onClick={() => setPlanFor(null)}>Close</button></span>}
+            {plan && plan.length > 0 && (
+              <>
+                <span className="text-white">{plan.length} systems for {plan.reduce((a, p) => a + p.cost, 0)} credits</span>
+                <span className="text-ops-dim"> (keeping about a quarter of your credits for the phase).</span>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ops-dim">
+                  {plan.map((p, i) => <li key={i}><span className="text-white">{EQUIPMENT_MAP.get(p.equipmentId)!.name}</span> ({p.cost} cr): {p.why}</li>)}
+                </ul>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  <button className="btn btn-primary px-2 py-0.5" onClick={() => { for (const p of plan) dispatch({ type: 'deploy', equipmentId: p.equipmentId, region, x: p.x, y: p.y }); setPlanFor(null); }}>Place them all</button>
+                  <button className="btn px-2 py-0.5" onClick={() => setPlanFor(null)}>No thanks</button>
+                  <span className="text-[10px] text-ops-dim">Anything placed can be moved, or taken back for a full refund, until the phase begins.</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {fix && fixSpec && !fixDone && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1 text-[11px]">
             <span><span className="label mr-2 text-ops-amber">From the last review</span>{fix.text} <span className="text-ops-dim">The amber ring on the map marks the spot.</span></span>
@@ -481,7 +616,7 @@ export function DeployPanel({ s }: { s: SimState }) {
                   {isEffector(depSpec) ? ` · ${isUnlimited(depSpec) ? 'unlimited' : `${dep.stock}/${depSpec.magazine} rds`} · ${dep.kills ?? 0} stopped` : ''}
                 </div>
               </div>
-              {isEffector(depSpec) && <div className="order-last basis-full"><DoctrinePicker d={dep} /></div>}
+              <div className="order-last basis-full"><UnitOrders s={s} d={dep} /></div>
               <div className="flex gap-1">
                 <button className={`btn ${moving ? 'btn-active' : ''}`} onClick={() => { setMoving(!moving); setEquipment(null); }}>Move</button>
                 <button className="btn btn-danger" onClick={() => { dispatch({ type: 'withdraw', deploymentId: dep.id }); setSelectedDep(null); setMoving(false); }}

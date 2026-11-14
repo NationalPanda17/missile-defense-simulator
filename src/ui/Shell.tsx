@@ -29,7 +29,7 @@ function PhaseProgress({ s }: { s: SimState }) {
 
 /** Picking a speed also resumes a paused clock (outside turn mode): choosing a speed means "run at this speed". */
 let warned8 = false;
-export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
+export function chooseSpeed(s: SimState, sp: 0.5 | 1 | 2 | 4 | 8) {
   if (sp === 8 && !warned8 && s.speed !== 8) {
     warned8 = true;
     const p = store.autoPause();
@@ -183,6 +183,7 @@ export function TopBar({ s }: { s: SimState }) {
           onClick={() => dispatch({ type: 'setPaused', paused: !s.paused })} title="Pause / resume (Space)">
           {s.paused || s.turnBased ? '▶ Resume' : '❚❚ Pause'}
         </button>
+        <button className={`btn px-2 ${s.speed === 0.5 ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, 0.5)} title="Study speed: half speed, for watching a wave closely" disabled={s.turnBased}>½x</button>
         {([1, 2, 4, 8] as const).map((sp, i) => (
           <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
         ))}

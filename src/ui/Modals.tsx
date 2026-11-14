@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  COMMAND_LEVELS, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -13,6 +13,7 @@ import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
+import { RaidDesigner } from './Extras';
 import { Term } from './Term';
 import { MainMenuButton } from './Shell';
 import { loadMedals, subscribeMedals } from './medals';
@@ -283,6 +284,53 @@ function CarriedOver({ s }: { s: SimState }) {
   );
 }
 
+/**
+ * Before each later phase one region can be reinforced. The choices made are drawn as the campaign's path: one
+ * node per phase, branching into the regions that were on offer.
+ */
+function Reinforce({ s }: { s: SimState }) {
+  const options = reinforceOptions(s);
+  if (s.settings.mode !== 'campaign' || !s.tactical?.enabled) return null;
+  const chosen = s.branches?.[s.phaseIndex];
+  const R = TACTICAL_CONFIG.reinforce;
+  return (
+    <div className="rounded border border-ops-cyan/40 bg-ops-cyan/5 p-3 text-[11px]">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="label text-ops-cyan">Campaign path</span>
+        <span className="flex flex-wrap items-center gap-1 text-ops-dim" aria-label="Regions reinforced so far">
+          {s.phases.map((p, i) => {
+            const r = s.branches?.[i];
+            const here = i === s.phaseIndex;
+            return (
+              <span key={p.id} className="flex items-center gap-1">
+                {i > 0 && <span aria-hidden>→</span>}
+                <span className={`rounded-sm border px-1 ${here ? 'border-ops-cyan text-white' : r ? 'border-ops-green/50 text-ops-green' : 'border-ops-line'}`}>
+                  {i + 1}{i === 0 ? ' · start' : r ? ` · ${s.regions[r].short}` : here ? ' · choose' : ''}
+                </span>
+              </span>
+            );
+          })}
+        </span>
+      </div>
+      {s.phaseIndex === 0 && <p className="text-ops-dim">From the next phase you choose one region to reinforce before each phase begins. The choices you make are your path through the campaign.</p>}
+      {s.phaseIndex > 0 && !chosen && (
+        <>
+          <p>Reinforcements are available for one region. Its sites are repaired by {R.integrity} points, its stability rises by {R.stability}, and resupply there is free for this phase.</p>
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-3">
+            {options.map((r) => (
+              <button key={r} className="btn flex-col items-start gap-0.5 whitespace-normal py-1.5 text-left normal-case tracking-normal" onClick={() => dispatch({ type: 'reinforce', region: r })}>
+                <span className="font-sans text-[13px] font-semibold uppercase tracking-wider text-white">{s.regions[r].name}</span>
+                <span className="text-[10px] text-ops-dim">{s.tactical!.forecast.includes(r) ? 'Attack forecast here' : 'Not in the forecast'} · sites at {Math.round(100 - siteDamageShare(s, r) * 100)}% · stability {Math.round(s.regions[r].stability)}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {chosen && <p className="text-ops-green">Reinforcements sent to {s.regions[chosen].name}: resupply there is free this phase.</p>}
+    </div>
+  );
+}
+
 /** Commander: what intelligence expects the adapting enemy to do. It is right most of the time, not always. */
 function EnemyIntel({ s }: { s: SimState }) {
   if (!adaptiveEnemy(s)) return null;
@@ -303,7 +351,7 @@ export function BriefingModal({ s }: { s: SimState }) {
   const activeEv = s.events.filter(isActive);
   const prevResults = s.objectiveResults.filter((r) => r.phase === phase.id - 1);
   const tactical = s.tactical?.enabled ? s.tactical : null;
-  const quick = s.settings.lesson === QUICK_BATTLE_ID;
+  const quick = !!lessonOf(s)?.makeWaves;
   // A Quick Battle goes straight to the map.
   const [step, setStep] = useState<'brief' | 'deploy'>(quick && tactical ? 'deploy' : 'brief');
   const [confirmBegin, setConfirmBegin] = useState(false);
@@ -317,7 +365,7 @@ export function BriefingModal({ s }: { s: SimState }) {
     .filter((a) => step === 'brief' || a.id.startsWith('undefended:') || a.id.startsWith('ammo:'))
     .filter((a) => !(confirmBegin && a.id.startsWith('undefended:')));
   return (
-    <Modal wide tall={step === 'deploy'} title={quick ? `QUICK BATTLE · ${quickBattle(s.settings.seed).name.toUpperCase()} · ${s.regions[quickBattle(s.settings.seed).region].name.toUpperCase()}` : `${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
+    <Modal wide tall={step === 'deploy'} title={s.settings.lesson === ENDLESS_ID ? `ENDLESS DEFENSE · WAVE ${s.phaseIndex + 1} · ${(s.tactical?.forecast[0] ? s.regions[s.tactical.forecast[0]].name : '').toUpperCase()}` : s.settings.lesson === QUICK_BATTLE_ID ? `QUICK BATTLE · ${quickBattle(s.settings.seed).name.toUpperCase()} · ${s.regions[quickBattle(s.settings.seed).region].name.toUpperCase()}` : quick ? `CUSTOM RAID · ${(s.tactical?.forecast[0] ? s.regions[s.tactical.forecast[0]].name : '').toUpperCase()}` : `${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
         <span className="mr-auto flex flex-wrap items-center gap-2">
           <MainMenuButton s={s} className="px-3 py-2 text-[13px]" />
@@ -372,6 +420,7 @@ export function BriefingModal({ s }: { s: SimState }) {
         </div>
         <CarriedOver s={s} />
         {s.phaseIndex > 0 && <DispatchCard s={s} phaseIndex={s.phaseIndex - 1} fold />}
+        <Reinforce s={s} />
         {s.settings.mode === 'campaign' && (
           <div className="rounded border border-ops-line px-3 py-2 text-[11px]">
             <span className="label mr-2">Your opponent</span>
@@ -433,6 +482,7 @@ export function BriefingModal({ s }: { s: SimState }) {
                 Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
                 <EnemyIntel s={s} />
+                {escalationOf(s).text && <div className={`mt-1.5 rounded border px-2 py-1 ${escalationOf(s).level === 'heavy' ? 'border-ops-red/50 text-ops-red' : 'border-ops-line text-ops-dim'}`}><span className="label mr-1">Escalation</span>{escalationOf(s).text}</div>}
                 <ul className="mt-1 space-y-0.5">
                   {tactical.forecast.map((r) => {
                     const p = previewDefense(s, r, 12);
@@ -561,6 +611,8 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   const saves = listSaves();
   const [scenario, setScenario] = useState<ChosenScenario>(loadChosenScenario);
   const tacticalOn = TACTICAL_CONFIG.enabledInCampaign;
+  const [story, setStory] = useState('');
+  const [raidOpen, setRaidOpen] = useState(false);
   const [enemy, setEnemyState] = useState<EnemyChoice>(loadEnemy);
   const setEnemy = (e: EnemyChoice) => {
     setEnemyState(e);
@@ -577,8 +629,10 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     if (!tacticalOn) return store.newGame(withLevel(defaultSettings('campaign'), level));
     const base = defaultSettings('campaign');
     const std = scenario.tactical.preset === 'standard';
-    const foe: EnemyStyle = enemy === 'random' ? ENEMY_STYLE_IDS[Math.floor(Math.random() * ENEMY_STYLE_IDS.length)] : enemy;
-    store.newGame(withLevel({ ...base, name: std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical, enemy: foe }, level));
+    const tale = story ? STORIES[story] : undefined;
+    // A written campaign brings its own opponent and name.
+    const foe: EnemyStyle = tale ? tale.enemy : enemy === 'random' ? ENEMY_STYLE_IDS[Math.floor(Math.random() * ENEMY_STYLE_IDS.length)] : enemy;
+    store.newGame(withLevel({ ...base, name: tale ? tale.name : std ? base.name : `${base.name} · ${scenario.name}`, tactical: scenario.tactical, enemy: foe, ...(tale ? { story } : {}) }, level));
   };
   const newcomer = isNewcomer(saves.length);
   // The most recent unfinished game, for the Continue button.
@@ -629,13 +683,40 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
           </div>
           <button className="btn btn-primary px-5 py-2" onClick={() => { markWelcomed(); startLesson(QUICK_BATTLE_ID); ui.setView('theater'); }}>Play a quick battle ▶</button>
         </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="panel flex flex-wrap items-center justify-between gap-3 p-4" role="region" aria-label="Endless Defense">
+            <div className="min-w-0 max-w-md">
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Endless Defense</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">One region, a bigger wave every time, a briefing between each. How many can you survive?</p>
+            </div>
+            <button className="btn btn-primary" onClick={() => { markWelcomed(); startLesson(ENDLESS_ID); ui.setView('theater'); }}>Start a run ▶</button>
+          </div>
+          <div className="panel flex flex-wrap items-center justify-between gap-3 p-4" role="region" aria-label="Raid designer">
+            <div className="min-w-0 max-w-md">
+              <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">Raid Designer</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-ops-dim">Play the attacker. Write a raid, then hand it to a friend to defend, or send it against the computer’s defense.</p>
+            </div>
+            <button className="btn btn-primary" onClick={() => setRaidOpen(true)}>Design a raid ▶</button>
+          </div>
+        </div>
+        {raidOpen && <RaidDesigner onClose={() => setRaidOpen(false)} />}
         <div className="grid gap-3 md:grid-cols-4">
           {modes.map((m) => (
             <div key={m.id} className="panel flex flex-col p-4">
               <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{m.title}</div>
               <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{m.desc}</p>
               {m.id === 'campaign' && <LevelPicker value={level} onChange={setLevel} />}
-              {m.id === 'campaign' && tacticalOn && <EnemyPicker value={enemy} onChange={setEnemy} />}
+              {m.id === 'campaign' && tacticalOn && (
+                <div className="mt-3 space-y-1">
+                  <label className="label block" htmlFor="story-pick">Campaign</label>
+                  <select id="story-pick" className="input w-full py-1" value={story} onChange={(e) => setStory(e.target.value)}>
+                    <option value="">Open campaign</option>
+                    {Object.entries(STORIES).map(([id, x]) => <option key={id} value={id}>{x.name}</option>)}
+                  </select>
+                  <p className="text-[10px] leading-relaxed text-ops-dim">{story ? STORIES[story].blurb : 'The standard campaign: any region may be attacked, and you choose the opponent.'}</p>
+                </div>
+              )}
+              {m.id === 'campaign' && tacticalOn && !story && <EnemyPicker value={enemy} onChange={setEnemy} />}
               {m.id === 'campaign' && tacticalOn && (
                 <CampaignScenarioPicker value={scenario} onChange={(c) => { setScenario(c); saveChosenScenario(c); }} />
               )}

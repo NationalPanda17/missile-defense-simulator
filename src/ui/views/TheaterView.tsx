@@ -5,14 +5,15 @@ import { useUI } from '../uiState';
 import {
   EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, THREAT_LABELS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
-  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, narrateWave, pointAlong, trackPath, trackStory, trackTarget, unitName, veteranOf } from '../../engine';
-import { dispatch } from '../../store/simStore';
+  regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, waveChatter, narrateWave, pointAlong, trackPath, trackStory, trackTarget, unitName, veteranOf } from '../../engine';
+import { dispatch, useSimTime } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
-import { DoctrinePicker, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
+import { LAYER_COLOR, MapLegend, TheaterMap, UnitOrders } from './TacticalDeploy';
 
 export const PROTECTION_TONE: Record<ProtectionLevel, 'green' | 'amber' | 'red'> = { protected: 'green', thin: 'amber', exposed: 'red' };
 /** A replay runs long enough to read each caption. */
-const replayMs = (captions: number) => Math.max(6000, captions * 1700);
+const replayMs = (captions: number, speed = 1) => Math.max(6000, captions * 1700) / speed;
+const REPLAY_SPEEDS = [0.5, 1, 2] as const;
 
 const reducedMotion = () => {
   try {
@@ -136,7 +137,7 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
           Service record: {d.kills ?? 0} stopped{veteranOf(d) ? <span className="ml-1 rounded-sm border border-ops-amber/50 px-1 text-ops-amber">★ {veteranOf(d)!.label}</span> : null}
         </div>
       )}
-      {isEffector(spec) && <div className="mt-1.5"><DoctrinePicker d={d} /></div>}
+      <div className="mt-1.5"><UnitOrders s={s} d={d} /></div>
       {!isEffector(spec) && <div className="mt-1 text-[10px] text-ops-dim">{LAYER_LABELS[spec.layer]} · detects to {spec.rangeKm} km</div>}
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px]">
         <span className={d.transit ? 'text-ops-amber' : 'text-ops-dim'}>
@@ -148,6 +149,54 @@ function DeploymentRow({ s, d, moving, onRedeploy }: { s: SimState; d: Deploymen
         </button>
       </div>
     </li>
+  );
+}
+
+/** Radio traffic for the waves now in flight over a region: each line appears as its moment in the flight comes. */
+function RadioFeed({ s, region }: { s: SimState; region: RegionId }) {
+  const now = useSimTime();
+  const waves = (s.tactical?.waves ?? []).filter((w) => w.region === region && w.resolved && w.applied === false);
+  if (!waves.length) return null;
+  const lines = waves.flatMap((w) => {
+    const launch = w.launchAt ?? w.atHour;
+    const f = (now - launch) / Math.max(0.05, w.atHour - launch);
+    return waveChatter(s, w).filter((c) => c.at <= f).map((c) => ({ ...c, key: `${w.id}-${c.at}-${c.who}` }));
+  }).slice(-6);
+  return (
+    <div className="mb-2 rounded border border-ops-line bg-black/30 px-2 py-1.5 font-mono text-[11px]" role="log" aria-live="polite" aria-label="Radio traffic">
+      <div className="label mb-0.5">Radio</div>
+      {lines.length === 0 && <div className="text-ops-dim">Net is quiet…</div>}
+      {lines.map((c) => (
+        <div key={c.key}><span className="text-ops-cyan">{c.who}:</span> <span className={c.tone === 'good' ? 'text-ops-green' : c.tone === 'bad' ? 'text-ops-amber' : 'text-ops-text'}>{c.text}</span></div>
+      ))}
+    </div>
+  );
+}
+
+/** Damaged sites in a region, and the order to send repair crews. */
+function RepairPanel({ s, region }: { s: SimState; region: RegionId }) {
+  const t = s.tactical!;
+  const damaged = t.sites.filter((x) => x.region === region && x.integrity < 100).sort((a, b) => a.integrity - b.integrity);
+  if (!damaged.length) return null;
+  const order = t.repairFirst ?? [];
+  const idle = Math.max(0, s.crews - s.crewsBusy);
+  return (
+    <Panel title="Damaged sites" right={<span>{damaged.length}</span>}>
+      <ul className="space-y-1 text-[11px]">
+        {damaged.map((site) => {
+          const pos = order.indexOf(site.id);
+          return (
+            <li key={site.id} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate"><span className="text-white">{site.name}</span> <span className={site.integrity < 50 ? 'text-ops-red' : 'text-ops-amber'}>{Math.round(site.integrity)}%</span>{pos === 0 && <span className="ml-1 text-ops-green">· crews working</span>}{pos > 0 && <span className="ml-1 text-ops-dim">· queued {pos + 1}</span>}</span>
+              <button className="btn shrink-0 px-2 py-0.5" disabled={pos === 0} onClick={() => dispatch({ type: 'repairFirst', siteId: site.id })}>{pos === 0 ? 'First' : pos > 0 ? 'Move to first' : 'Send crews'}</button>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-[10px] leading-relaxed text-ops-dim">
+        Idle maintenance crews rebuild the site at the head of the queue ({TACTICAL_CONFIG.repairPerCrewHour} integrity per crew each hour; {idle} of {s.crews} idle now). Crews busy with maintenance or responses repair nothing, so choose what matters most. The Rebuild Damaged Sites investment repairs a whole region at once.
+      </p>
+    </Panel>
   );
 }
 
@@ -191,6 +240,8 @@ export function TheaterView({ s }: { s: SimState }) {
   const [playing, setPlaying] = useState<string | null>(null); // wave being replayed on demand
   const [progress, setProgress] = useState(1); // how far the replay has run, for its captions
   const [story, setStory] = useState<{ wave: string; track: string } | null>(null); // the threat whose story is open
+  const [replaySpeed, setReplaySpeed] = useState<number>(1);
+  const [scope, setScope] = useState(false); // radar scope style
   const [selected, setSelected] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
   const movingDep = t?.deployments.find((d) => d.id === moving) ?? null;
@@ -311,14 +362,16 @@ export function TheaterView({ s }: { s: SimState }) {
               <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
             </div>
           )}
+          <RadioFeed s={s} region={region} />
           {/* Phones: full-size map that scrolls sideways, so systems and threats stay readable and taps land. */}
-          <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0">
-            <div className="min-w-[560px] sm:min-w-0">
+          <div className={`-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0 ${scope ? 'scope-view' : ''}`}>
+            <div className="relative min-w-[560px] sm:min-w-0">
+              {scope && <div className="scope-sweep" aria-hidden />}
               <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
                 onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
                 onTrack={movingDep ? undefined : pickTrack}
                 onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
-                {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} ms={replayMs(captions.length)} onProgress={setProgress} onTrack={pickTrack} />}
+                {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} ms={replayMs(captions.length, replaySpeed)} onProgress={setProgress} onTrack={pickTrack} />}
               </TheaterMap>
             </div>
           </div>
@@ -328,7 +381,10 @@ export function TheaterView({ s }: { s: SimState }) {
               <button className="btn shrink-0 px-2 py-0" onClick={() => setStory(null)} aria-label="Close threat details">✕</button>
             </div>
           )}
-          <div className="mt-1.5"><MapLegend region={region} /></div>
+          <div className="mt-1.5 flex flex-wrap items-start justify-between gap-2">
+            <MapLegend region={region} />
+            <button className={`btn shrink-0 px-2 py-0.5 ${scope ? 'btn-active' : ''}`} aria-pressed={scope} onClick={() => setScope(!scope)} title="Show the map as a radar operator's scope: green on black, with a sweep">◉ Scope view</button>
+          </div>
           <p className="mt-1 text-[10px] text-ops-dim">Click any threat on the map, in flight or after it ends, to see what happened to it and why.</p>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
             {replay && replay.applied === false ? (
@@ -345,6 +401,10 @@ export function TheaterView({ s }: { s: SimState }) {
                 {replay.tracks.some((x) => x.decoy) && <span className="text-ops-dim">{replay.tracks.filter((x) => x.decoy).length} false tracks</span>}
                 <span className="text-ops-dim">{threatMix(real)}</span>
                 <button className="btn btn-primary px-2 py-0.5" onClick={() => { setPlaying(null); setProgress(0); requestAnimationFrame(() => setPlaying(replay.id)); }}>▶ {isPlaying ? 'Restart replay' : 'Narrated replay'}</button>
+                <span className="flex items-center gap-1 text-ops-dim" role="group" aria-label="Replay speed">
+                  Speed
+                  {REPLAY_SPEEDS.map((sp) => <button key={sp} className={`btn px-1.5 py-0.5 ${replaySpeed === sp ? 'btn-active' : ''}`} aria-pressed={replaySpeed === sp} onClick={() => setReplaySpeed(sp)}>{sp === 0.5 ? '½×' : `${sp}×`}</button>)}
+                </span>
               </>
             ) : (
               <span className="text-ops-dim">No waves have reached {s.regions[region].name} yet this campaign.</span>
@@ -375,6 +435,7 @@ export function TheaterView({ s }: { s: SimState }) {
         </Panel>
 
         <div className="grid content-start gap-2 md:grid-cols-2 2xl:grid-cols-1">
+          <RepairPanel s={s} region={region} />
           <Panel title="Campaign totals">
             <div className="grid grid-cols-3 gap-2">
               <Stat label="Threats" value={st.tracks} />
