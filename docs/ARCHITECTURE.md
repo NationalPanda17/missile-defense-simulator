@@ -214,6 +214,12 @@ Campaign only, controlled by `TACTICAL_CONFIG.enabledInCampaign` (on). A browser
 
 ## Scoring (`engine/scoring.ts`)
 
+**Radar bands.** Each radar has a band (`RADAR_BANDS` in `equipment.ts`, long waves to short: UHF, L, S, C, X, Ku) with
+three game values: the share of range it keeps in a storm, the chance it recognises a decoy it is tracking (recognised
+decoys draw no fire), and the quality of the track it hands to a shooter whose own sensor cannot see the threat. Wave
+resolution (`resolveTrack`) applies all three; the catalog, the deploy step's "Radar picture" line, the debrief and the
+field guide (`src/ui/Guide.tsx`) read the same table, so the explanation cannot drift from the rules.
+
 The weighted components (`SCORE_WEIGHTS`) are readiness, network, stability, event response,
 infrastructure preservation, resource efficiency, information quality and recovery, plus up
 to +8 for objectives met. When the tactical layer is active, **protection** (share of incoming threat damage

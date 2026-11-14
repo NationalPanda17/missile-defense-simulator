@@ -3,12 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { WaveActions } from '../PausePrompt';
 import { useUI } from '../uiState';
 import {
-  EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
+  EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, THREAT_LABELS, TACTICAL_CONFIG, alertActive, alertCost, alertHoursLeft, incomingWaves, isEffector,
   isUnlimited, redeployCost, redeployHours,
   regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, pointAlong, trackPath } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
-import { CLASS_SHORT, LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
+import { LAYER_COLOR, MapLegend, TheaterMap } from './TacticalDeploy';
 
 export const PROTECTION_TONE: Record<ProtectionLevel, 'green' | 'amber' | 'red'> = { protected: 'green', thin: 'amber', exposed: 'red' };
 const REPLAY_MS = 5000;
@@ -155,7 +155,7 @@ function ConditionChips({ s, region }: { s: SimState; region: RegionId }) {
         title={c.night ? 'Night: Stinger, Avenger and ZU-23-2 (aimed by eye or infrared) are 25% less accurate' : 'Daylight'}>
         {c.night ? '☾ night' : '☀ day'} {String(h).padStart(2, '0')}:00 local
       </span>
-      {c.storm && <span className="chip border-ops-amber/60 text-ops-amber" title="Storm: sensors see only 60% of their normal range">⛈ storm · sensors −40%</span>}
+      {c.storm && <span className="chip border-ops-amber/60 text-ops-amber" title="Storm: every radar loses range according to its band. Long-wave radars (UHF, L) barely notice; short-wave radars (X, Ku) lose more than half. See the field guide: Radar bands.">⛈ storm · short-wave radars cut most</span>}
     </span>
   );
 }
@@ -317,7 +317,7 @@ export function TheaterView({ s }: { s: SimState }) {
               <Stat label="Stopped" value={st.tracks ? `${Math.round((st.stopped / st.tracks) * 100)}%` : '—'} t={st.tracks ? (st.stopped / st.tracks >= 0.7 ? 'green' : st.stopped / st.tracks >= 0.4 ? 'amber' : 'red') : undefined} />
               <Stat label="Got through" value={st.leaked} t={st.leaked ? 'red' : undefined} />
               <Stat label="Shots" value={st.shots} />
-              <Stat label="Decoys hit" value={st.decoysEngaged} sub="wasted shots" />
+              <Stat label="Decoys" value={`${st.decoysEngaged} hit`} sub={`${st.decoysSpotted ?? 0} recognised and ignored`} />
               <Stat label="Site damage" value={st.siteDamage} />
             </div>
           </Panel>
@@ -348,5 +348,5 @@ export function TheaterView({ s }: { s: SimState }) {
 function threatMix(tracks: Track[]): string {
   const n = new Map<Track['cls'], number>();
   for (const tr of tracks) n.set(tr.cls, (n.get(tr.cls) ?? 0) + 1);
-  return [...n].map(([c, k]) => `${k} ${CLASS_SHORT[c]}`).join(' · ');
+  return [...n].map(([c, k]) => `${k} ${THREAT_LABELS[c].toLowerCase()}${k === 1 ? '' : 's'}`).join(' · ');
 }

@@ -1,11 +1,13 @@
 // Tactical layer deployment step (campaign briefing): theater map, equipment catalog and site coverage.
 import { useEffect, useMemo, useState } from 'react';
 import {
-  EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
-  equipmentCost, isEffector, isUnlimited, previewDefense, forecastTargets, stockpileRules, stormWindows, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
+  EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
+  equipmentCost, isEffector, isUnlimited, previewDefense, forecastTargets, stockpileRules, stormWindows, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import { Chip, TONE_HEX } from '../components/ui';
+import { TONE_HEX } from '../components/ui';
+import { useUI } from '../uiState';
+import { Meter } from '../Guide';
 import { SiteIcon } from './theater/icons';
 import { LAYER_COLOR, MapLegend, TheaterMap, effectorsCovering } from './theater/TheaterMap';
 
@@ -36,6 +38,62 @@ const DOMAIN_WORD = { ground: 'ground-based', air: 'airborne', sea: 'ship (place
 function StatChip({ label, value, tone = 'dim' }: { label: string; value: string; tone?: 'dim' | 'green' | 'amber' }) {
   const c = tone === 'green' ? 'border-ops-green/40 text-ops-green' : tone === 'amber' ? 'border-ops-amber/40 text-ops-amber' : 'border-ops-line text-ops-text';
   return <span className={`rounded-sm border px-1 py-px ${c}`}><span className="text-ops-dim">{label} </span>{value}</span>;
+}
+
+/** What a system's radar band means for it: range kept in storms, decoys recognised, quality of the track it shares. */
+function BandLine({ band }: { band: RadarBand | null }) {
+  const r = band ? RADAR_BANDS[band] : PASSIVE_SENSOR;
+  return (
+    <div className="mt-1 rounded-sm border border-ops-line/70 px-1.5 py-1 text-[10px] leading-relaxed text-ops-dim">
+      <span className="text-white">{band ? `${band}-band radar (${RADAR_BANDS[band].nick})` : 'Passive sensor (listens, no radar)'}</span>
+      <span className="grid grid-cols-[auto_1fr] gap-x-2">
+        <span>Range kept in a storm</span><Meter value={r.storm} />
+        <span>Recognises decoys</span><Meter value={r.sharp} />
+        <span>Track for other shooters</span><Meter value={r.cue} />
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The radar bands deployed in a region and what they add up to: whether a storm would blind them, and whether anything
+ * here is sharp enough to pick out decoys.
+ */
+function RadarPicture({ s, region }: { s: SimState; region: RegionId }) {
+  const ui = useUI();
+  const specs = s.tactical!.deployments.filter((d) => d.region === region).map((d) => EQUIPMENT_MAP.get(d.equipmentId)!);
+  const bands = RADAR_BAND_IDS.filter((b) => specs.some((sp) => sp.radar?.band === b));
+  const passive = specs.some((sp) => !sp.radar && sp.layer === 'detection');
+  const phase = s.phases[s.phaseIndex];
+  const from = s.status === 'running' ? s.phaseStartHour : s.hour;
+  const storms = stormWindows(s, region, from, from + phase.hours).length > 0;
+  const guide = <button className="ml-1 text-ops-cyan underline" onClick={() => ui.setHelp('bands')}>What are radar bands?</button>;
+  if (!bands.length) {
+    return (
+      <div className="rounded border border-ops-line px-2 py-1 text-[11px] text-ops-dim">
+        <span className="label mr-2">Radar picture</span>
+        {specs.length ? (passive ? 'Passive sensors only: they hear drones, nothing else. ' : 'No radar here: shooters will react late and hit less than half as often. ') : 'No radars placed here yet. '}
+        {guide}
+      </div>
+    );
+  }
+  const bestStorm = Math.max(...bands.map((b) => RADAR_BANDS[b].storm));
+  const bestSharp = Math.max(...bands.map((b) => RADAR_BANDS[b].sharp));
+  const notes: { tone: string; text: string }[] = [];
+  if (bestStorm < 0.7) notes.push({ tone: storms ? 'text-ops-amber' : 'text-ops-dim', text: `${storms ? '⚠ Storms are forecast and e' : 'E'}very radar here is short-wave: in a storm the best keeps ${Math.round(bestStorm * 100)}% of its range. A long-wave radar (L or UHF) sees through weather.` });
+  if (bestSharp < 0.5) notes.push({ tone: 'text-ops-amber', text: `Nothing here is sharp enough to pick out decoys (best ${Math.round(bestSharp * 100)}%): expect rounds wasted on fakes. An X-band radar such as Sentinel recognises ${Math.round(RADAR_BANDS.X.sharp * 100)}%.` });
+  if (!notes.length) notes.push({ tone: 'text-ops-green', text: 'A good mix: weather-proof warning and a sharp picture.' });
+  return (
+    <div className="rounded border border-ops-line px-2 py-1 text-[11px]">
+      <span className="label mr-2">Radar picture</span>
+      {bands.map((b) => (
+        <span key={b} className="mr-1 rounded-sm border border-ops-line px-1 text-white" title={RADAR_BANDS[b].summary}>{b}<span className="text-ops-dim"> ×{specs.filter((sp) => sp.radar?.band === b).length}</span></span>
+      ))}
+      <span className="text-ops-dim">storm range {Math.round(bestStorm * 100)}% · decoys recognised {Math.round(bestSharp * 100)}%</span>
+      {guide}
+      {notes.map((n) => <div key={n.text} className={n.tone}>{n.text}</div>)}
+    </div>
+  );
 }
 
 function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | null; onSelect: (id: string | null) => void }) {
@@ -75,13 +133,16 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
                   <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />
                   {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
                   {isEffector(e) && <StatChip label="Rounds" value={isUnlimited(e) ? '∞' : String(e.magazine)} />}
-                  {e.radar && <StatChip label="Radar" value={`${e.radar.band}-band`} />}
+                  {e.radar && <StatChip label="Radar" value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
+                  {!e.radar && isEffector(e) && <StatChip label="No radar" value="needs a sensor nearby" tone="amber" />}
+                  {!e.radar && !isEffector(e) && <StatChip label="Passive" value="drones only" />}
                   {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
                   {e.domain !== 'air' && isEffector(e) && e.rangeKm > TACTICAL_CONFIG.lowAltitude.horizonKm && (
                     <StatChip label="Low-level" value={`≤${TACTICAL_CONFIG.lowAltitude.horizonKm} km`} tone="amber" />
                   )}
                 </div>
                 {sel && <p className="mt-1 text-[11px] leading-snug text-ops-text">{e.description}</p>}
+                {sel && (e.radar || !isEffector(e)) && <BandLine band={e.radar?.band ?? null} />}
                 {isEffector(e) && <div className="mt-1"><KillBars k={e.killRate} /></div>}
               </button>
             </li>
@@ -170,7 +231,7 @@ function DeployGuide({ s, region, onPick, onHide }: { s: SimState; region: Regio
 
 /** What each threat class needs, in a sentence, for the forecast check. */
 const CLASS_ADVICE: Record<ThreatClass, string> = {
-  slowDrone: 'slow drones: cheap to stop with guns, Coyote or jamming; low, so radars must be close or on high ground',
+  slowDrone: 'slow drones: cheap to stop with guns, Coyote or jamming; low, so radars must be close or on high ground. Expect decoys among them: a sharp (X or Ku-band) radar picks those out',
   fastDrone: 'fast drones: counter-drone guns and short-range missiles; low-flying',
   cruise: 'cruise missiles: fly very low; short/medium-range missiles (NASAMS, IRIS-T) with a radar nearby or airborne early warning',
   rocket: 'rockets: fast and short-lived; Iron Dome-class systems near the sites they target',
@@ -183,7 +244,7 @@ function weatherOutlook(s: SimState, region: RegionId): string {
   const from = s.status === 'running' ? s.phaseStartHour : s.hour;
   const storms = stormWindows(s, region, from, from + phase.hours);
   const st = storms.length
-    ? `storms T+${storms.slice(0, 3).map(([a, b]) => `${a}–${b}h`).join(', ')}${storms.length > 3 ? '…' : ''} (sensors at 60% range)`
+    ? `storms T+${storms.slice(0, 3).map(([a, b]) => `${a}–${b}h`).join(', ')}${storms.length > 3 ? '…' : ''} (radars lose range by band: X-band keeps ${Math.round(RADAR_BANDS.X.storm * 100)}%, S-band ${Math.round(RADAR_BANDS.S.storm * 100)}%, L-band ${Math.round(RADAR_BANDS.L.storm * 100)}%)`
     : 'no storms expected';
   return `Weather: ${st}. Nights run 20:00–05:00 local; some raids are timed for the dark, when Stinger, Avenger and ZU-23-2 are less accurate.`;
 }
@@ -285,7 +346,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         )}
       </div>
 
-      <div className="order-2"><ForecastCheck s={s} region={region} /></div>
+      <div className="order-2 space-y-1"><ForecastCheck s={s} region={region} /><RadarPicture s={s} region={region} /></div>
 
       {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
@@ -360,8 +421,9 @@ export function DeployPanel({ s }: { s: SimState }) {
         <div className={`min-w-0 md:col-start-2 md:row-span-2 md:row-start-1 md:block ${pane === 'systems' ? '' : 'hidden'}`}>
           <div className="label mb-1 flex items-center justify-between">
             <span>Equipment</span>
-            <span className="flex gap-1">{THREAT_CLASSES.map((c) => <Chip key={c} title={THREAT_LABELS[c]}>{CLASS_SHORT[c]}</Chip>)}</span>
+            <span className="normal-case tracking-normal text-ops-dim">bars: chance one shot stops each threat</span>
           </div>
+          <p className="mb-1 text-[10px] leading-snug text-ops-dim">{THREAT_CLASSES.map((c) => `${CLASS_SHORT[c]} ${THREAT_LABELS[c].toLowerCase()}`).join(' · ')}</p>
           <Catalog s={s} selected={equipment} onSelect={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); if (id) setPane('map'); }} />
         </div>
         <div className={`min-w-0 md:col-start-1 md:row-start-2 md:block ${pane === 'map' ? '' : 'hidden'}`}>

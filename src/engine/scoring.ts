@@ -245,7 +245,7 @@ function tacticalLessons(s: SimState): Lesson[] {
     out.push({ tone: 'poor', text: `${r.undefendedForecastWaves} forecast wave(s) met no working defenses: nothing deployed, out of rounds, or out of service. Deploy in every forecast region, resupply before magazines run dry, and keep systems maintained.` });
   const decoys = s.tactical!.stats.decoysEngaged;
   if (decoys >= 5)
-    out.push({ tone: 'poor', text: `${decoys} false tracks drew fire. Poor regional awareness produces decoys; sensors and comms in threatened regions cut the waste.` });
+    out.push({ tone: 'poor', text: `${decoys} false tracks drew fire. Poor regional awareness produces decoys, and only a sharp radar (X, Ku or C-band) tracking them can tell they are fakes. A Sentinel beside the sites under attack cuts the waste.` });
   const lost = r.damagedSites.filter((x) => x.integrity <= 50).length;
   if (lost > 0) out.push({ tone: 'poor', text: `${lost} site(s) were left at half integrity or worse.` });
   return out;

@@ -11,7 +11,7 @@ import { ServerSavesPanel, ServiceRecord } from './views/ServerPanels';
 import { loadProgress, startLesson } from './training/progress';
 import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
-import { DisplayControl, DisplaySettings } from './a11y/DisplayControl';
+import { DisplayControl } from './a11y/DisplayControl';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
 function effectText(f: EffectSpec): string {
@@ -280,6 +280,7 @@ function EnemyIntel({ s }: { s: SimState }) {
 }
 
 export function BriefingModal({ s }: { s: SimState }) {
+  const ui = useUI();
   const phase = s.phases[s.phaseIndex];
   const degraded = s.assets.filter((a) => a.status !== 'operational' || a.hoursToService < 24);
   const activeEv = s.events.filter(isActive);
@@ -299,6 +300,7 @@ export function BriefingModal({ s }: { s: SimState }) {
   return (
     <Modal wide tall={step === 'deploy'} title={`${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
+        <button className="btn mr-auto px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
           if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
@@ -441,7 +443,10 @@ const LEVEL_KEY = 'mds.level';
 function loadLevel(): CommandLevel {
   try {
     const v = localStorage.getItem(LEVEL_KEY) as CommandLevel | null;
-    return v && COMMAND_LEVEL_IDS.includes(v) ? v : 'officer';
+    if (v && COMMAND_LEVEL_IDS.includes(v)) return v;
+    // First visit: the level meant for learning. Anyone who has played keeps Officer as the default.
+    const p = loadProgress();
+    return listSaves().length === 0 && p.done.length === 0 && !p.bestExam ? 'recruit' : 'officer';
   } catch { return 'officer'; }
 }
 
@@ -502,7 +507,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
   return (
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
-        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><DisplayControl /><SoundControl /></div>
+        <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play (?)">? How to play</button><DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">Global Integrated Defense Command</div>
           <h1 className="mt-2 break-words font-sans text-[clamp(1.25rem,8vw,2.25rem)] font-bold leading-tight tracking-[0.08em] text-white sm:text-5xl sm:tracking-[0.2em]">MISSILE DEFENSE SIMULATOR</h1>
@@ -517,6 +522,7 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
             </div>
             <div className="flex flex-wrap gap-2">
               <button className="btn" onClick={() => { markWelcomed(); store.notify(); }}>I know the basics</button>
+              <button className="btn" onClick={() => ui.setHelp(true)}>Read how to play</button>
               <button className="btn btn-primary px-5 py-2" autoFocus onClick={() => { markWelcomed(); startLesson('basics'); ui.setView('global'); }}>Start Lesson 1 ▶</button>
             </div>
           </div>
@@ -582,31 +588,6 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
         <p className="text-center text-[10px] text-ops-dim">The world, its countries, sites and scenarios are fictional, and no scenario recreates a real attack. The campaign's tactical layer uses real air defense systems with figures from official public statements, or made up where none exist.</p>
       </div>
     </div>
-  );
-}
-
-export function HelpModal() {
-  const ui = useUI();
-  const keys: [string, string][] = [
-    ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', 'Advance one turn (6h)'], ['G S A M D', 'Global · Space · Air · Maritime · Ground'], ['X', 'Tactical Theater (campaign)'],
-    ['I C L F', 'Intelligence · Comms · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-action review'],
-    ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Toggle bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close window / deselect region'], ['?', 'This help'],
-  ];
-  return (
-    <Modal title="COMMAND REFERENCE" onClose={() => ui.setHelp(false)}>
-      <div className="space-y-4">
-        <table className="table-ops w-full"><tbody>{keys.map(([k, d]) => <tr key={k}><td className="w-36"><kbd className="rounded border border-ops-line px-1.5 text-ops-cyan">{k}</kbd></td><td>{d}</td></tr>)}</tbody></table>
-        <div className="rounded border border-ops-line p-3">
-          <div className="label mb-2">Display & accessibility</div>
-          <DisplaySettings />
-        </div>
-        <div className="space-y-2 text-[11px] leading-relaxed text-ops-dim">
-          <p><b className="text-white">How the network works.</b> Each domain's raw readiness comes from its assets' condition. Effective readiness is then reduced by weaknesses in the domains it depends on (e.g. Air and Maritime depend on Space relays) and by global network health. Regional awareness comes from sensor coverage and comms; it controls how reliable incoming reports are.</p>
-          <p><b className="text-white">Events.</b> Each report has a confidence level and a decision window. Some reports are spurious. Task a confirmation when unsure, respond when confident, or dismiss — but dismissed genuine events keep developing out of sight. Unresolved events escalate, causing lasting damage and sometimes follow-on events.</p>
-          <p><b className="text-white">Scoring</b> rewards sustained readiness, network reliability, stability, timely response, preserved infrastructure, efficient spending and good information discipline — not raw spending.</p>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

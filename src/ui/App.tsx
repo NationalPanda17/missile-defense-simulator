@@ -2,7 +2,8 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { SIM_CONFIG, lessonOf, saveGame } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
-import { AssetModal, BriefingModal, EventModal, HelpModal, StartScreen, Toasts, TutorialPanel } from './Modals';
+import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
+import { GuideModal } from './Guide';
 import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, chooseSpeed } from './Shell';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
@@ -124,9 +125,9 @@ function Root() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = store.state;
-      if (!st) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (!st) { if (e.key === '?') ui.setHelp(true); return; } // start screen: only the guide
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         if (saveGame(st, 'slot1')) store.toast('ok', 'Quick-saved to SLOT1');
@@ -167,6 +168,7 @@ function Root() {
     return (
       <>
         <StartScreen onSandbox={() => setEditorFirst(true)} />
+        {ui.help && <GuideModal />}
         {ui.accountOpen && <AccountModal />}
         {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}
       </>
@@ -211,7 +213,7 @@ function Root() {
       <PausePrompt s={s} docked={PLANNING_VIEWS.includes(ui.view)} />
       {ui.eventId && <EventModal s={s} />}
       {ui.assetId && !ui.eventId && <AssetModal s={s} />}
-      {ui.help && <HelpModal />}
+      {ui.help && <GuideModal />}
       {lesson ? <Suspense fallback={null}><Coach key={s.campaignId ?? s.settings.name} s={s} lesson={lesson} /></Suspense> : ui.tutorial && <TutorialPanel />}
       {ui.accountOpen && <AccountModal />}
       {ui.academyOpen && <Suspense fallback={null}><AcademyModal /></Suspense>}
