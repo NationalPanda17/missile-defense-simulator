@@ -1,5 +1,6 @@
 // Derived-metric computation and the cross-domain dependency model.
-import { SIM_CONFIG } from './config';
+import { SIM_CONFIG, TACTICAL_CONFIG } from './config';
+import { networkDamageShare, siteLoss } from './sites';
 import { clamp } from './rng';
 import type { AlertLevel, Asset, Domain, EffectSpec, GameEvent, RegionId, SimState } from './types';
 import { DOMAINS, REGION_IDS } from './types';
@@ -95,15 +96,18 @@ export function recomputeMetrics(s: SimState): void {
     );
     const lcap = local.reduce((x, a) => x + a.capability, 0) || 1;
     const localComms = local.length ? local.reduce((x, a) => x + a.capability * av.get(a.id)!, 0) / lcap : 0.5;
-    r.comms = clamp((network * 0.55 + localComms * 100 * 0.45 - (pen.comms[id] ?? 0) * mit) * (0.7 + 0.3 * (r.infrastructure / 100)));
+    // Damaged sites cost the region what they provided: the signal hub its communications, the command post its
+    // awareness, the power stations its readiness.
+    const SC = TACTICAL_CONFIG.consequences;
+    r.comms = clamp((network * 0.55 + localComms * 100 * 0.45 - (pen.comms[id] ?? 0) * mit) * (0.7 + 0.3 * (r.infrastructure / 100)) * (1 - SC.comms * siteLoss(s, id, 'comms')));
 
     const sensors = s.assets.filter((a) => a.role === 'sensor' && (a.coverage.includes(id) || a.region === id) && a.status !== 'transit');
     const sum = sensors.reduce((x, a) => x + a.capability * av.get(a.id)! * effRatio(a.domain), 0);
-    r.awareness = clamp(Math.min(100, (sum / 70) * 100) * (0.6 + 0.4 * (r.comms / 100)) - (pen.awareness[id] ?? 0) * mit);
+    r.awareness = clamp(Math.min(100, (sum / 70) * 100) * (0.6 + 0.4 * (r.comms / 100)) * (1 - SC.command * siteLoss(s, id, 'command')) - (pen.awareness[id] ?? 0) * mit);
 
     const home = s.assets.filter((a) => a.region === id && a.domain !== 'space' && a.role !== 'defense');
     const homeR = home.length ? home.reduce((x, a) => x + Math.min(1, av.get(a.id)!) * effRatio(a.domain), 0) / home.length : 0.5;
-    r.readiness = clamp(homeR * 100 * (0.6 + 0.4 * (r.infrastructure / 100)));
+    r.readiness = clamp(homeR * 100 * (0.6 + 0.4 * (r.infrastructure / 100)) * (1 - SC.power * siteLoss(s, id, 'power')));
 
     r.threatLevel = s.events
       .filter((e) => isLive(e) && e.isGenuine && e.region === id)
@@ -115,7 +119,7 @@ export function recomputeMetrics(s: SimState): void {
   const sensorAssets = s.assets.filter((a) => a.role === 'sensor');
   const scap = sensorAssets.reduce((x, a) => x + a.capability, 0) || 1;
 
-  const globalReadiness = clamp(DOMAINS.reduce((x, d) => x + SIM_CONFIG.readinessWeight[d] * eff[d], 0));
+  const globalReadiness = clamp(DOMAINS.reduce((x, d) => x + SIM_CONFIG.readinessWeight[d] * eff[d], 0) * (1 - TACTICAL_CONFIG.consequences.readiness * networkDamageShare(s)));
   const activeKnown = s.events.filter((e) => isActive(e) && isKnown(s, e));
   const avgConf = activeKnown.length ? activeKnown.reduce((x, e) => x + e.confidence, 0) / activeKnown.length : 80;
   const infoQuality = clamp(0.45 * avg((r) => r.awareness) + 0.35 * avg((r) => r.comms) + 0.2 * avgConf);

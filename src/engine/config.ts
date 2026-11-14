@@ -28,20 +28,29 @@ export const SIM_CONFIG = {
   resilienceMitigation: 0.005,
 
   /** Condition decay per hour by domain (before overdue penalty). */
-  decayPerHour: { space: 0.06, air: 0.16, sea: 0.12, ground: 0.09 } as Record<Domain, number>,
+  decayPerHour: { space: 0.045, air: 0.12, sea: 0.09, ground: 0.07 } as Record<Domain, number>,
   overdueDecayMult: 2.5,
   /**
    * Unspent reserves are reclaimed: credits above the threshold lose this share of the excess every hour, so banking
    * everything is not a safe strategy. Not applied in training.
    */
   reserve: { threshold: 1200, ratePerHour: 0.02 },
-  serviceInterval: { space: 220, air: 90, sea: 130, ground: 160 } as Record<Domain, number>,
+  serviceInterval: { space: 300, air: 130, sea: 180, ground: 220 } as Record<Domain, number>,
   maintenanceHours: { space: 18, air: 10, sea: 16, ground: 12 } as Record<Domain, number>,
   maintenanceCost: { space: 120, air: 50, sea: 75, ground: 55 } as Record<Domain, number>,
   redeployHours: { space: 0, air: 8, sea: 30, ground: 0 } as Record<Domain, number>,
   redeployCost: { space: 0, air: 40, sea: 70, ground: 0 } as Record<Domain, number>,
   confirmCost: 15,
   confirmHours: 6,
+  /**
+   * A confirmation can come back inconclusive: always this base chance, plus more where regional awareness is poor
+   * (`blind` at zero awareness). An inconclusive result nudges confidence toward the truth and can be tasked again.
+   */
+  confirmInconclusive: { base: 0.12, blind: 0.5, nudge: 12 },
+  /** Level at which a "raise it during the phase" objective counts as met however much it rose. */
+  objectiveCeiling: { readinessGain: 85, infrastructureGain: 85 } as Record<string, number>,
+  /** Score points for meeting every objective of a scenario (each objective is worth an equal share). */
+  objectiveBonus: 8,
 
   baseIncomePerHour: 34,
   personnelRegenPerHour: 1.1,
@@ -138,7 +147,7 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
       'Political and economic pressure is building in several regions. Unrest and severe weather will strain maintenance capacity, and ignored problems will now trigger follow-on complications.',
     special: ['Event chains enabled', 'Some reports conflict on severity', 'Regional instability events'],
     objectives: [
-      { id: 'p2_stab', text: 'Keep average regional stability at or above 60', metric: 'stability', target: 60, reward: 180 },
+      { id: 'p2_stab', text: 'Average regional stability of 60 or more over the whole phase', metric: 'stabilityAvg', target: 60, reward: 180 },
       { id: 'p2_conf', text: 'Task at least 4 independent confirmations', metric: 'confirmations', target: 4, reward: 100 },
       { id: 'p2_esc', text: 'Allow no more than 3 escalations in total', metric: 'escalationsMax', target: 3, reward: 150 },
     ],
@@ -155,7 +164,7 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
       'Intense solar activity and a cascading communications failure will hit multiple regions at once. Reports will arrive late and often contradict each other. You will not be able to fix everything — prioritize.',
     special: ['Delayed information from low-comms regions', 'High false-report rate', 'Scripted global outage', 'Critical-severity events possible'],
     objectives: [
-      { id: 'p3_net', text: 'Keep network health at or above 55%', metric: 'network', target: 55, reward: 200 },
+      { id: 'p3_net', text: 'Average network health of 55% or more over the whole phase', metric: 'networkAvg', target: 55, reward: 200 },
       { id: 'p3_res', text: 'Resolve at least 14 events in total', metric: 'resolved', target: 14, reward: 150 },
       { id: 'p3_false', text: 'Expose or correctly dismiss false reports: at least 3', metric: 'falseDismissed', target: 3, byLevel: { recruit: 1, commander: 4 }, reward: 120 },
     ],
@@ -167,8 +176,8 @@ export const CAMPAIGN_PHASES: PhaseConfig[] = [
       'The crisis has passed. Reconstruction funding has been released. Restore readiness, repair infrastructure and leave the network in a sustainable state.',
     special: ['Reconstruction grant released', 'Quieter than the crisis', 'Final evaluation at end of phase'],
     objectives: [
-      { id: 'p4_ready', text: 'Raise global readiness by at least 4 points during the phase', metric: 'readinessGain', target: 4, byLevel: { recruit: 2, commander: 5 }, reward: 0 },
-      { id: 'p4_infra', text: 'Raise average infrastructure by at least 3 points during the phase', metric: 'infrastructureGain', target: 3, byLevel: { recruit: 1, commander: 4 }, reward: 0 },
+      { id: 'p4_ready', text: 'Raise global readiness by at least 4 points during the phase, or end it at 85% or higher', metric: 'readinessGain', target: 4, byLevel: { recruit: 2, commander: 5 }, reward: 0 },
+      { id: 'p4_infra', text: 'Raise average infrastructure by at least 3 points during the phase, or end it at 85 or higher', metric: 'infrastructureGain', target: 3, byLevel: { recruit: 1, commander: 4 }, reward: 0 },
       { id: 'p4_cred', text: 'Finish with at least 300 credits in reserve', metric: 'credits', target: 300, byLevel: { recruit: 200 }, reward: 0 },
     ],
   },
@@ -249,6 +258,8 @@ export const TACTICAL_CONFIG = {
     classes: ['slowDrone', 'fastDrone', 'cruise'] as ThreatClass[],
     horizonKm: 40,
     massifHorizonMult: 2,
+    /** With an aircraft radar tracking the threat, a surface system reaches low fliers out to this many horizons. */
+    cuedHorizonMult: 3,
   },
   /** Altitude (km) at which each class is engaged; a system whose ceiling is lower can't engage it. */
   threatAltitudeKm: { slowDrone: 0.1, fastDrone: 0.3, cruise: 0.05, rocket: 3, ballistic: 12 } as Record<ThreatClass, number>,
@@ -267,8 +278,8 @@ export const TACTICAL_CONFIG = {
   /** Site integrity lost when a threat of each class gets through. */
   threatDamage: { slowDrone: 4, fastDrone: 6, cruise: 10, rocket: 5, ballistic: 15 } as Record<ThreatClass, number>,
   /** Regional infrastructure and stability lost per point of site damage, scaled by site importance / 3. */
-  infraPerDamage: 0.12,
-  stabilityPerDamage: 0.06,
+  infraPerDamage: 0.25,
+  stabilityPerDamage: 0.12,
   /** Most engagements one system makes against one threat (shoot-look-shoot). */
   maxShotsPerSystem: 2,
   /** Detection: a threat seen by a covering sensor is engaged at full quality; otherwise at this quality. */
@@ -302,7 +313,18 @@ export const TACTICAL_CONFIG = {
    * Damage carries over: a region's damaged sites (share of site value lost, 0-1) pull its stability target down by
    * up to `stability` points, and add up to `targeting` to its weight when forecasts pick where attacks come.
    */
-  consequences: { stability: 35, targeting: 60 },
+  consequences: {
+    stability: 35, targeting: 60,
+    /** Income lost per region whose sites are wholly destroyed (summed over regions), and the most that can be lost. */
+    income: 0.3, incomeMax: 0.5,
+    /** Global readiness lost when every site everywhere is destroyed (scaled by the average damage share). */
+    readiness: 0.6,
+    /**
+     * What each kind of site does for its region: the share of regional readiness lost with its power stations, of
+     * communications with its signal hub, and of awareness (warning time, decoys, report quality) with its command post.
+     */
+    power: 0.4, comms: 0.4, command: 0.4,
+  },
   /** Share of a region's site value that must be covered to count as protected, or thin. */
   protection: { protected: 0.7, thin: 0.3 },
 };

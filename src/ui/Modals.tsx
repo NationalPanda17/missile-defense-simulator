@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useRef, useState } from 'react';
 import {
-  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -240,10 +240,23 @@ const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
   falseDismissed: 'expose false reports: task a confirmation, or dismiss a report you are sure is false.',
   readinessGain: 'service the most worn assets early so they are back before the phase ends, and fix events that hurt a domain.',
   infrastructureGain: 'fund Harden Regional Infrastructure (+18) or Regional Recovery (+8) projects in the weakest regions, and keep sites defended.',
+  networkAvg: 'the average over every hour of the phase counts, so one bad stretch can be made up: respond quickly to comms events and fund the Network Resilience Program.',
+  stabilityAvg: 'the average over every hour of the phase counts: resolve reports before they escalate and stop threat waves reaching sites.',
   credits: 'keep this much in hand at the end of the phase; above the reserve level, idle money is reclaimed.',
 };
 
 const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
+
+const SITE_EFFECT: [SiteType, string, 'power' | 'comms' | 'command'][] = [['power', 'readiness', 'power'], ['comms', 'communications', 'comms'], ['command', 'awareness', 'command']];
+/** " Power stations hit: regional readiness −12%." for each kind of site whose damage is costing the region. */
+function siteEffects(s: SimState, r: RegionId): string {
+  const C = TACTICAL_CONFIG.consequences;
+  const label: Record<string, string> = { power: 'Power stations', comms: 'Signal hub', command: 'Command post' };
+  return SITE_EFFECT.map(([type, what, key]) => {
+    const loss = siteLoss(s, r, type);
+    return loss >= 0.05 ? ` ${label[type]} hit: regional ${what} −${Math.round(C[key] * loss * 100)}%.` : '';
+  }).join('');
+}
 
 /** What earlier phases left behind: damaged sites, and what that does to each region. */
 function CarriedOver({ s }: { s: SimState }) {
@@ -257,7 +270,7 @@ function CarriedOver({ s }: { s: SimState }) {
         {hurt.map(({ r, share }) => (
           <li key={r}>
             <span className="text-white">{s.regions[r].name}</span>: sites at {Math.round(100 - share * 100)}% of their value.
-            <span className="text-ops-dim"> Stability pulled down by about {Math.round(C.stability * share)} points, and a likelier target for attacks.</span>
+            <span className="text-ops-dim"> Stability pulled down by about {Math.round(C.stability * share)} points, income cut by {Math.round(C.income * share * 100)}%, and a likelier target for attacks.{siteEffects(s, r)}</span>
           </li>
         ))}
       </ul>

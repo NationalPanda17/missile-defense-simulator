@@ -10,6 +10,7 @@ import { normalizeTactical } from './scenarios';
 import { LESSON_MAP, type ScriptedWave } from './training';
 import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
 import { ADAPTATION, enemyPlan } from './adaptation';
+import { siteDamageShare } from './sites';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -332,7 +333,7 @@ const isPassive = (spec: EquipmentSpec) => spec.id === 'acoustic-net' || spec.id
 function reachSpan(terrain: TheaterTerrain | undefined, d: Deployment, spec: EquipmentSpec, cls: ThreatClass, a: [number, number], b: [number, number], range: number, cued: boolean): [number, number] | null {
   if (range <= 0) return null;
   const low = isLowFlying(cls) && spec.domain !== 'air';
-  const limited = low && !cued && !isPassive(spec) ? Math.min(range, lowHorizonKm(terrain, [d.x, d.y])) : range;
+  const limited = low && !isPassive(spec) ? Math.min(range, lowHorizonKm(terrain, [d.x, d.y]) * (cued ? TACTICAL_CONFIG.lowAltitude.cuedHorizonMult : 1)) : range;
   const span = chordSpan(a, b, [d.x, d.y], limited);
   if (!span) return null;
   if (low && !cued) {
@@ -768,13 +769,7 @@ export function forecastTargets(s: SimState, region: RegionId): ForecastTarget[]
   return [...by.values()].sort((a, b) => b.threat - a.threat || b.site.importance - a.site.importance);
 }
 
-/** Share (0-1) of a region's site value lost to threat waves so far; it carries over from phase to phase. */
-export function siteDamageShare(s: SimState, region: RegionId): number {
-  const sites = s.tactical?.sites.filter((x) => x.region === region) ?? [];
-  const total = sites.reduce((a, x) => a + x.importance * 100, 0);
-  if (!total) return 0;
-  return sites.reduce((a, x) => a + x.importance * (100 - x.integrity), 0) / total;
-}
+export { siteDamageShare, siteLoss, networkDamageShare } from './sites';
 
 /** Is a raised alert in force in this region now? */
 export function alertActive(s: SimState, region: RegionId): boolean {
@@ -865,7 +860,7 @@ export function waveLeadHours(tracks: { cls: ThreatClass }[]): number {
 /** Credits one interceptor round costs to replace (the resupply price per round). Unlimited systems: 0. */
 export function roundCost(spec: EquipmentSpec): number {
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
-  return (equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate) / spec.magazine;
+  return spec.roundCr ?? (equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate) / spec.magazine;
 }
 
 /** Stockpile rules in force: the campaign at Officer or Commander. Null means unlimited reserves. */
@@ -909,7 +904,7 @@ export function resupplyCost(d: Deployment, rounds?: number): number {
   if (isUnlimited(spec) || spec.magazine <= 0) return 0;
   const n = rounds ?? spec.magazine - d.stock;
   if (n <= 0) return 0;
-  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(equipmentCost(spec) * TACTICAL_CONFIG.resupplyRate * (n / spec.magazine)));
+  return Math.max(TACTICAL_CONFIG.resupplyMinCost, Math.ceil(roundCost(spec) * n));
 }
 
 export type ProtectionLevel = 'protected' | 'thin' | 'exposed';

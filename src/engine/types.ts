@@ -219,7 +219,8 @@ export interface Objective {
     | 'falseDismissed'
     | 'credits'
     | 'readinessGain' // points gained since the phase began
-    | 'infrastructureGain';
+    | 'infrastructureGain'
+    | 'networkAvg' | 'stabilityAvg';
   target: number;
   /** Campaign only: the target at other difficulty levels (`target` is Officer's). Resolved when the run is built. */
   byLevel?: Partial<Record<CommandLevel, number>>;
