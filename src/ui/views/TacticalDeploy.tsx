@@ -331,6 +331,9 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
   );
 }
 
+/** Bring the deploy map back on screen, for buttons further down the page that start a placement. */
+const showMap = () => window.requestAnimationFrame(() => document.querySelector('[data-coach="deploy-map"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+
 export function DeployPanel({ s }: { s: SimState }) {
   const t = s.tactical!;
   const ui = useUI();
@@ -401,7 +404,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         {fix && fixSpec && !fixDone && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1 text-[11px]">
             <span><span className="label mr-2 text-ops-amber">From the last review</span>{fix.text} <span className="text-ops-dim">The amber ring on the map marks the spot.</span></span>
-            <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); }}>Pick {fixSpec.name}</button>
+            <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); showMap(); }}>Pick {fixSpec.name}</button>
           </div>
         )}
         {s.settings.mode === 'campaign' && s.settings.enemy && s.settings.enemy !== 'planner' && (
@@ -411,7 +414,7 @@ export function DeployPanel({ s }: { s: SimState }) {
         )}
       </div>
 
-      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
+      {showGuide && <div className="order-5"><DeployGuide s={s} region={region} onPick={(id) => { setEquipment(id); setSelectedDep(null); setMoving(false); setPane('map'); showMap(); }} onHide={() => { setHideGuide(true); setGuideHidden(true); }} /></div>}
       {!showGuide && s.phaseIndex === 0 && (
         <button className="order-5 self-start text-[10px] text-ops-dim underline hover:text-white" onClick={() => { setHideGuide(false); setGuideHidden(false); }}>Show the first deployment guide</button>
       )}
@@ -443,6 +446,12 @@ export function DeployPanel({ s }: { s: SimState }) {
                 : spec ? <>Placing <b>{spec.name}</b> ({equipmentCost(spec)} cr): click a spot{spec.domain === 'sea' ? ' at sea' : spec.domain === 'air' ? '' : ' on land'}. The outline follows your pointer. Esc cancels.</>
                 : <><span className="md:hidden">Open Systems, pick one, then tap the map to place it.</span><span className="hidden md:inline">Pick a system from the catalog, then click the map to place it.</span></>}
             </span>
+            {undoable && !spec && !moving && (
+              <button className="btn shrink-0 px-2 py-0" title="Take back the last system placed in this briefing: every credit is returned"
+                onClick={() => { if (undoable.region !== region) setRegion(undoable.region); dispatch({ type: 'withdraw', deploymentId: undoable.id }); setSelectedDep(null); setMoving(false); }}>
+                ↶ Undo {EQUIPMENT_MAP.get(undoable.equipmentId)!.name}
+              </button>
+            )}
             {(spec || moving) && <button className="btn px-2 py-0" onClick={() => { setEquipment(null); setMoving(false); }}>Cancel</button>}
           </div>
           {/* Phones: the map is drawn at full size and scrolls sideways, so taps land precisely. */}
@@ -458,12 +467,6 @@ export function DeployPanel({ s }: { s: SimState }) {
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
-            {undoable && (
-              <button className="btn px-2 py-0.5" title="Take back the last system placed in this briefing: every credit is returned"
-                onClick={() => { if (undoable.region !== region) setRegion(undoable.region); dispatch({ type: 'withdraw', deploymentId: undoable.id }); setSelectedDep(null); setMoving(false); }}>
-                ↶ Undo {EQUIPMENT_MAP.get(undoable.equipmentId)!.name}
-              </button>
-            )}
             <span className="rounded border border-ops-green/50 bg-ops-green/10 px-2 py-0.5 tabular-nums text-white">
               Credits <span className="font-sans text-[15px] font-bold text-ops-green">{Math.round(s.credits).toLocaleString('en-US')}</span>
               {spentNow > 0 && <span className="ml-2 text-ops-dim">spent this briefing {spentNow}</span>}

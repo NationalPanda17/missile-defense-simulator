@@ -99,7 +99,7 @@ export function WaveCard({ s }: { s: SimState }) {
   const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d)), 0);
   const tone = leaked === 0 ? 'border-ops-green/60' : leaked * 2 > real.length ? 'border-ops-red/60' : 'border-ops-amber/60';
   return (
-    <div className={`fixed inset-x-2 top-16 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-20 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
+    <div className={`fixed inset-x-2 top-32 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-28 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="label">Wave over · {s.regions[w.region].name}</div>
@@ -220,6 +220,9 @@ export function TopBar({ s }: { s: SimState }) {
         <span className="hidden sm:contents"><ServerStatusChip /></span>
         <DisplayControl />
         <SoundControl />
+        {(() => { const n = s.events.filter((e) => isActive(e) && isKnown(s, e)).length; return n > 0 ? (
+          <button className="btn sm:hidden" onClick={() => ui.setView('intel')} title="Open reports are listed under Intelligence" aria-label={`${n} open reports: show them`}>✉ {n}</button>
+        ) : null; })()}
         <NextButton s={s} />
         <MainMenuButton s={s} />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">Guide</span></button>

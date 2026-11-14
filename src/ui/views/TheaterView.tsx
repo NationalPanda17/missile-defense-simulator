@@ -305,6 +305,12 @@ export function TheaterView({ s }: { s: SimState }) {
               </span>
             )}
           </div>
+          {isPlaying && captions.length > 0 && (
+            <div className="mb-1.5 rounded border border-ops-line bg-ops-panel/80 px-2 py-1.5 text-[12px]" role="status" aria-live="polite">
+              <span className="label mr-2">Replay {captionAt + 1}/{captions.length}</span>
+              <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
+            </div>
+          )}
           {/* Phones: full-size map that scrolls sideways, so systems and threats stay readable and taps land. */}
           <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0">
             <div className="min-w-[560px] sm:min-w-0">
@@ -320,12 +326,6 @@ export function TheaterView({ s }: { s: SimState }) {
             <div className="mt-1.5 flex items-start justify-between gap-2 rounded border border-ops-cyan/50 bg-ops-cyan/5 p-2 text-[11px]" role="status">
               <div><span className="label mr-2 text-ops-cyan">This threat</span>{trackStory(s, storyWave, storyTrack)}</div>
               <button className="btn shrink-0 px-2 py-0" onClick={() => setStory(null)} aria-label="Close threat details">✕</button>
-            </div>
-          )}
-          {isPlaying && captions.length > 0 && (
-            <div className="mt-1.5 rounded border border-ops-line bg-ops-panel/80 px-2 py-1.5 text-[12px]" role="status" aria-live="polite">
-              <span className="label mr-2">Replay {captionAt + 1}/{captions.length}</span>
-              <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
             </div>
           )}
           <div className="mt-1.5"><MapLegend region={region} /></div>
