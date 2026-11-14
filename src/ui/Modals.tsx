@@ -1,5 +1,5 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
-import { Suspense, lazy, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   COMMAND_LEVELS, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, QUICK_BATTLE_ID, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
@@ -13,6 +13,7 @@ import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
+import { MainMenuButton } from './Shell';
 import { loadMedals, subscribeMedals } from './medals';
 import { CampaignScenarioPicker, loadChosenScenario, saveChosenScenario, type ChosenScenario } from './views/TacticalScenarioBuilder';
 
@@ -317,7 +318,10 @@ export function BriefingModal({ s }: { s: SimState }) {
   return (
     <Modal wide tall={step === 'deploy'} title={quick ? `QUICK BATTLE · ${quickBattle(s.settings.seed).name.toUpperCase()} · ${s.regions[quickBattle(s.settings.seed).region].name.toUpperCase()}` : `${s.settings.mode === 'training' ? 'TRAINING' : 'CAMPAIGN'} BRIEFING · PHASE ${phase.id} OF ${s.phases.length}`}
       footer={<>
-        <button className="btn mr-auto px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
+        <span className="mr-auto flex flex-wrap items-center gap-2">
+          <MainMenuButton s={s} className="px-3 py-2 text-[13px]" />
+          <button className="btn px-3 py-2 text-[13px]" onClick={() => ui.setHelp(step === 'deploy' ? 'defenses' : 'first')} title="Open the field guide (?)">? How to play</button>
+        </span>
         {tactical && step === 'brief' && <button className="btn px-4 py-2 text-[13px]" onClick={() => setStep('deploy')}>Deploy defenses ▶</button>}
         <button data-coach="begin" className="btn btn-primary px-6 py-2 text-[13px]" autoFocus onClick={() => {
           if (beginIssues.length && !confirmBegin) { setConfirmBegin(true); setStep('brief'); } else dispatch({ type: 'beginPhase' });
@@ -696,8 +700,20 @@ export function TutorialPanel() {
   const ui = useUI();
   const [i, setI] = useState(0);
   const st = STEPS[i];
+  // Like the coach, the guide reserves its own space at the bottom of the screen instead of covering the game.
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    document.body.classList.add('coach-on');
+    const set = () => document.body.style.setProperty('--coach-h', `${el.getBoundingClientRect().height}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); document.body.classList.remove('coach-on'); document.body.style.removeProperty('--coach-h'); };
+  }, []);
   return (
-    <div className="panel fadein fixed bottom-3 left-3 z-40 w-[min(380px,calc(100vw-1.5rem))] border-ops-cyan/40 bg-ops-panel">
+    <div ref={ref} className="panel fadein fixed bottom-3 left-3 z-40 w-[min(380px,calc(100vw-1.5rem))] border-ops-cyan/40 bg-ops-panel">
       <div className="panel-title"><span>Training · {i + 1}/{STEPS.length}</span><button className="btn px-2" onClick={() => ui.setTutorial(false)} aria-label="Close guide">✕</button></div>
       <div className="space-y-2 p-3">
         <div className="font-sans text-lg font-semibold text-white">{st.title}</div>

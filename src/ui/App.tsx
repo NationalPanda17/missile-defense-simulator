@@ -197,7 +197,7 @@ function Root() {
   })();
 
   return (
-    <div className="flex min-h-full flex-col lg:h-full">
+    <div className="app-root flex min-h-full flex-col lg:h-full">
       <TopBar s={s} />
       {s.status === 'complete' && (
         <div className="flex items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">

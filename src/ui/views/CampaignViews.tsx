@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import {
-  DOMAINS, REGION_IDS, SLOTS, autosaveSlot, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
+  DOMAINS, REGION_IDS, SLOTS, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
   formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
+import { MainMenuButton } from '../Shell';
 import { Bar, Chip, OBJECTIVE_LOOK, DOMAIN_LABEL, Panel, REGION_SHORT, Stat, ConfirmDelete } from '../components/ui';
 import { useUI } from '../uiState';
 import { ServerSavesPanel, ServiceRecord } from './ServerPanels';
@@ -106,7 +107,7 @@ export function CampaignView({ s }: { s: SimState }) {
               </>
             )}
             <button className="btn" onClick={() => { store.newGame(defaultSettings(s.settings.mode === 'sandbox' ? 'campaign' : s.settings.mode)); ui.setView('global'); }}>New randomized run</button>
-            <button className="btn" onClick={() => { saveGame(s, autosaveSlot(s)); store.quit(); }}>Main menu</button>
+            <MainMenuButton s={s} />
           </div>
         </Panel>
         <Panel title="Achievements" right={<span>{s.achievements.length}/{Object.keys(ACH).length}</span>}>

@@ -450,8 +450,8 @@ export function DeployPanel({ s }: { s: SimState }) {
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>
-            <span className="tabular-nums text-white">
-              Credits <span className="text-ops-green">{Math.round(s.credits)}</span>
+            <span className="rounded border border-ops-green/50 bg-ops-green/10 px-2 py-0.5 tabular-nums text-white">
+              Credits <span className="font-sans text-[15px] font-bold text-ops-green">{Math.round(s.credits).toLocaleString('en-US')}</span>
               {spentNow > 0 && <span className="ml-2 text-ops-dim">spent this briefing {spentNow}</span>}
             </span>
           </div>

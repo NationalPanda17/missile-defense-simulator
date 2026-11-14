@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
-import { DOMAINS, SIM_CONFIG, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
+import { DOMAINS, SIM_CONFIG, autosaveSlot, saveGame, isActive, formatObjective, objectiveProgress, objectiveValue, reserveDrain, type Domain, isKnown, confidenceLabel, incomingWaves, type LogLevel, type SimState } from '../engine';
 import { dispatch, store, useSimTime } from '../store/simStore';
 import { SEVERITY_WORD, Bar, Chip, OBJECTIVE_LOOK, DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, Tabs, TONE_TEXT, simClock, tone } from './components/ui';
 import { useUI, type ViewId } from './uiState';
@@ -38,6 +38,30 @@ export function chooseSpeed(s: SimState, sp: 1 | 2 | 4 | 8) {
   }
   dispatch({ type: 'setSpeed', speed: sp });
   if (s.status === 'running' && s.paused && !s.turnBased) dispatch({ type: 'setPaused', paused: false });
+}
+
+/**
+ * Leave the game for the start screen. Asks once, since it ends the session; the game is autosaved first, so it can
+ * be picked up again from Browser saves.
+ */
+export function MainMenuButton({ s, className = '' }: { s: SimState; className?: string }) {
+  const ui = useUI();
+  const [ask, setAsk] = useState(false);
+  const leave = () => {
+    const saved = s.status !== 'complete' && saveGame(s, autosaveSlot(s));
+    store.quit();
+    ui.setView('global');
+    ui.setHelp(false);
+    if (saved) store.toast('ok', 'Game saved. Find it under Browser saves to carry on.');
+  };
+  if (!ask) return <button className={`btn ${className}`} onClick={() => setAsk(true)} title="Leave this game and go back to the start screen">☰ Main menu</button>;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded border border-ops-amber/60 bg-ops-amber/10 px-1.5 py-0.5 ${className}`} role="group" aria-label="Leave to the main menu?">
+      <span className="text-[11px] text-ops-amber">Leave? {s.status === 'complete' ? 'This game is over.' : 'Your game is saved.'}</span>
+      <button className="btn btn-primary px-2 py-0.5" autoFocus onClick={leave}>Main menu</button>
+      <button className="btn px-2 py-0.5" onClick={() => setAsk(false)}>Stay</button>
+    </span>
+  );
 }
 
 export function TopBar({ s }: { s: SimState }) {
@@ -97,12 +121,12 @@ export function TopBar({ s }: { s: SimState }) {
           <TopMetric label="Readiness" v={m.globalReadiness} />
           <TopMetric label="Network" v={m.network} />
         </span>
-        <div className="leading-tight">
+        <div className={`rounded border px-2.5 py-1 leading-tight ${s.credits < 150 ? 'border-ops-red/60 bg-ops-red/10' : 'border-ops-green/50 bg-ops-green/10'}`} title="Credits: what you spend on defenses, maintenance, responses and investments">
           <div className="label">Credits</div>
-          <div className={`whitespace-nowrap tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-white'}`}>
-            {Math.round(s.credits)}
+          <div className={`whitespace-nowrap font-sans text-[17px] font-bold tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-ops-green'}`} aria-label={`${Math.round(s.credits)} credits`}>
+            {Math.round(s.credits).toLocaleString('en-US')}<span className="ml-1 text-[11px] font-semibold opacity-80">cr</span>
             {reserveDrain(s) >= 1 && (
-              <span className="ml-1 text-[10px] text-ops-amber" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
+              <span className="ml-1.5 font-mono text-[10px] font-normal text-ops-amber" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
                 unspent −{Math.round(reserveDrain(s))}/h
               </span>
             )}
@@ -115,6 +139,7 @@ export function TopBar({ s }: { s: SimState }) {
         <span className="hidden sm:contents"><ServerStatusChip /></span>
         <DisplayControl />
         <SoundControl />
+        <MainMenuButton s={s} />
         <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">Guide</span></button>
       </div>
     </header>
