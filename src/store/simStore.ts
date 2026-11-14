@@ -437,12 +437,12 @@ if (typeof window !== 'undefined' && !BROWSER_ONLY) {
 }
 
 export function useSim(): SimState {
-  useSyncExternalStore(store.subscribe, store.getVersion);
+  useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
   return store.state!;
 }
 
 export function useStoreVersion() {
-  return useSyncExternalStore(store.subscribe, store.getVersion);
+  return useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
 }
 
 export const dispatch = store.dispatch;

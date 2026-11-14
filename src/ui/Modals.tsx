@@ -289,7 +289,7 @@ function CarriedOver({ s }: { s: SimState }) {
  * Before each later phase one region can be reinforced. The choices made are drawn as the campaign's path: one
  * node per phase, branching into the regions that were on offer.
  */
-function Reinforce({ s }: { s: SimState }) {
+export function Reinforce({ s }: { s: SimState }) {
   const options = reinforceOptions(s);
   if (s.settings.mode !== 'campaign' || !s.tactical?.enabled) return null;
   const chosen = s.branches?.[s.phaseIndex];
@@ -570,7 +570,7 @@ function EnemyPicker({ value, onChange }: { value: EnemyChoice; onChange: (e: En
 
 /** The player's medals: earned ones lit, the rest showing how to earn them. */
 export function MedalCase() {
-  const have = useSyncExternalStore(subscribeMedals, loadMedals);
+  const have = useSyncExternalStore(subscribeMedals, loadMedals, loadMedals);
   const next = THEME_UNLOCKS.find((t) => t.medals > have.length);
   return (
     <div className="panel p-4" role="region" aria-label="Medals">

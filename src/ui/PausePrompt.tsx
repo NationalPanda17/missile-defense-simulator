@@ -49,7 +49,7 @@ const KIND_LABEL: Record<PauseReason['kind'], string> = { launch: 'launch warnin
  * corner without taking focus, so it never covers or swallows clicks on the form underneath.
  */
 export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
-  useSyncExternalStore(store.subscribe, version);
+  useSyncExternalStore(store.subscribe, version, version);
   const ui = useUI();
   const reasons = store.pausePrompt;
   if (!reasons?.length || s.status !== 'running') return null;
@@ -114,7 +114,7 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
 
 /** Auto-pause choices, for the settings panel. */
 export function PacingSettings() {
-  useSyncExternalStore(store.subscribe, version);
+  useSyncExternalStore(store.subscribe, version, version);
   const cur = store.autoPause() ?? store.pacing ?? { launch: true, deadline: true, report: false };
   const row = (kind: PauseReason['kind'], label: string) => (
     <label key={kind} className="flex items-center justify-between gap-2">

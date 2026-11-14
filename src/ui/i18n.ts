@@ -25,7 +25,7 @@ export function setLang(l: Lang) {
 }
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
 /** Re-render when the language changes. Call once near the top of a screen. */
-export const useLang = (): Lang => useSyncExternalStore(subscribe, lang);
+export const useLang = (): Lang => useSyncExternalStore(subscribe, lang, lang);
 
 const ES: Record<string, string> = {
   // Start screen

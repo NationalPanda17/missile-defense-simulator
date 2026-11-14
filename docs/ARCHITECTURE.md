@@ -230,6 +230,24 @@ deployment keeps a callsign and a count of threats stopped (`veteranOf`). `story
 narrated replay (`narrateWave`), a single threat's story (`trackStory`), the per-phase front page (`phaseDispatch`) and
 medals (`MEDALS`); medals live in the browser (`src/ui/medals.ts`) and unlock theater map themes.
 
+**Depth, modes and presentation (round four).**
+- *Terrain:* each theater has valleys (`TheaterTerrain.valleys`, from the seed) that hide low fliers from ground systems
+  outside them, and city centres (`cities`) where line-of-fire weapons lose reach (`engageRange`). Ships can patrol.
+- *Engagements:* a system handles `channelsOf(spec) × saturationPasses` threats a wave; a layer engaging what an
+  earlier one missed gets the `handoff` bonus. Units can go radar-silent (`emcon`), shoot and scoot, and five systems
+  have interceptor `loadouts` (which systems have them is from official sources; their effects are game values).
+  Decoy emitters (`lure`) draw the missiles that hunt radars.
+- *Enemy:* two-sided and timed raids by phase (`TACTICAL_CONFIG.raids`), and an escalation ladder (`escalationOf`).
+- *Between fights:* repair crews work the sites in `TacticalState.repairFirst`; `SimState.industry` grows stockpiles
+  and cuts round prices; `reinforce` is one choice per later phase (`SimState.branches`).
+- *Modes:* Endless Defense (a lesson with `endless`: one wave per phase), written campaigns (`STORIES`), player raids
+  (`settings.raid`, the `RAID` lesson) and the raid designer, the adjutant's `proposeDefense` (`plan.ts`), and the
+  practice range (`range.ts`, which records each shot's dice).
+- *Presentation:* radio chatter (`waveChatter`), scope view, storm cells and twilight in `WeatherOverlay`, music that
+  tightens on a launch warning (`tensionOf`), an equipment encyclopedia in the guide, and translations (`src/ui/i18n.ts`:
+  English is the key; Spanish covers the start screen, top bar, navigation and briefing buttons).
+- *Tests:* `tests/render.test.tsx` mounts every changed screen with realistic states.
+
 **Radar bands.** Each radar has a band (`RADAR_BANDS` in `equipment.ts`, long waves to short: UHF, L, S, C, X, Ku) with
 three game values: the share of range it keeps in a storm, the chance it recognises a decoy it is tracking (recognised
 decoys draw no fire), and the quality of the track it hands to a shooter whose own sensor cannot see the threat. Wave

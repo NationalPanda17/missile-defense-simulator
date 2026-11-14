@@ -8,8 +8,8 @@ import { loadMedals, subscribeMedals } from '../medals';
 import { LANGS, setLang, translated, useLang, type Lang } from '../i18n';
 
 export function DisplaySettings() {
-  const st = useSyncExternalStore(subscribeA11y, a11y);
-  const medals = useSyncExternalStore(subscribeMedals, loadMedals).length;
+  const st = useSyncExternalStore(subscribeA11y, a11y, a11y);
+  const medals = useSyncExternalStore(subscribeMedals, loadMedals, loadMedals).length;
   const language = useLang();
   const row = (label: string, desc: string, on: boolean, set: (v: boolean) => void) => (
     <div className="flex items-start justify-between gap-3">

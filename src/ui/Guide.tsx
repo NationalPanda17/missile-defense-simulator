@@ -631,7 +631,8 @@ function Keys() {
   );
 }
 
-const PAGES: Record<GuideTab, () => JSX.Element> = {
+/** Each section of the guide, by tab. Exported so tests can render every page. */
+export const PAGES: Record<GuideTab, () => JSX.Element> = {
   start: Start, first: First, threats: Threats, defenses: Defenses, equipment: Equipment, bands: Bands, phase: Phase, network: Network, score: Score, glossary: Glossary, keys: Keys,
 };
 
