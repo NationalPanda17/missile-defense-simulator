@@ -278,7 +278,7 @@ function First() {
         <>When a <B>launch warning</B> appears, open the <B>Tactical Theater</B> (key X). Press <B>Raise alert</B> for the region under attack: for {C.alert.hours} hours its systems react faster and see better.</>,
         <>Watch the wave fly in. Green crosses are interceptions; red bursts are hits.</>,
         <>Afterwards, press <B>Resupply</B> on each system that fired. An empty system defends nothing.</>,
-        <>When a <B>report</B> appears in Active Events, click it. If its confidence is low, press <B>Task confirmation</B> to find out whether it is real. If it is real, pick a response and press <B>Execute</B>.</>,
+        <>When a <B>report</B> appears under Active reports, click it. If its confidence is low, press <B>Task confirmation</B> to find out whether it is real. If it is real, pick a response and press <B>Execute</B>.</>,
         <>Check the <B>Objectives</B> in the sidebar. Meeting them pays credits and adds to your score.</>,
       ]} />
       <H>When the phase ends</H>
@@ -298,7 +298,7 @@ function Phase() {
         <><B>Raise alert</B> (Tactical Theater). For {C.alert.hours} hours every system in the region reacts {Math.round((1 - C.alert.reactionMult) * 100)}% faster and unseen threats are handled far better. It costs credits and wears equipment, so raise it when a launch warning appears, not before.</>,
         <><B>Resupply.</B> Refills a system’s magazine over a few hours. It costs credits in proportion to the rounds brought, and needs logistics capacity of at least {C.minLogisticsForResupply}.</>,
         <><B>Redeploy.</B> Moves a system to a new spot or another region. It is out of action while it travels: {R.sameRegionHours} hours within a region; to another region {R.otherRegionHours.air} hours for aircraft, {R.otherRegionHours.ground} for ground systems and {R.otherRegionHours.sea} for ships. Use it when a warning appears for a region you did not defend.</>,
-        <><B>Maintenance.</B> Deployed systems wear like all equipment. Service them from the Ground, Air or Maritime screens before they fail.</>,
+        <><B>Maintenance.</B> Deployed systems wear like all equipment. Service them from the Ground, Air or Sea screens before they fail.</>,
       ]} />
       <P>You cannot buy new systems during a phase. That is what briefings are for.</P>
       <H>Warnings and surprise attacks</H>
@@ -324,7 +324,7 @@ function Network() {
       <H>Maintenance</H>
       <P>Equipment wears out. Each asset has a service clock; once it is overdue it wears {SIM_CONFIG.overdueDecayMult} times as fast. Open a domain screen, click an asset and press <B>Schedule maintenance</B>. It needs credits, a free crew and a few hours out of service. You have a limited number of crews, so service the most worn assets first.</P>
       <H>Reports</H>
-      <P>Problems reach you as <B>reports</B>, listed under Active Events. Each has:</P>
+      <P>Problems reach you as <B>reports</B>, listed under Active reports. Each has:</P>
       <List items={[
         <><B>Confidence</B>: how likely it is to be real. Some reports are false.</>,
         <><B>Severity</B> (S1 minor to S4 critical): how much harm it does while it lasts.</>,
@@ -385,7 +385,7 @@ const GLOSSARY: [string, string][] = [
   ['Crew', 'A maintenance team. Each can do one job at a time.'],
   ['Cue', 'When one sensor tells a shooter where to look. How good the cue is depends on the sensor’s radar band.'],
   ['Decoy / false track', 'A fake threat that does no damage but can draw fire.'],
-  ['Domain', 'One of the four parts of the network: Space, Air, Sea (Maritime) and Ground.'],
+  ['Domain', 'One of the four parts of the network: Space, Air, Sea and Ground.'],
   ['Effector / shooter / interceptor', 'Anything that destroys threats: guns, missiles, lasers, jammers.'],
   ['Escalation', 'What happens when a report is left until its time runs out: lasting damage, and sometimes a new problem.'],
   ['Forecast', 'The briefing’s prediction of which regions will be attacked this phase.'],
@@ -422,7 +422,7 @@ function Glossary() {
 }
 
 const KEYS: [string, string][] = [
-  ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', `Advance ${SIM_CONFIG.turnHours} hours`], ['G S A M D', 'Global · Space · Air · Maritime · Ground'], ['X', 'Tactical Theater'],
+  ['Space', 'Pause / resume'], ['1 – 4', 'Speed 1x / 2x / 4x / 8x'], ['T', `Advance ${SIM_CONFIG.turnHours} hours`], ['G S A M D', 'Global · Space · Air · Sea · Ground'], ['X', 'Tactical Theater'],
   ['I C L F', 'Intelligence · Communications · Logistics · Infrastructure'], ['P E R', 'Campaign · Scenario editor · After-Action Review'],
   ['Ctrl/⌘ + S', 'Quick-save to slot 1'], ['B', 'Show or hide the bottom panel'], ['V', 'Sound on / off'], ['Esc', 'Close a window / deselect a region'], ['?', 'This guide'],
 ];

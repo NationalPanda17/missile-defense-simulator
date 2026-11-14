@@ -1,7 +1,7 @@
 import { DOMAINS, INVESTMENTS, isActive, isKnown, canAfford, type RegionId, type SimState } from '../../engine';
 import { dispatch } from '../../store/simStore';
 import GlobalMap from '../map/GlobalMap';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, SEV_TONE, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, SEVERITY_WORD, SEV_TONE, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 export function GlobalOps({ s }: { s: SimState }) {
@@ -17,7 +17,7 @@ export function GlobalOps({ s }: { s: SimState }) {
         <Stat label="Info" full="Information quality" value={Math.round(m.infoQuality)} unit="%" t={tone(m.infoQuality)} />
         <Stat label="Stability" full="Average stability" value={Math.round(m.stability)} t={tone(m.stability)} />
         <Stat label="Infra" full="Infrastructure" value={Math.round(m.infrastructure)} t={tone(m.infrastructure)} />
-        <Stat label="Events" full="Active events" value={activeKnown.length} t={activeKnown.length > 5 ? 'red' : activeKnown.length > 2 ? 'amber' : 'green'} />
+        <Stat label="Reports" full="Open reports" value={activeKnown.length} t={activeKnown.length > 5 ? 'red' : activeKnown.length > 2 ? 'amber' : 'green'} />
         <Stat label="Backlog" full="Maintenance backlog" value={m.maintenanceBacklog} t={m.maintenanceBacklog > 4 ? 'red' : m.maintenanceBacklog > 1 ? 'amber' : 'green'} />
         <Stat label="Staff" full="Personnel" value={Math.round(s.personnel)} sub={`crews ${s.crews - s.crewsBusy}/${s.crews} free`} />
       </div>
@@ -55,11 +55,11 @@ export function RegionPanel({ s, id }: { s: SimState; id: RegionId }) {
         </div>
         <div><div className="label mb-1">Readiness trend (72h)</div><Sparkline data={hist} w={320} h={34} /></div>
         <div>
-          <div className="label mb-1">Active events</div>
+          <div className="label mb-1">Active reports</div>
           {events.length === 0 && <div className="text-ops-dim">None.</div>}
           {events.map((e) => (
             <button key={e.id} onClick={() => ui.openEvent(e.id)} className="mb-1 flex w-full items-center gap-2 rounded border border-ops-line px-2 py-1 text-left hover:border-ops-cyan/50">
-              <Chip t={SEV_TONE[e.severity]}>S{e.severity}</Chip><span className="flex-1 truncate">{e.title}</span><span className="text-[10px] text-ops-dim">{Math.round(e.confidence)}%</span>
+              <Chip t={SEV_TONE[e.severity]}>{SEVERITY_WORD[e.severity]}</Chip><span className="flex-1 truncate">{e.title}</span><span className="text-[10px] text-ops-dim">{Math.round(e.confidence)}%</span>
             </button>
           ))}
         </div>

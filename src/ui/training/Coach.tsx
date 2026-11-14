@@ -148,7 +148,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
     <div ref={ref} className={`panel fadein fixed bottom-2 left-2 right-2 z-[55] flex max-h-[45vh] flex-col border-ops-cyan/50 bg-ops-panel sm:bottom-3 sm:left-3 sm:right-auto sm:w-[400px] sm:max-h-[60vh] ${DOCK} ${DOCK_OPEN}`} role="complementary" aria-label="Training coach">
       {spot}
       <div className="panel-title shrink-0">
-        <span className="truncate">{lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
+        <span className="truncate">{lesson.makeWaves ? 'Battle' : lesson.drill ? 'Drill' : lesson.exam ? 'Final exercise' : `Lesson ${lessonIndex + 1}`} · {lesson.title}</span>
         <span className="flex shrink-0 gap-1">
           <button className="btn px-2" onClick={academy} title="Training Academy">Academy</button>
           <button className="btn px-2" onClick={() => { setOpen(false); setReopened(false); }} aria-label="Minimise coach">▾</button>
@@ -225,7 +225,7 @@ export function Coach({ s, lesson }: { s: SimState; lesson: TrainingLesson }) {
           {step.view && <button className="btn" onClick={() => ui.setView(step.view as ViewId)}>Show me</button>}
           {timeUp ? <button className="btn btn-primary" onClick={restart}>Restart lesson</button>
             : last ? (
-              lesson.drill ? <><button className="btn" onClick={() => startLesson(lesson.id)}>Try again</button><button className="btn btn-primary" onClick={academy}>Training Academy</button></>
+              lesson.drill ? <><button className="btn" onClick={() => startLesson(lesson.id)}>{lesson.makeWaves ? 'New battle' : 'Try again'}</button><button className="btn btn-primary" onClick={academy}>Training Academy</button></>
               : lesson.exam ? <button className="btn btn-primary" onClick={academy}>Training Academy</button>
                 : nextLesson ? <button className="btn btn-primary" onClick={() => { startLesson(nextLesson.id); ui.setView('global'); }}>Next: {nextLesson.title} ▸</button>
                   : <button className="btn btn-primary" onClick={academy}>Training Academy</button>

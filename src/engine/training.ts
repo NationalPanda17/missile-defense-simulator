@@ -7,7 +7,8 @@
 import { computeScore, protectionScore } from './scoring';
 import { regionProtection } from './tactical';
 import { EQUIPMENT_MAP, isEffector } from './equipment';
-import type { PhaseConfig, RegionId, ScenarioSettings, SimState, ThreatAxis, ThreatClass } from './types';
+import { hash01 } from './weather';
+import { REGION_IDS, type PhaseConfig, type RegionId, type ScenarioSettings, type SimState, type ThreatAxis, type ThreatClass } from './types';
 
 /** What a step's check can see: the simulation, what the UI is showing, and where the step began. */
 export interface StepContext {
@@ -93,6 +94,8 @@ export interface TrainingLesson {
   settings: Partial<ScenarioSettings>;
   phase: Pick<PhaseConfig, 'name' | 'situation' | 'scripted'> & Partial<PhaseConfig>;
   waves?: ScriptedWave[];
+  /** Waves worked out from the scenario seed instead of written out, so every game is a different battle. */
+  makeWaves?: (seed: number) => ScriptedWave[];
   steps: LessonStep[];
   /** The graded final exercise. */
   exam?: boolean;
@@ -187,7 +190,7 @@ export const LESSONS: TrainingLesson[] = [
     skills: ['Raw vs effective readiness', 'Domain dependencies', 'Staff views', 'The event log'],
     settings: { durationHours: 240, seed: 1202, domainCondition: { space: 58 } },
     phase: { ...QUIET, name: 'Situation Awareness', scripted: [{ atHour: 4, templateId: 'relay_degradation', region: 'AFR' }],
-      situation: 'Several orbital relays are overdue for service. Learn to spot weaknesses before they turn into incidents.' },
+      situation: 'Several orbital relays are overdue for service. Learn to spot weaknesses before they turn into reports.' },
     steps: [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase from the briefing.', check: running },
       { id: 'space', target: ['nav-space'], title: 'Open the Space domain', view: 'space',
@@ -242,7 +245,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Every report carries a confidence: UNVERIFIED, POSSIBLE, PROBABLE or CONFIRMED. Low confidence does not mean false, and high confidence does not mean certain.',
         why: 'Real commanders lose more to acting on bad information, or ignoring good information, than to slow decisions.' },
       { id: 'open', wait: true, target: ['events'], title: 'Open a report',
-        text: 'Let the clock run (press Resume) until the first report arrives: the South America contact. Then click it in the Active Events list on the right, or in Intelligence.',
+        text: 'Let the clock run (press Resume) until the first report arrives: the South America report. Then click it in the Active reports list on the right, or in Intelligence.',
         hint: 'If nothing is listed yet, press Resume in the top bar or advance an hour.',
         check: (c) => opened(c, 'event') },
       { id: 'confirm', target: ['confirm', 'events'], title: 'Task a confirmation',
@@ -252,7 +255,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Let time run until the confirmation finishes. A false report closes itself; a real one becomes CONFIRMED.',
         check: (c) => c.s.counters.confirmations >= 1 },
       { id: 'dismiss', wait: true, target: ['dismiss', 'events'], title: 'Dismiss a false report',
-        text: 'Let the clock run: another dubious contact will come in from Indo-Pacific. This time, judge it yourself and press Dismiss. Notice it has low confidence and nothing else in that region backs it up.',
+        text: 'Let the clock run: another dubious report will come in from Indo-Pacific. This time, judge it yourself and press Dismiss. Notice it has low confidence and nothing else in that region backs it up.',
         hint: 'Open the Indo-Pacific report and use Dismiss. If you dismiss a real event by mistake it keeps developing out of sight, so be sure.',
         check: (c) => c.s.counters.falseDismissed >= 2 || did(c, 'dismiss') },
       { id: 'respond', target: ['respond', 'events'], title: 'Act on a real report',
@@ -273,35 +276,35 @@ export const LESSONS: TrainingLesson[] = [
     summary: 'Compare responses, buy time with monitoring, and resolve events before they escalate.',
     skills: ['Comparing responses', 'Success chance', 'Monitor only', 'Decision windows'],
     settings: { durationHours: 240, seed: 1404 },
-    phase: { ...QUIET, name: 'Incident Desk',
+    phase: { ...QUIET, name: 'Report Desk',
       scripted: [{ atHour: 1, templateId: 'relay_degradation', region: 'AFR' }, { atHour: 2, templateId: 'storm', region: 'IPA' }, { atHour: 4, templateId: 'power_fault', region: 'NAM' }],
-      situation: 'Three genuine incidents in quick succession. Each has a decision window before it escalates.' },
+      situation: 'Three genuine reports in quick succession. Each has a decision window before it escalates.' },
     steps: [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
-      { id: 'open', wait: true, target: ['events'], title: 'Open an incident',
-        text: 'Let the clock run (press Resume) for an hour or two until incidents start to arrive, then open the Africa relay degradation from the Active Events list.',
+      { id: 'open', wait: true, target: ['events'], title: 'Open a report',
+        text: 'Let the clock run (press Resume) for an hour or two until reports start to arrive, then open the Africa relay degradation from the Active reports list.',
         check: (c) => opened(c, 'event') },
       { id: 'compare', title: 'Compare the options',
         text: 'Each response shows its cost, time, crews needed and chance of success. Some depend on another domain (the orbital reroute needs a healthy Space domain) or on regional communications.',
         why: 'The cheapest option is not always the best value: a failed response wastes the money and the time.' },
       { id: 'monitor', target: ['monitor', 'events'], title: 'Buy time once',
-        text: 'Pick an incident you are not ready to fix yet and choose “Monitor Only”. Its window gets longer, but its effects keep building. You can do this once per event.',
+        text: 'Pick a report you are not ready to fix yet and choose “Monitor Only”. Its window gets longer, but its effects keep building. You can do this once per report.',
         check: (c) => did(c, 'monitor') },
       { id: 'respond', target: ['respond', 'events'], title: 'Order two responses',
-        text: 'Execute a response on two different incidents. Watch crews: each crew can work on one job at a time.',
+        text: 'Execute a response on two different reports. Watch crews: each crew can work on one job at a time.',
         hint: 'If you run out of crews, choose responses that need 0 crews or wait for one to finish.',
         check: (c) => c.s.counters.responsesTotal >= 2 },
       { id: 'resolve', wait: true, title: 'See them through',
-        text: 'Let time run until two incidents are resolved. If a response fails, order another before the window closes.',
+        text: 'Let time run until two reports are resolved. If a response fails, order another before the window closes.',
         check: (c) => c.s.counters.resolved >= 2 },
       { id: 'quiz', title: 'Check your understanding',
-        quiz: (s) => quizFrom('What happens when an event’s decision window runs out?',
+        quiz: (s) => quizFrom('What happens when a report’s decision window runs out?',
           'It escalates: lasting damage and sometimes a follow-on event',
           ['It disappears with no effect', 'It resolves itself for free', 'The scenario ends'],
-          'Escalations hurt stability and infrastructure and count against your score, so watch the timers in the Active Events list.', s.settings.seed),
+          'Escalations hurt stability and infrastructure and count against your score, so watch the timers in the Active reports list.', s.settings.seed),
         text: 'Pick one answer.' },
       { id: 'done', title: 'Event response complete',
-        text: 'You can weigh responses, use monitoring sparingly and close incidents in time. Next: keeping the hardware healthy.' },
+        text: 'You can weigh responses, use monitoring sparingly and close reports in time. Next: keeping the hardware healthy.' },
     ],
   },
   {
@@ -310,7 +313,7 @@ export const LESSONS: TrainingLesson[] = [
     skills: ['Service clocks', 'Scheduling maintenance', 'Crews', 'Redeploying assets'],
     settings: { durationHours: 240, seed: 1505, domainCondition: { air: 60, sea: 64 } },
     phase: { ...QUIET, name: 'Readiness Review', scripted: [{ atHour: 12, templateId: 'airframe', region: 'EUR' }],
-      situation: 'Air and maritime units are worn and several are due for service. Plan maintenance so the network never thins out too far.' },
+      situation: 'Air and sea units are worn and several are due for service. Plan maintenance so the network never thins out too far.' },
     steps: [
       { id: 'begin', target: ['begin'], title: 'Take command', text: 'Begin the phase.', check: running },
       { id: 'domain', target: ['nav-air', 'nav-sea'], title: 'Open a domain', view: 'air',
@@ -328,7 +331,7 @@ export const LESSONS: TrainingLesson[] = [
         check: (c) => c.s.counters.maintenanceDone >= 1 },
       { id: 'redeploy', target: ['redeploy', 'asset', 'nav-air'], title: 'Redeploy an aircraft or ship',
         text: 'Open an Air or Sea asset and redeploy it to another region. It is out of action while in transit, so move units before they are needed, not after.',
-        hint: 'Only air and maritime assets can be redeployed. The Redeploy control is in the asset window.',
+        hint: 'Only air and sea assets can be redeployed. The Redeploy control is in the asset window.',
         check: (c) => did(c, 'redeploy') },
       { id: 'quiz', title: 'Check your understanding',
         quiz: (s) => quizFrom('You have one free crew and three overdue assets. What is the best approach?',
@@ -364,7 +367,7 @@ export const LESSONS: TrainingLesson[] = [
         text: 'Let time run until your project is at least a quarter complete. Projects keep going while you handle other work.',
         check: (c) => c.s.projects.some((p) => p.progress >= 25) || (c.s.projects.length === 0 && c.s.commands.some((x) => x.kind === 'invest')) },
       { id: 'reserve', wait: true, target: ['respond', 'events'], title: 'Keep a reserve',
-        text: 'Spending everything leaves you unable to answer the next incident. Let the clock run until a parts shortage is reported, then respond to it (it is in the Middle East) while keeping at least 300 credits in hand.',
+        text: 'Spending everything leaves you unable to answer the next report. Let the clock run until a parts shortage is reported, then respond to it (it is in the Middle East) while keeping at least 300 credits in hand.',
         check: (c) => c.s.counters.responsesTotal >= 1 && c.s.credits >= 300 },
       { id: 'done', title: 'Resources complete', text: 'Income, upkeep, investment and reserves: the budget side of command. Next: the tactical layer.' },
     ],
@@ -509,7 +512,7 @@ export const LESSONS: TrainingLesson[] = [
     ],
     steps: [
       { id: 'brief', target: ['deploy-tab'], title: 'Plan your defense',
-        text: 'Read the briefing and the six standards in this panel. Deploy defenses for the forecast regions, keeping enough credits for incidents.' },
+        text: 'Read the briefing and the six standards in this panel. Deploy defenses for the forecast regions, keeping enough credits for reports.' },
       { id: 'begin', target: ['begin'], title: 'Begin the exercise', text: 'Assume command when ready.', check: running },
       { id: 'finish', wait: true, title: 'Complete the exercise',
         text: 'Run the full 72 hours. The standards update live below. There are no hints from here: this is your test.',
@@ -583,7 +586,7 @@ export const DRILLS: TrainingLesson[] = [
       score: (s) => clampScore(avg(s.history.map((h) => h.readiness)) - s.counters.escalations * 3),
       stars: [52, 58, 64],
     },
-    steps: drillSteps('Keep average global readiness high.', 'Your score is the average readiness over the drill, minus 3 per escalation. Maintenance on the right assets pays off; keep a reserve for incidents.'),
+    steps: drillSteps('Keep average global readiness high.', 'Your score is the average readiness over the drill, minus 3 per escalation. Maintenance on the right assets pays off; keep a reserve for reports.'),
   },
   {
     id: 'drill-higharc', title: 'High arc', minutes: 4, skills: ['Upper-tier defense', 'Placement'],
@@ -612,7 +615,57 @@ export const DRILLS: TrainingLesson[] = [
   },
 ];
 
-export const LESSON_MAP = new Map([...LESSONS, ...DRILLS].map((l) => [l.id, l]));
+// ── Quick Battle ─────────────────────────────────────────────────────────
+
+/** The kinds of attack a Quick Battle can bring: three waves each, growing. */
+const BATTLES: { name: string; brief: string; waves: Partial<Record<ThreatClass, number>>[] }[] = [
+  { name: 'Mixed raid', brief: 'drones first, then cruise missiles and rockets among them',
+    waves: [{ slowDrone: 6, fastDrone: 2 }, { slowDrone: 6, fastDrone: 3, cruise: 3, rocket: 2 }, { slowDrone: 8, fastDrone: 4, cruise: 4, rocket: 3, ballistic: 1 }] },
+  { name: 'Drone swarm', brief: 'three growing swarms of drones with a few cruise missiles behind them',
+    waves: [{ slowDrone: 10, fastDrone: 3 }, { slowDrone: 12, fastDrone: 6, cruise: 1 }, { slowDrone: 14, fastDrone: 8, cruise: 3 }] },
+  { name: 'Missile strike', brief: 'cruise missiles at low level, then ballistic missiles from high above',
+    waves: [{ cruise: 4, slowDrone: 3 }, { cruise: 5, fastDrone: 3, ballistic: 1 }, { cruise: 6, ballistic: 3, rocket: 3 }] },
+  { name: 'Rocket barrage', brief: 'rocket salvos with drones spotting for them, and ballistic missiles to finish',
+    waves: [{ rocket: 6, slowDrone: 3 }, { rocket: 8, slowDrone: 4, fastDrone: 2 }, { rocket: 8, fastDrone: 4, ballistic: 2 }] },
+];
+const BATTLE_AXES: ThreatAxis[] = ['north', 'east', 'south', 'west'];
+
+/** What a Quick Battle with this seed will be: the region, the kind of attack and its three waves. */
+export function quickBattle(seed: number): { region: RegionId; name: string; brief: string; waves: ScriptedWave[] } {
+  const region = REGION_IDS[Math.floor(hash01(seed, 0x51) * REGION_IDS.length)];
+  const kind = BATTLES[Math.floor(hash01(seed, 0x52) * BATTLES.length)];
+  const first = Math.floor(hash01(seed, 0x53) * 4);
+  // The first two waves come from one side; the last swings round to another.
+  const waves = kind.waves.map((tracks, i) => ({
+    region, atHour: 8 + i * 8, axis: BATTLE_AXES[(first + (i === 2 ? 1 + Math.floor(hash01(seed, 0x54) * 3) : 0)) % 4], tracks, forecast: true,
+  }));
+  return { region, name: kind.name, brief: kind.brief, waves };
+}
+
+export const QUICK_BATTLE_ID = 'quick';
+
+/** Quick Battle: one region, three waves, a fixed budget and nothing else to manage. A new battle every time. */
+export const QUICK_BATTLE: TrainingLesson = {
+  id: QUICK_BATTLE_ID, title: 'Quick Battle', minutes: 5, skills: ['Placement', 'Layers', 'Resupply'],
+  summary: 'One region, three attack waves, a fixed budget. Place your defenses and watch them fight.',
+  settings: { durationHours: 30, startCredits: 1400 },
+  phase: { ...QUIET, name: 'Quick Battle', scripted: [],
+    situation: 'One region is about to be attacked three times, eight hours apart, each wave bigger than the last. Nothing else needs your attention: no reports, no maintenance. Spend your budget on defenses, then keep them supplied.' },
+  makeWaves: (seed) => quickBattle(seed).waves,
+  drill: { goal: 'Prevent as much threat damage as you can.', score: defenseScore, stars: [55, 75, 90] },
+  steps: [
+    { id: 'brief', title: 'Build your defense',
+      text: 'The forecast names the region and the red arrow on its map shows where the first waves come from. Open the Forecast check line above the map to see what is coming, pick systems from the catalog and click the map to place them. Keep some credits back to resupply between waves.',
+      hint: 'Guns (Skynex) on the sites for drones, a missile battery (IRIS-T SLM, NASAMS) beside the most-threatened site for cruise missiles, Iron Dome for rockets, and something with a high ceiling (Patriot, David’s Sling) if ballistic missiles are forecast. Press ? for the field guide.' },
+    { id: 'begin', target: ['begin'], title: 'Begin', text: 'Press “Assume command — begin phase” when your defense is ready. You cannot buy more once the battle starts.', check: running },
+    { id: 'finish', wait: true, title: 'Fight it out',
+      text: 'Open the Tactical Theater (key X) to watch. Raise an alert when a launch warning appears, and resupply systems that fired before the next wave. Any speed is fine.',
+      check: (c) => c.s.status === 'complete' },
+    { id: 'result', title: 'Result', view: 'aar', text: 'Your score and stars are below. The After-Action Review shows what happened to every threat and why. Play again for a different battle.' },
+  ],
+};
+
+export const LESSON_MAP = new Map([...LESSONS, ...DRILLS, QUICK_BATTLE].map((l) => [l.id, l]));
 export const lessonOf = (s: SimState | null | undefined): TrainingLesson | undefined =>
   s?.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined;
 
@@ -632,7 +685,8 @@ export function lessonPhase(lesson: TrainingLesson, settings: ScenarioSettings):
 export function lessonSettings(id: string, base: ScenarioSettings): ScenarioSettings {
   const l = LESSON_MAP.get(id);
   if (!l) throw new Error(`Unknown lesson ${id}`);
-  return { ...base, ...l.settings, mode: 'training', lesson: id, name: `Training · ${l.title}` };
+  const merged = { ...base, ...l.settings };
+  return { ...merged, mode: 'training', lesson: id, name: id === QUICK_BATTLE_ID ? `Quick Battle · ${quickBattle(merged.seed).name}` : `Training · ${l.title}` };
 }
 
 // ── Certification grading ────────────────────────────────────────────────

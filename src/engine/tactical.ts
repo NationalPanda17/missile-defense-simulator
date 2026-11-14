@@ -13,7 +13,7 @@ import { ADAPTATION, enemyPlan } from './adaptation';
 import { siteDamageShare } from './sites';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
-  Deployment, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
+  Deployment, FireDoctrine, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
   ThreatWave, Track,
 } from './types';
 import { REGION_IDS } from './types';
@@ -28,7 +28,7 @@ const emptyStats = (): TacticalStats => ({ tracks: 0, stopped: 0, leaked: 0, dec
 /** Training lesson with scripted threat waves, if this is one. The only training scenarios with a tactical layer. */
 const tacticalLesson = (s: SimState) => (s.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined);
 const tacticalAllowed = (s: SimState) =>
-  (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length
+  (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length || !!tacticalLesson(s)?.makeWaves
   || ((s.settings.mode === 'sandbox' || s.settings.mode === 'crisis') && s.settings.waves === true);
 
 /** A fresh tactical state for a game. Sites are generated from the seed; waves are scheduled separately. */
@@ -174,7 +174,8 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
   t.waves = t.waves.filter((w) => w.phaseIndex !== s.phaseIndex);
   t.forecast = [];
   const lesson = tacticalLesson(s);
-  if (lesson?.waves) return scheduleLessonWaves(s, t, lesson.waves);
+  const lessonWaves = lesson?.makeWaves?.(s.settings.seed) ?? lesson?.waves;
+  if (lessonWaves) return scheduleLessonWaves(s, t, lessonWaves);
   if (!base || !phase) return;
   // Apply the scenario's multipliers. The standard scenario (all 1s) reproduces the base profile exactly.
   const sc = normalizeTactical(s.settings.tactical);
@@ -438,6 +439,21 @@ export function detectionRange(spec: EquipmentSpec, cls: ThreatClass): number {
   return spec.radar?.rangeKm ?? 0;
 }
 
+/** Enemy jamming of one radar band (Commander): the share of range and of decoy recognition a jammed radar keeps. */
+export const JAMMING = { range: 0.5, sharp: 0.5 };
+
+/** The radar band the enemy is jamming in the current phase, if any. */
+export const jammedBand = (s: SimState): RadarBand | undefined =>
+  s.tactical?.enemy?.find((p) => p.phaseIndex === s.phaseIndex)?.jam as RadarBand | undefined;
+
+/** The fire orders a system can be given, with what each means in a sentence. */
+export const DOCTRINES: Record<FireDoctrine, { label: string; short: string; text: string }> = {
+  free: { label: 'Engage everything', short: 'all', text: 'Fires at any threat it can reach. The default.' },
+  missiles: { label: 'Missiles only', short: 'missiles', text: 'Holds fire against drones, and so against decoys. Saves costly rounds for cruise missiles, rockets and ballistic missiles; drones in its area are left to other systems.' },
+  backup: { label: 'Backup', short: 'backup', text: 'Fires only after every other system in reach has had its shots. Lets cheap guns go first and keeps this system for what they miss.' },
+};
+const DRONES: ThreatClass[] = ['slowDrone', 'fastDrone'];
+
 export const isUnlimited = (spec: EquipmentSpec) => spec.magazine >= TACTICAL_CONFIG.unlimitedMagazine;
 
 /** The shortest-wave (sharpest) radar band among some systems, or null if none of them has a radar. */
@@ -469,9 +485,13 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   const wx = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
   // Every working sensor that tracks it: surface sensors within their horizon and line of sight, aircraft from above.
   // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
+  // Commander: the enemy jams one radar band for the phase, shortening those radars' range and blurring their picture.
+  const jam = t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.jam;
+  const jammed = (spec: EquipmentSpec) => !!jam && spec.radar?.band === jam;
+  const sharpOf = (spec: EquipmentSpec) => sensorTraits(spec).sharp * (jammed(spec) ? JAMMING.sharp : 1);
   const watchers = working
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
-    .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1), false) > 0);
+    .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1) * (jammed(spec) ? JAMMING.range : 1), false) > 0);
   const cued = isLowFlying(tr.cls) && watchers.some((x) => x.spec.domain === 'air');
   const seen = watchers.length > 0;
   const alert = alertActive(s, w.region);
@@ -490,7 +510,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
   tr.detected = seen;
   if (seen) tr.band = sharpestBand(watchers.map((x) => x.spec)) ?? 'passive';
   // A sharp radar can tell a decoy from the real thing: recognised decoys are left alone and cost nothing.
-  if (tr.decoy && seen && rand(t) < Math.max(...watchers.map((x) => sensorTraits(x.spec).sharp))) {
+  if (tr.decoy && seen && rand(t) < Math.max(...watchers.map((x) => sharpOf(x.spec)))) {
     tr.rejected = true;
     tr.outcome = 'decoyLeaked';
     tr.fired = [];
@@ -506,7 +526,9 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     .filter((x) => x.asset && isEffector(x.spec) && canEngageClass(x.spec, tr.cls))
     .map((x) => ({ ...x, chord: reachPath(terrain, x.d, x.spec, tr.cls, path, x.spec.rangeKm, cued) }))
     .filter((x) => x.chord > 0)
-    .sort((a, b) => b.spec.rangeKm - a.spec.rangeKm);
+    .filter((x) => !(x.d.doctrine === 'missiles' && DRONES.includes(tr.cls))) // standing orders: no shots at drones
+    // Outer layers first, then systems held back as backup (longest reach first within each group).
+    .sort((a, b) => Number(a.d.doctrine === 'backup') - Number(b.d.doctrine === 'backup') || b.spec.rangeKm - a.spec.rangeKm);
 
   // Diagnostics only (what happened and why): nothing below changes the outcome or draws random numbers.
   const fired: { dep: string; shots: number }[] = [];
@@ -518,6 +540,7 @@ function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: Track, d
     if (!a || availability(s, a) <= 0) why.set(d.id, 'oa');
     else if (spec.altitudeKm < TACTICAL_CONFIG.threatAltitudeKm[tr.cls]) why.set(d.id, 'alt');
     else if (spec.killRate[tr.cls] <= 0) why.set(d.id, 'type');
+    else if (d.doctrine === 'missiles' && DRONES.includes(tr.cls)) why.set(d.id, 'hold');
     else if (!shooters.some((x) => x.d === d)) {
       const blind = isLowFlying(tr.cls) && !cued && reachPath(terrain, d, spec, tr.cls, path, spec.rangeKm, true) > 0;
       why.set(d.id, blind ? 'blind' : 'range');
@@ -592,6 +615,7 @@ export function reasonText(code: string, cls: ThreatClass): string {
     case 'fast': return 'too fast: inside its range too briefly to react';
     case 'late': return 'not detected in time to react';
     case 'mag': return 'magazine empty';
+    case 'hold': return 'held fire: its orders are missiles only';
     default: return code; // older saves stored the words themselves
   }
 }

@@ -15,7 +15,7 @@ const ALERT_TONE = { NORMAL: 'green', ELEVATED: 'cyan', HIGH: 'amber', SEVERE: '
 function SimClock({ s }: { s: SimState }) {
   const t = useSimTime();
   const clock = simClock(s.startDate, t);
-  return <div className="tabular-nums text-white">{clock.date} <span className="text-ops-cyan">{clock.time}</span> <span className="text-ops-dim">T+{s.hour}h</span></div>;
+  return <div className="tabular-nums text-white">{clock.date} <span className="text-ops-cyan">{clock.time}</span> <span className="cursor-help text-ops-dim underline decoration-dotted" title={`T+${s.hour}h: ${s.hour} hours since the scenario began. Every time in the game is counted this way.`}>T+{s.hour}h</span></div>;
 }
 
 /** Thin bar showing how far through the phase we are, moving continuously. */
@@ -135,7 +135,7 @@ export const NAV: { id: ViewId; label: string; icon: string; key: string; group?
   { id: 'theater', label: 'Tactical Theater', icon: '◇', key: 'X' },
   { id: 'space', label: 'Space Command', icon: '⊟', key: 'S', group: 'Domains' },
   { id: 'air', label: 'Air Command', icon: '▲', key: 'A' },
-  { id: 'sea', label: 'Maritime Command', icon: '⏢', key: 'M' },
+  { id: 'sea', label: 'Sea Command', icon: '⏢', key: 'M' },
   { id: 'ground', label: 'Ground Command', icon: '■', key: 'D' },
   { id: 'intel', label: 'Intelligence', icon: '◈', key: 'I', group: 'Staff' },
   { id: 'comms', label: 'Communications', icon: '⌁', key: 'C' },
@@ -241,8 +241,8 @@ export function RightSidebar({ s }: { s: SimState }) {
     <aside className="flex flex-col overflow-y-auto border-t border-ops-line bg-ops-panel/70 lg:w-80 lg:border-l lg:border-t-0" aria-label="Situation sidebar">
       <AdjutantSection s={s} />
       <ObjectivesSection s={s} />
-      <Section title="Active Events" count={active.length} coach="events">
-        {active.length === 0 && <div className="text-ops-dim">No active events. Network nominal.</div>}
+      <Section title="Active reports" count={active.length} coach="events">
+        {active.length === 0 && <div className="text-ops-dim">No open reports. All quiet.</div>}
         <ul className="space-y-1.5">
           {active.map((e) => {
             const c = confidenceLabel(e.confidence);

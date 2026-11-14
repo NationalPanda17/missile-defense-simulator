@@ -3,13 +3,13 @@ import {
   REGION_IDS, SIM_CONFIG, availability, crewsFree, isActive, maintenanceCost, type Asset, type Domain, type SimState,
 } from '../../engine';
 import { dispatch } from '../../store/simStore';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, SEVERITY_WORD, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
 
 const FOCUS: Record<Domain, { title: string; blurb: string }> = {
   space: { title: 'Space Command', blurb: 'Global awareness, information continuity and communications resilience. Relay satellites carry 40% of global network capacity; survey satellites provide multi-region coverage.' },
   air: { title: 'Air Command', blurb: 'Airborne situational awareness and inter-domain coordination. Aircraft can be redeployed between regions to backfill coverage gaps. Air depends on Space relays and Ground control.' },
-  sea: { title: 'Maritime Command', blurb: 'Maritime awareness, regional support and resource movement. Support vessels improve response success in their region. Maritime depends heavily on Space relays.' },
+  sea: { title: 'Sea Command', blurb: 'Maritime awareness, regional support and resource movement. Support vessels improve response success in their region. Maritime depends heavily on Space relays.' },
   ground: { title: 'Ground Command', blurb: 'Regional infrastructure protection, continuity of operations and resilience. Sensor stations, relay hubs and command centers anchor every region.' },
 };
 
@@ -67,7 +67,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
               <tr key={a.id}>
                 <td><button data-coach="asset" className="text-white hover:text-ops-cyan" onClick={() => ui.openAsset(a.id)}>{a.name}</button></td>
                 <td className="max-w-[170px] truncate text-ops-dim" title={a.className}>{a.className}</td>
-                <td>{domain === 'space' ? a.coverage.map((c) => s.regions[c].short).join(' ') : a.status === 'transit' ? `→ ${a.transitTo}` : s.regions[a.region].short}</td>
+                <td>{domain === 'space' ? a.coverage.map((c) => s.regions[c].short).join(' ') : a.status === 'transit' ? `→ ${a.transitTo ? s.regions[a.transitTo].short : ''}` : s.regions[a.region].short}</td>
                 <td><span style={{ color: statusColor(a, s.hour) }} className="uppercase">{a.status}</span></td>
                 <td><Bar value={a.condition} showValue /></td>
                 <td className={a.hoursToService < 0 ? 'text-ops-red' : a.hoursToService < 24 ? 'text-ops-amber' : 'text-ops-dim'}>
@@ -104,10 +104,10 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
           </div>
         </Panel>
         <Panel title="Domain Events" right={<span>{events.length}</span>}>
-          {events.length === 0 && <div className="text-ops-dim">No active events affecting this domain.</div>}
+          {events.length === 0 && <div className="text-ops-dim">No open reports affecting this domain.</div>}
           {events.map((e) => (
             <button key={e.id} onClick={() => ui.openEvent(e.id)} className="mb-1 flex w-full items-center gap-2 text-left hover:text-white">
-              <Chip t={e.severity >= 3 ? 'red' : 'amber'}>S{e.severity}</Chip><span className="flex-1 truncate">{e.title}</span><span className="text-ops-dim">{s.regions[e.region].short}</span>
+              <Chip t={e.severity >= 3 ? 'red' : 'amber'}>{SEVERITY_WORD[e.severity]}</Chip><span className="flex-1 truncate">{e.title}</span><span className="text-ops-dim">{s.regions[e.region].short}</span>
             </button>
           ))}
         </Panel>
@@ -133,7 +133,7 @@ function DomainSpecific({ s, domain }: { s: SimState; domain: Domain }) {
     return (
       <Panel title="Orbital Coverage Matrix" bodyClass="p-0 overflow-x-auto">
         <table className="table-ops w-full text-[10px]">
-          <thead><tr><th>Platform</th>{REGION_IDS.map((r) => <th key={r} className="text-center">{r}</th>)}</tr></thead>
+          <thead><tr><th>Platform</th>{REGION_IDS.map((r) => <th key={r} className="text-center" title={s.regions[r].name}>{s.regions[r].short}</th>)}</tr></thead>
           <tbody>
             {sats.map((a) => {
               const av = availability(s, a);
@@ -149,7 +149,7 @@ function DomainSpecific({ s, domain }: { s: SimState; domain: Domain }) {
       </Panel>
     );
   }
-  const title = domain === 'air' ? 'Airborne Coverage by Region' : domain === 'sea' ? 'Maritime Presence by Region' : 'Regional Ground Network';
+  const title = domain === 'air' ? 'Airborne Coverage by Region' : domain === 'sea' ? 'Sea Presence by Region' : 'Regional Ground Network';
   return (
     <Panel title={title}>
       <div className="space-y-1.5">

@@ -3,7 +3,7 @@ import {
   DOMAINS, EQUIPMENT_MAP, adaptiveEnemy, REGION_IDS, TEMPLATE_MAP, computeScore, costExchange, suggestFixes, isActive, lessonOf, lessonsLearned, starsFor, tacticalReport,
   type CommandEntry, type GameEvent, type ScoreKey, type SimState,
 } from '../../engine';
-import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, Stat, TONE_TEXT, tone } from '../components/ui';
+import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, LineChart, Panel, SEVERITY_WORD, Stat, TONE_TEXT, tone } from '../components/ui';
 import { useUI } from '../uiState';
 import { MissionReplay } from './MissionReplay';
 import { ChallengePanel } from '../Challenge';
@@ -212,15 +212,15 @@ export function AARView({ s }: { s: SimState }) {
         </table>
       </Panel>
 
-      <Panel className="xl:col-span-2" title="Major Events — Chronological" bodyClass="p-0 max-h-80 overflow-y-auto">
+      <Panel className="xl:col-span-2" title="Major reports, in order" bodyClass="p-0 max-h-80 overflow-y-auto">
         <table className="table-ops w-full">
           <tbody>
             {major.map((e) => (
               <tr key={e.id} className="cursor-pointer" onClick={() => ui.openEvent(e.id)}>
                 <td className="w-16 text-ops-dim">T+{e.reportedAt}h</td>
-                <td><Chip t={e.severity >= 3 ? 'red' : 'amber'}>S{e.severity}</Chip></td>
+                <td><Chip t={e.severity >= 3 ? 'red' : 'amber'}>{SEVERITY_WORD[e.severity]}</Chip></td>
                 <td className="text-white">{e.title}</td>
-                <td>{e.global ? 'GLOBAL' : e.region}</td>
+                <td>{e.global ? 'All regions' : s.regions[e.region].short}</td>
                 <td className={e.status === 'resolved' ? 'text-ops-green' : e.status === 'escalated' ? 'text-ops-red' : 'text-ops-dim'}>{e.status.toUpperCase()}{e.resolvedAt !== undefined ? ` T+${e.resolvedAt}h` : ''}</td>
                 <td className="text-[10px] text-ops-dim">{!truthKnown(s, e) || e.isGenuine ? '' : 'spurious'}</td>
               </tr>
@@ -258,7 +258,7 @@ export function AARView({ s }: { s: SimState }) {
           <Stat label="Lowest readiness" value={Math.round(s.minReadiness === 100 ? s.metrics.globalReadiness : s.minReadiness)} t="amber" />
           <Stat label="Current readiness" value={Math.round(s.metrics.globalReadiness)} t={tone(s.metrics.globalReadiness)} sub={`baseline ${Math.round(s.baseline.readiness)}`} />
         </div>
-        <div className="label mb-1">Open events ({unresolved.length})</div>
+        <div className="label mb-1">Open reports ({unresolved.length})</div>
         {unresolved.slice(0, 8).map((e) => <div key={e.id} className="text-[11px]"><button className="text-ops-amber hover:underline" onClick={() => ui.openEvent(e.id)}>{e.id}</button> {e.title} <span className="text-ops-dim">{TEMPLATE_MAP.get(e.templateId)?.category}</span></div>)}
         {!unresolved.length && <div className="text-ops-dim">None.</div>}
         <div className="label mb-1 mt-2">Degraded / offline assets ({degraded.length})</div>

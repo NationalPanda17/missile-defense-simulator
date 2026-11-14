@@ -320,7 +320,17 @@ export interface Deployment {
   reloadRounds?: number; // rounds that resupply brings (absent: a full magazine)
   transit?: { region: RegionId; x: number; y: number; remaining: number; hours?: number }; // emergency redeploy under way
   deployedAt: number; // sim hour
+  /** Standing fire orders (absent: engage everything). */
+  doctrine?: FireDoctrine;
 }
+
+/**
+ * Fire doctrine, the one order a system follows during a fight:
+ * - free: engage anything it can.
+ * - missiles: hold fire against drones (and so against decoys, which look like drones); save rounds for missiles.
+ * - backup: fire only after every other system in reach has had its shots.
+ */
+export type FireDoctrine = 'free' | 'missiles' | 'backup';
 
 export type SiteType = 'city' | 'port' | 'power' | 'comms' | 'command';
 
@@ -410,6 +420,7 @@ export interface EnemyPlan {
   axis: Partial<Record<RegionId, ThreatAxis>>; // preferred approach per region
   doubleTap?: RegionId; // a region whose magazines ran low: two waves close together
   decoys: number; // decoy multiplier
+  jam?: string; // radar band it jams this phase: the one the defense leaned on most (absent in older saves)
   learned: string[]; // what it noticed, for the debrief
   intel: { text: string; accurate: boolean; actual?: string }; // actual: what was really true, when intel was wrong
 }

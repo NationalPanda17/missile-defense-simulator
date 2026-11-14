@@ -1,7 +1,7 @@
 // Reusable presentational primitives.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Asset, Domain, Severity } from '../../engine';
+import { REGION_DEFS, type Asset, type Domain, type RegionId, type Severity } from '../../engine';
 
 /** Meters move over one simulated hour at the current speed (--tick, set by the store), so values flow rather than jump. */
 export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
@@ -18,7 +18,11 @@ export const TONE_CHIP = {
 };
 export const SEV_TONE: Record<Severity, keyof typeof TONE_CHIP> = { 1: 'cyan', 2: 'amber', 3: 'red', 4: 'red' };
 export const DOMAIN_COLOR: Record<Domain, string> = { space: '#a78bfa', air: '#38d6f5', sea: '#3b82f6', ground: '#34d399' };
-export const DOMAIN_LABEL: Record<Domain, string> = { space: 'Space', air: 'Air', sea: 'Maritime', ground: 'Ground' };
+/** Severity in a word, for chips (1-4). */
+export const SEVERITY_WORD: Record<number, string> = { 1: 'Minor', 2: 'Moderate', 3: 'Major', 4: 'Critical' };
+/** The short region codes used on tabs and in tight tables. */
+export const REGION_SHORT = Object.fromEntries(REGION_DEFS.map((r) => [r.id, r.short])) as Record<RegionId, string>;
+export const DOMAIN_LABEL: Record<Domain, string> = { space: 'Space', air: 'Air', sea: 'Sea', ground: 'Ground' };
 
 export function Panel({ title, right, children, className = '', bodyClass = '' }: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string }) {
   return (
