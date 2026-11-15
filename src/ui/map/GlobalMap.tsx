@@ -1,6 +1,6 @@
 // Interactive SVG operational map: zoom/pan, region selection, layered domain assets, network links and event markers.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPE, type ReactNode } from 'react';
-import { REGION_IDS, assetPosAt, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
+import { REGIMES, REGION_IDS, assetPosAt, subPoint, incomingWaves, isActive, isKnown, confidenceLabel, regionProtection, type Asset, type GameEvent, type RegionId, type SimState } from '../../engine';
 import { DOMAIN_COLOR, DOMAIN_LABEL, SEV_TONE, TONE_HEX, tone, statusColor } from '../components/ui';
 import { store } from '../../store/simStore';
 import { useUI, type Layers, type OverlayMetric } from '../uiState';
@@ -26,6 +26,9 @@ function hash(s: string) {
 
 
 function satPosition(a: Asset, idx: number, hour: number): [number, number] {
+  // Satellites with a real orbit: exactly where the orbit puts them at this instant (constellations stay put).
+  if (a.orbit) return subPoint(a.orbit, hour) ?? a.pos;
+  // Older saves (no orbit): the old stylised motion.
   if (a.role === 'comms') return [a.pos[0], 0]; // geostationary-style relay
   const inc = a.name.startsWith('AURORA') ? 78 : 52;
   const lon = ((((a.pos[0] + hour * 15 + idx * 47) % 360) + 540) % 360) - 180;
@@ -36,6 +39,30 @@ function satPosition(a: Asset, idx: number, hour: number): [number, number] {
 /** Map position at continuous time t: orbiting satellites advance smoothly, transiting assets follow their route. */
 function moverPos(a: Asset, idx: number, t: number, hour: number): [number, number] {
   return a.domain === 'space' ? satPosition(a, idx, t) : assetPosAt(a, t, hour);
+}
+
+/** Does this satellite visibly move across the map? (Low and elliptical orbits, or a geostationary one drifting.) */
+const satMoves = (a: Asset) => !!a.orbit && !a.orbit.destroyed && (a.orbit.regime === 'LEO' || a.orbit.regime === 'SSO' || a.orbit.regime === 'HEO' || !!a.orbit.drift) && !!subPoint(a.orbit, 0);
+
+/** Its ground track: a short faded trail behind it and the path ahead (part of an orbit), at continuous time t. */
+function orbitTrack(a: Asset, t: number): { behind: string; ahead: string } {
+  const o = a.orbit!;
+  const period = REGIMES[o.regime].periodH;
+  const span = o.regime === 'HEO' ? period * 0.5 : period * 0.6;
+  const line = (from: number, to: number) => {
+    let d = '';
+    let prev: [number, number] | null = null;
+    const n = 48;
+    for (let k = 0; k <= n; k++) {
+      const p = subPoint(o, from + ((to - from) * k) / n);
+      if (!p) continue;
+      const [x, y] = project(p[0], p[1]);
+      d += `${prev && Math.abs(p[0] - prev[0]) < 180 ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+      prev = p;
+    }
+    return d;
+  };
+  return { behind: line(t - span * 0.25, t), ahead: line(t, t + span) };
 }
 
 function trackPath(a: Asset, idx: number) {
@@ -173,14 +200,33 @@ export default function GlobalMap({ s }: { s: SimState }) {
   // every animation frame by a light loop that only rewrites their transform (no React re-render of the map).
   const simT = store.simTime();
   const movers = useRef(new Map<string, { el: SVGGElement; a: Asset; idx: number; sc: number }>());
+  // Orbit tracks and relay links follow their satellite every frame too, so nothing jumps on the hour.
+  const tracks = useRef(new Map<string, { behind: SVGPathElement | null; ahead: SVGPathElement | null; a: Asset }>());
+  const relayLinks = useRef(new Map<string, { el: SVGLineElement; a: Asset }>());
   useEffect(() => {
     let raf = 0;
-    const step = () => {
+    let lastTrack = 0;
+    const step = (now: number) => {
       const t = store.simTime();
       const h = store.state?.hour ?? 0;
       for (const { el, a, idx, sc } of movers.current.values()) {
         const [x, y] = project(...moverPos(a, idx, t, h));
         el.setAttribute('transform', `translate(${x},${y}) scale(${sc})`);
+      }
+      for (const { el, a } of relayLinks.current.values()) {
+        const p = a.orbit ? subPoint(a.orbit, t) : null;
+        if (!p) continue;
+        const [x] = project(p[0], 0);
+        el.setAttribute('x1', String(x));
+      }
+      // Tracks are longer paths: redrawn about 30 times a second.
+      if (now - lastTrack > 33) {
+        lastTrack = now;
+        for (const { behind, ahead, a } of tracks.current.values()) {
+          const d = orbitTrack(a, t);
+          behind?.setAttribute('d', d.behind);
+          ahead?.setAttribute('d', d.ahead);
+        }
       }
       raf = requestAnimationFrame(step);
     };
@@ -301,23 +347,38 @@ export default function GlobalMap({ s }: { s: SimState }) {
               const [x2, y2] = project(c.pos[0], c.pos[1]);
               return <line key={`cl${c.id}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={TONE_HEX[tone(Math.min(c.condition, h.condition))]} strokeOpacity={0.6} strokeWidth={0.6 * k + 0.2} strokeDasharray="3 3" className="flow-slow" />;
             })}
-            {layers.space && s.assets.filter((a) => a.domain === 'space' && a.role === 'comms').map((sat) => {
-              const [sx, sy] = project(sat.pos[0], 0);
+            {layers.space && s.assets.filter((a) => a.domain === 'space' && a.role === 'comms' && !a.orbit?.destroyed && (!a.orbit || a.orbit.regime === 'GEO')).map((sat) => {
+              const [sx, sy] = project(sat.orbit ? (subPoint(sat.orbit, simT) ?? sat.pos)[0] : sat.pos[0], 0);
               return sat.coverage.map((rid) => {
                 const h = groundHubs.get(rid);
                 if (!h) return null;
                 const [x, y] = project(h.pos[0], h.pos[1]);
                 const q = sat.status === 'offline' || sat.status === 'maintenance' ? 0 : sat.condition;
-                return <line key={`sl${sat.id}${rid}`} x1={sx} y1={sy} x2={x} y2={y} stroke="#a78bfa" strokeOpacity={q < 35 ? 0.15 : 0.35} strokeWidth={0.5 * k + 0.15} strokeDasharray="1 4" className="flow-slow" />;
+                return <line key={`sl${sat.id}${rid}`} ref={(el) => { const k = `${sat.id}${rid}`; if (el && sat.orbit?.drift) relayLinks.current.set(k, { el, a: sat }); else relayLinks.current.delete(k); }} x1={sx} y1={sy} x2={x} y2={y} stroke="#a78bfa" strokeOpacity={q < 35 ? 0.15 : 0.35} strokeWidth={0.5 * k + 0.15} strokeDasharray="1 4" className="flow-slow" />;
               });
             })}
           </g>
         )}
 
         {/* orbital tracks */}
-        {layers.space && s.assets.filter((a) => a.domain === 'space' && a.role === 'sensor').map((a, i) => (
+        {layers.space && s.assets.filter((a) => a.domain === 'space' && !a.orbit && a.role === 'sensor').map((a, i) => (
           <path key={`trk${a.id}`} d={trackPath(a, i)} fill="none" stroke="#a78bfa" strokeOpacity={0.18} strokeWidth={0.6 * k + 0.15} strokeDasharray="4 6" pointerEvents="none" />
         ))}
+        {layers.space && s.assets.filter((a) => a.domain === 'space' && satMoves(a) && a.orbit!.regime !== 'GEO').map((a) => {
+          const d = orbitTrack(a, simT);
+          const reg = (part: 'behind' | 'ahead') => (el: SVGPathElement | null) => {
+            const cur = tracks.current.get(a.id) ?? { behind: null, ahead: null, a };
+            cur[part] = el;
+            cur.a = a;
+            if (cur.behind || cur.ahead) tracks.current.set(a.id, cur); else tracks.current.delete(a.id);
+          };
+          return (
+            <g key={`orb${a.id}`} pointerEvents="none">
+              <path ref={reg('ahead')} d={d.ahead} fill="none" stroke="#a78bfa" strokeOpacity={0.22} strokeWidth={0.6 * k + 0.15} strokeDasharray="4 6" />
+              <path ref={reg('behind')} d={d.behind} fill="none" stroke="#a78bfa" strokeOpacity={0.55} strokeWidth={1.1 * k + 0.25} strokeLinecap="round" />
+            </g>
+          );
+        })}
 
         {/* radar sweep on selected region */}
         {ui.region && (() => {
@@ -340,7 +401,7 @@ export default function GlobalMap({ s }: { s: SimState }) {
           const [lon, lat] = moverPos(a, spaceIdx, simT, hour);
           const [x, y] = project(lon, lat);
           const sc = Math.max(0.35, Math.min(1, k * 1.15));
-          const moving = (a.domain === 'space' && a.role === 'sensor') || (a.status === 'transit' && !!a.transitRoute);
+          const moving = (a.domain === 'space' && (a.orbit ? satMoves(a) : a.role === 'sensor')) || (a.status === 'transit' && !!a.transitRoute);
           const fill = statusColor(a, hour);
           const stroke = DOMAIN_COLOR[a.domain];
           const sel = ui.assetId === a.id;

@@ -64,7 +64,12 @@ export function arcDeg(a: [number, number], b: [number, number]): number {
 export function subPoint(o: Orbit, t: number): [number, number] | null {
   switch (o.regime) {
     case 'GEO':
-      return [wrap(o.drift ? o.drift.fromLon + ((o.drift.toLon - o.drift.fromLon) * (o.drift.hours - o.drift.left)) / o.drift.hours : o.lon!), 0];
+      if (!o.drift) return [wrap(o.lon!), 0];
+      {
+        // Drifting: glides from its old slot to the new one over the drift (continuous in time, for smooth display).
+        const k = o.drift.at !== undefined ? (t - o.drift.at) / o.drift.hours : (o.drift.hours - o.drift.left) / o.drift.hours;
+        return [wrap(o.drift.fromLon + (o.drift.toLon - o.drift.fromLon) * Math.max(0, Math.min(1, k))), 0];
+      }
     case 'HEO': {
       // 12-hour Molniya orbit: apogee over 63°N, where it lingers; a quick perigee pass in the south. Its two
       // apogees each day are half a world apart.
@@ -227,11 +232,11 @@ export function repositionError(_s: SimState, a: Asset, toLon: number): string |
 export const driftFuel = (degrees: number) => SPACE.drift.fuelBase + degrees * SPACE.drift.fuelPerDeg;
 export const driftHours = (degrees: number) => Math.max(2, Math.ceil(degrees / SPACE.drift.degPerHour));
 
-export function reposition(_s: SimState, a: Asset, toLon: number) {
+export function reposition(s: SimState, a: Asset, toLon: number) {
   const o = a.orbit!;
   const d = wrap(toLon - o.lon!); // the short way round
   o.fuel = clamp(o.fuel - driftFuel(Math.abs(d)));
-  o.drift = { fromLon: o.lon!, toLon: o.lon! + d, left: driftHours(Math.abs(d)), hours: driftHours(Math.abs(d)) };
+  o.drift = { fromLon: o.lon!, toLon: o.lon! + d, left: driftHours(Math.abs(d)), hours: driftHours(Math.abs(d)), at: s.hour };
 }
 
 // ── Launches ───────────────────────────────────────────────────────────
