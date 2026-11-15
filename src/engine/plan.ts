@@ -19,27 +19,40 @@ export interface Placement { equipmentId: string; x: number; y: number; cost: nu
 export function proposeDefense(s: SimState, region: RegionId, budget: number): Placement[] {
   const t = s.tactical;
   if (!t?.enabled) return [];
-  const targets = forecastTargets(s, region).map((x) => x.site);
+  const forecast = forecastTargets(s, region);
+  const targets = forecast.map((x) => x.site);
   const sites = targets.length ? targets : t.sites.filter((x) => x.region === region).sort((a, b) => b.importance - a.importance);
   if (!sites.length) return [];
   const mix: Partial<Record<ThreatClass, number>> = previewDefense(s, region, 1)?.mix ?? {};
   const here = t.deployments.filter((d) => d.region === region);
   const has = (id: string, x: number, y: number, within: number) => here.some((d) => d.equipmentId === id && Math.hypot(d.x - x, d.y - y) <= within);
   const terrain = t.terrain?.[region];
-  const wants: { id: string; site: number; why: string; skip?: boolean }[] = [
-    { id: 'iris-t-slm', site: 0, why: 'medium-range cover over the most-threatened site' },
-    { id: 'skynex', site: 0, why: 'guns for the drones there' },
-    { id: 'sentinel', site: 0, why: 'a sharp radar to track low fliers and pick out decoys' },
-    { id: 'iron-dome', site: 0, why: 'rockets are forecast', skip: !mix.rocket },
-    { id: 'patriot-pac3', site: 0, why: 'ballistic missiles or gliders are forecast', skip: !mix.ballistic && !mix.hypersonic },
-    { id: 'iris-t-slm', site: 1, why: 'medium-range cover over the next site' },
-    { id: 'skynex', site: 1, why: 'guns for the drones there' },
-    { id: 'iris-t-slm', site: 2, why: 'medium-range cover over a third site' },
-    { id: 'skynex', site: 2, why: 'guns for the drones there' },
-    { id: 'skynex', site: 3, why: 'guns on a fourth site' },
-    { id: 'gm400', site: 0, why: 'a long-wave radar that sees through storms' },
-    { id: 'decoy-emitter', site: 0, why: 'a lure for missiles that hunt radars', skip: s.settings.mode !== 'campaign' || s.phaseIndex === 0 },
-  ];
+  // How much of the expected damage each kind of threat carries, and how much of it is aimed at each site: what is
+  // bought first follows the forecast, so a raid of gliders gets an upper-tier battery before any gun.
+  const D = TACTICAL_CONFIG.threatDamage;
+  const dmg = (c: ThreatClass) => (mix[c] ?? 0) * D[c];
+  const all = (Object.keys(D) as ThreatClass[]).reduce((a, c) => a + dmg(c), 0) || 1;
+  const share = { drones: (dmg('slowDrone') + dmg('fastDrone')) / all, cruise: dmg('cruise') / all, rocket: dmg('rocket') / all, high: (dmg('ballistic') + dmg('hypersonic')) / all };
+  const threatAll = forecast.reduce((a, x) => a + x.threat, 0) || 1;
+  const siteShare = (i: number) => (forecast[i] ? forecast[i].threat / threatAll : i === 0 ? 1 : 0.5 / (i + 1));
+  const aimedAt = (i: number, cs: ThreatClass[]) => !forecast[i] || cs.some((c) => forecast[i].classes.includes(c));
+  type Want = { id: string; site: number; why: string; skip?: boolean; value: number };
+  const wants: Want[] = [];
+  const known = forecast.length > 0;
+  for (let i = 0; i < Math.min(4, sites.length); i++) {
+    const w = siteShare(i);
+    const low = known ? share.cruise + share.drones * 0.6 : 1;
+    if (i < 3) wants.push({ id: 'iris-t-slm', site: i, why: i === 0 ? 'medium-range cover over the most-threatened site' : 'medium-range cover over another threatened site', value: low * w * 1.2, skip: known && !aimedAt(i, ['slowDrone', 'fastDrone', 'cruise']) });
+    wants.push({ id: 'skynex', site: i, why: 'guns for the drones there', value: (known ? share.drones : 0.8) * w, skip: known && !aimedAt(i, ['slowDrone', 'fastDrone']) });
+    wants.push({ id: 'iron-dome', site: i, why: 'rockets are forecast there', value: share.rocket * w * 1.3, skip: !mix.rocket || !aimedAt(i, ['rocket']) });
+    wants.push({ id: 'patriot-pac3', site: i, why: 'ballistic missiles or gliders are forecast there', value: share.high * w * (i === 0 ? 1.1 : 0.7), skip: (!mix.ballistic && !mix.hypersonic) || !aimedAt(i, ['ballistic', 'hypersonic']) });
+  }
+  // Gliders need the upper tier: one battery that reaches the whole region, bought first when they are most of the raid.
+  wants.push({ id: 'thaad', site: 0, why: 'gliders are forecast: an upper-tier battery that covers the whole region', value: share.high * 1.4, skip: !mix.hypersonic });
+  wants.push({ id: 'sentinel', site: 0, why: 'a sharp radar to track low fliers and pick out decoys', value: known ? 0.12 + (share.drones + share.cruise) * 0.25 : 0.7 });
+  wants.push({ id: 'gm400', site: 0, why: 'a long-wave radar that sees through storms', value: 0.04 });
+  wants.push({ id: 'decoy-emitter', site: 0, why: 'a lure for missiles that hunt radars', value: 0.03, skip: s.settings.mode !== 'campaign' || s.phaseIndex === 0 });
+  wants.sort((a, b) => b.value - a.value);
   const out: Placement[] = [];
   let left = budget;
   let crew = Math.floor(s.personnel / TACTICAL_CONFIG.deployPersonnel);

@@ -13,7 +13,7 @@ import { SoundControl } from './audio/SoundControl';
 import { AdviceList, useAdvice } from './Adjutant';
 import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
-import { LANGS, lang, setLang, tr, useLang, type Lang } from './i18n';
+import { tr, useLang } from './i18n';
 import { RaidDesigner } from './RaidDesigner';
 import { Term } from './Term';
 import { MainMenuButton } from './Shell';
@@ -354,7 +354,7 @@ export function BriefingModal({ s }: { s: SimState }) {
   const tactical = s.tactical?.enabled ? s.tactical : null;
   const quick = !!lessonOf(s)?.makeWaves;
   // A Quick Battle goes straight to the map.
-  const [step, setStep] = useState<'brief' | 'deploy'>(quick && tactical ? 'deploy' : 'brief');
+  const [step, setStep] = useState<'brief' | 'deploy'>(quick && tactical && !s.settings.raid ? 'deploy' : 'brief'); // a raid opens on its briefing: the author's message is there
   const [confirmBegin, setConfirmBegin] = useState(false);
   // Before the phase starts: forecast regions nothing can defend, and money that will otherwise sit idle.
   const beginIssues: string[] = s.settings.mode === 'training' ? [] : [
@@ -411,6 +411,12 @@ export function BriefingModal({ s }: { s: SimState }) {
             {tr('2 · Deploy defenses')} <span className="text-ops-dim">{tactical.deployments.length}</span>
           </button>
         </div>
+      )}
+      {tactical && step === 'deploy' && quick && (
+        <p className="mb-2 rounded border border-ops-line px-2 py-1 text-[11px] leading-snug text-ops-dim">
+          <b className="text-ops-text">Briefing:</b> {phase.situation.split(/(?<=[.!?])\s/)[0]}{' '}
+          <button className="text-ops-cyan underline" onClick={() => setStep('brief')}>Read the full briefing</button>
+        </p>
       )}
       {tactical && step === 'deploy' ? <Suspense fallback={<div className="p-6 text-center text-ops-dim">Loading…</div>}><DeployPanel s={s} /></Suspense> : (
       <div className="space-y-4">
@@ -650,9 +656,6 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
     <div className="relative flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-5xl space-y-6">
         <div className="-mb-3 flex justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:mb-0"><button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play (?)">{tr('? How to play')}</button>
-          <select className="input py-1 text-[11px]" value={lang()} onChange={(e) => setLang(e.target.value as Lang)} aria-label={tr('Language')} title={tr('Language')}>
-            {(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}
-          </select>
           <DisplayControl /><SoundControl /></div>
         <div className="text-center">
           <div className="label tracking-[0.4em]">{tr('Global Integrated Defense Command')}</div>

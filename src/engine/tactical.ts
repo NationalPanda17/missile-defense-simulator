@@ -11,6 +11,7 @@ import { LESSON_MAP, type ScriptedWave } from './training';
 import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
 import { ADAPTATION, enemyPlan } from './adaptation';
 import { siteDamageShare } from './sites';
+import { autoReserveWave, reserveLead, reserveProblem, type ReserveWave } from './raid';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
 import type {
   Deployment, FireDoctrine, LogLevel, RegionId, SimState, Site, SiteType, TacticalState, TacticalStats, TheaterTerrain, ThreatAxis, ThreatClass,
@@ -422,7 +423,12 @@ function turnPoint(t: TacticalState, tr: Track): [number, number] {
 function scheduleLessonWaves(s: SimState, t: TacticalState, waves: ScriptedWave[]) {
   const start = s.status === 'running' ? s.phaseStartHour : s.hour;
   t.forecast = [...new Set(waves.filter((w) => w.forecast).map((w) => w.region))];
-  for (const sw of waves) {
+  for (const sw of waves) addScriptedWave(s, t, sw, start);
+}
+
+/** Put one written-out wave on the schedule; its hour counts from `start`. */
+function addScriptedWave(s: SimState, t: TacticalState, sw: ScriptedWave, start: number): ThreatWave {
+  {
     const tracks: Track[] = [];
     // A player-written raid can aim a whole wave at one site, split it between two sides and choose its route.
     const aimed = sw.target ? t.sites.find((x) => x.id === sw.target && x.region === sw.region && x.integrity > 0) : undefined;
@@ -444,12 +450,28 @@ function scheduleLessonWaves(s: SimState, t: TacticalState, waves: ScriptedWave[
       }
     }
     const atHour = start + sw.atHour;
-    t.waves.push({
+    const wave: ThreatWave = {
       id: `WAVE-${t.nextId++}`, region: sw.region, phaseIndex: s.phaseIndex, atHour, launchAt: atHour - waveLeadHours(tracks), axis: sw.axis,
       forecast: sw.forecast, tracks, resolved: false,
       ...(sw.axis2 ? { axis2: sw.axis2 } : {}), ...(sw.decoys !== undefined ? { decoys: sw.decoys } : {}), ...(sw.hunt !== undefined ? { hunt: sw.hunt } : {}),
-    });
+    };
+    t.waves.push(wave);
+    return wave;
   }
+}
+
+/**
+ * Send a raid's reserve: one more wave, outside the forecast, arriving as soon as its threats can fly. The caller
+ * has checked it with reserveProblem.
+ */
+export function sendReserve(s: SimState, w: ReserveWave): ThreatWave | null {
+  const t = s.tactical;
+  const raid = s.settings.raid;
+  if (!t || !raid) return null;
+  const wave = addScriptedWave(s, t, { region: raid.region, atHour: s.hour + reserveLead(w), axis: w.axis, tracks: w.tracks, target: w.target, forecast: false, decoys: 0, hunt: 0 }, 0);
+  t.reserveSpent = true;
+  tlog(s, 'warn', `The attacker has committed a reserve: a wave is forming against ${s.regions[raid.region].name}.`, raid.region);
+  return wave;
 }
 
 // ── Geometry ─────────────────────────────────────────────────────────────
@@ -1164,6 +1186,14 @@ export function tickTactical(s: SimState) {
     // Launch: outcome decided with the defenses as they stand. Impact: damage lands.
     if (!w.resolved && (w.launchAt ?? w.atHour) <= s.hour) resolveWave(s, t, w, true);
     if (w.resolved && w.applied === false && w.atHour <= s.hour) applyImpacts(s, t, w);
+  }
+  // A raid played from a code has no author at the keyboard: once its written waves have landed, the game sends
+  // the reserve for them.
+  const raid = s.settings.raid;
+  if (raid?.byCode && raid.reserve && !t.reserveSpent && t.waves.length && t.waves.every((w) => w.applied)) {
+    const w = autoReserveWave(s);
+    if (w && !reserveProblem(s, w)) sendReserve(s, w);
+    else t.reserveSpent = true;
   }
 }
 

@@ -349,6 +349,12 @@ export interface Raid {
   /** Shown to the defender in the briefing. */
   name?: string;
   note?: string;
+  /** Attack points held back: one more wave, written during the battle after seeing how the others did. */
+  reserve?: number;
+  /** Played from a pasted code, with no author at the keyboard: the game commits the reserve for them. */
+  byCode?: boolean;
+  /** A match between two players at one keyboard: which of them is defending this round. */
+  defender?: 1 | 2;
 }
 
 export type CommandLevel = 'recruit' | 'officer' | 'commander';
@@ -513,6 +519,8 @@ export interface TacticalState {
   enabled: boolean; // campaign only
   rng: number; // own RNG stream, so the management simulation stays reproducible on its own
   nextId: number;
+  /** Player-written raids: the reserve wave has been sent. */
+  reserveSpent?: boolean;
   sites: Site[];
   terrain?: Record<RegionId, TheaterTerrain>; // absent in saves made before terrain existed
   deployments: Deployment[];

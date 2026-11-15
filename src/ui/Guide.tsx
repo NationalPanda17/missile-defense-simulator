@@ -397,7 +397,7 @@ function Start() {
       <List items={[
         <><B>Campaign.</B> Four phases across seven regions. Choose an open campaign or a written one: {Object.values(STORIES).map((x) => x.name).join(' or ')}.</>,
         <><B>Quick Battle.</B> One region, three waves.</>,
-        <><B>Endless Defense.</B> One region, a bigger wave every time, a briefing between each. Your score is the waves survived.</>,
+        <><B>Endless Defense.</B> One region, a bigger wave every time, a briefing between each. Your score is the waves survived; the game’s own adjutant usually lasts about 18.</>,
         <><B>Raid Designer.</B> Play the attacker: write a raid on the map it will be fought on, rehearse it, then send it against the computer’s defense or hand it to a friend (by passing the keyboard or sending a code). See “Writing a raid” below.</>,
         <><B>Crisis</B> and <B>Sandbox.</B> Network management without, or with, the fighting.</>,
       ]} />
@@ -413,9 +413,11 @@ function Start() {
         <><B>Decoys</B> ({TACTICAL_CONFIG.raid.decoy} point each). False tracks that draw fire. A defender with a sharp radar (C, X or Ku band) ignores most of them.</>,
         <><B>Keep a wave out of the forecast</B> (+{Math.round(TACTICAL_CONFIG.raid.hidden * 100)}% of its threats). The defender places a defense from the forecast, and this wave is not in it: they learn of it only from the launch warning a few hours ahead. At least one wave must be forecast.</>,
         <><B>Jam a radar band</B> (+{TACTICAL_CONFIG.raid.jam}). Every radar on that band sees {Math.round(JAMMING.range * 100)}% as far all battle and spots fewer decoys. The defender is told which band, so it works best against a defense that has no time or credits to change radars.</>,
+        <><B>Hold a reserve.</B> Points you hold back (up to half) buy one more wave during the battle, written after you have seen what got through. It arrives outside the forecast. In a battle at one keyboard the defender pauses and hands the keyboard over when you want to send it; if the raid is played from a code, the game writes the wave for you from what got through best.</>,
         <><B>Rehearse.</B> Flies the raid many times against the computer’s defense without starting a battle, and shows which threats it stops least. Change the raid and try again.</>,
       ]} />
       <P><B>Playing with a friend.</B> “Hand to a defender” starts the battle on their briefing: pass the keyboard. Or copy the raid code and send it; they paste it and press “Defend this code”, so they never see what is in it. Their debrief has a button that copies the result to send back. A raid code carries its own map and weather, so both players fight on the same ground.</P>
+      <P><B>A match.</B> After a battle at one keyboard, the debrief offers “Swap sides”: the defender writes the reply raid, of the same size, and the first attacker defends it. The debrief keeps the score of every round, and whoever has the higher average defense score is ahead. “End the match” clears it.</P>
       <P><B>Defending a raid.</B> The forecast check shows only the waves the author did not pay to hide. Keep credits back for resupply, cover more than one side, and do not rely on a single radar band.</P>
       <H>How to do well</H>
       <List items={[

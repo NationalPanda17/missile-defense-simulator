@@ -27,6 +27,26 @@ export const SAVE_VERSION = 1;
 
 export interface SaveMeta { slot: string; name: string; mode: string; hour: number; phase: string; savedAt: number }
 interface SaveFile { v: number; meta: SaveMeta; state: SimState }
+/** A save whose state is packed so it does not read as plain text (see `pack`). */
+interface SealedFile { v: number; meta: SaveMeta; sealed: string }
+
+/**
+ * A battle against another player's raid holds the whole raid, hidden waves included. Its saves are packed so the
+ * defender cannot read the raid by opening the file. This keeps honest players honest; it is not encryption.
+ */
+const secret = (s: SimState) => !!s.settings.raid && !s.settings.raid.attacker && s.status !== 'complete';
+function pack(state: SimState, slot: string): string {
+  if (!secret(state)) return JSON.stringify({ v: SAVE_VERSION, meta: metaOf(state, slot), state } satisfies SaveFile);
+  const bytes = new TextEncoder().encode(JSON.stringify(state));
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ (0x5a + (i % 7)));
+  return JSON.stringify({ v: SAVE_VERSION, meta: metaOf(state, slot), sealed: btoa(bin) } satisfies SealedFile);
+}
+function unpack(sealed: string): SimState {
+  const bin = atob(sealed);
+  const bytes = Uint8Array.from(bin, (ch, i) => ch.charCodeAt(0) ^ (0x5a + (i % 7)));
+  return JSON.parse(new TextDecoder().decode(bytes)) as SimState;
+}
 
 function storage(): Storage | null {
   try {
@@ -39,9 +59,8 @@ function storage(): Storage | null {
 export function saveGame(state: SimState, slot: Slot): boolean {
   const st = storage();
   if (!st) return false;
-  const file: SaveFile = { v: SAVE_VERSION, meta: metaOf(state, slot), state };
   try {
-    st.setItem(KEY(slot), JSON.stringify(file));
+    st.setItem(KEY(slot), pack(state, slot));
     return true;
   } catch {
     return false;
@@ -85,7 +104,7 @@ export function deleteSave(slot: Slot) {
 }
 
 export function exportJSON(state: SimState): string {
-  return JSON.stringify({ v: SAVE_VERSION, meta: metaOf(state, 'export'), state } satisfies SaveFile);
+  return pack(state, 'export');
 }
 
 export function importJSON(text: string): SimState | null {
@@ -97,8 +116,9 @@ export function importJSON(text: string): SimState | null {
 }
 
 function validate(f: unknown): SimState | null {
-  const file = f as SaveFile;
-  if (!file || typeof file !== 'object' || file.v !== SAVE_VERSION) return null;
+  const raw = f as SaveFile | SealedFile;
+  if (!raw || typeof raw !== 'object' || raw.v !== SAVE_VERSION) return null;
+  const file = ('sealed' in raw && typeof raw.sealed === 'string' ? { ...raw, state: unpack(raw.sealed) } : raw) as SaveFile;
   const err = stateShapeError(file.state);
   if (err) return null;
   ensureTactical(file.state);

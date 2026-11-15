@@ -183,6 +183,15 @@ class SimStore {
     this.notify();
   }
 
+  /** Several commands as one act: a single message at the end instead of one for each. */
+  batch(cmds: Command[], summary: (done: number, failed: number) => string) {
+    if (!this.state) return;
+    let done = 0;
+    for (const cmd of cmds) if (execute(this.state, cmd).ok) done++;
+    this.toast(done === cmds.length ? 'ok' : done ? 'info' : 'err', summary(done, cmds.length - done));
+    this.notify();
+  }
+
   toast(tone: Toast['tone'], text: string) {
     const id = ++this.toastId;
     this.toasts = [...this.toasts.slice(-4), { id, tone, text }];
