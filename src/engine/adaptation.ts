@@ -3,6 +3,7 @@
 // Decided from the scenario seed and past results (never the game's random streams), so replays stay identical.
 import { EQUIPMENT_MAP } from './equipment';
 import { variantsNow, type ThreatVariant } from './threats';
+import { SPACE, missionUp, sats } from './space';
 import { isUnlimited, regionProtection } from './tactical';
 import { hash01 } from './weather';
 import { REGION_IDS, type EnemyPlan, type RegionId, type SimState, type ThreatAxis, type ThreatClass, type ThreatWave } from './types';
@@ -145,7 +146,9 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   if (!learned.length) learned.push('It found no clear weakness and kept its approach.');
 
   // The intel line: right most of the time, wrong about the weapon or the place sometimes.
-  const wrong = hash01(seed, s.phaseIndex, 0x1e) < ADAPTATION.intelError;
+  // Imaging satellites photographing its launch areas make intelligence more reliable.
+  const imaging = sats(s).some((x) => x.orbit!.mission === 'imaging' && missionUp(s, x));
+  const wrong = hash01(seed, s.phaseIndex, 0x1e) < ADAPTATION.intelError * (imaging ? SPACE.imagingIntel : 1);
   const shifted = mix[favored] > 1.05;
   // With no change in weapons to report, intel can only be wrong about the place.
   const which = shifted && hash01(seed, s.phaseIndex, 0x1f) < 0.5 ? 'weapon' : 'place';

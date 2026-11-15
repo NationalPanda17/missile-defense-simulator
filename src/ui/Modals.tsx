@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  COMMAND_LEVELS, THREAT_VARIANTS, variantFrom, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, MISSIONS, REGIMES, jammed, lonText, THREAT_VARIANTS, variantFrom, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -118,7 +118,8 @@ export function EventModal({ s }: { s: SimState }) {
                 {t.responses.map((resp) => {
                   const locked = e.status === 'responding' && e.responseId === resp.id && e.responseChance !== undefined;
                   const p = locked ? e.responseChance! : responseSuccessChance(s, e, resp.id);
-                  const err = resp.passive ? (e.monitored ? 'Already used' : null) : canAfford(s, resp.credits, resp.personnel, resp.crews);
+                  const fuelLeft = resp.fuel ? s.assets.find((x) => x.id === e.assetId)?.orbit?.fuel : undefined;
+                  const err = resp.passive ? (e.monitored ? 'Already used' : null) : canAfford(s, resp.credits, resp.personnel, resp.crews) ?? (fuelLeft !== undefined && fuelLeft < resp.fuel! ? `Not enough propellant (${Math.round(fuelLeft)}% left)` : null);
                   const busy = e.status === 'responding';
                   return (
                     <div key={resp.id} className={`rounded border p-2.5 ${e.responseId === resp.id ? 'border-ops-cyan' : 'border-ops-line'}`}>
@@ -136,6 +137,7 @@ export function EventModal({ s }: { s: SimState }) {
                           <span className={s.personnel < resp.personnel ? 'text-ops-red' : ''}>{resp.personnel} personnel</span>
                           {resp.crews > 0 && <span className={crewsFree(s) < resp.crews ? 'text-ops-red' : ''}>{resp.crews} crew</span>}
                           <span>{resp.hours}h</span>
+                          {resp.fuel && fuelLeft !== undefined && <span className={fuelLeft < resp.fuel ? 'text-ops-red' : ''}>{resp.fuel}% propellant (of {Math.round(fuelLeft)}%)</span>}
                           <span className={TONE_TEXT[tone(p * 100)]} title={locked ? 'Fixed when you gave the order.' : 'Changes with regional comms and the readiness of the domain it depends on, until you order it.'}>{Math.round(p * 100)}% success{locked ? ' (locked when ordered)' : ''}</span>
                           {resp.domainDependency && <span>depends on {DOMAIN_LABEL[resp.domainDependency]}</span>}
                           {resp.networkDependent && <span>depends on regional comms</span>}
@@ -195,8 +197,19 @@ export function AssetModal({ s }: { s: SimState }) {
         </div>
         <div>
           <div className="label mb-1">Assignment</div>
-          <div>{a.status === 'transit' ? `In transit to ${s.regions[a.transitTo!].name} (${a.maintenanceRemaining}h)` : s.regions[a.region].name}{a.domain === 'space' && <span className="text-ops-dim"> · coverage: {a.coverage.map((c) => s.regions[c].short).join(', ')}</span>}</div>
+          <div>{a.status === 'transit' ? `In transit to ${s.regions[a.transitTo!].name} (${a.maintenanceRemaining}h)` : a.orbit ? '' : s.regions[a.region].name}{a.domain === 'space' && <span className="text-ops-dim">{a.orbit ? '' : ' · '}coverage: {a.coverage.length ? a.coverage.map((c) => s.regions[c].short).join(', ') : 'none right now'}</span>}</div>
         </div>
+        {a.orbit && (
+          <div className="rounded border border-ops-line p-2 text-[11px]">
+            <div className="label mb-1">Orbit</div>
+            <div className="text-white">{REGIMES[a.orbit.regime].name} ({REGIMES[a.orbit.regime].altitude}) · {MISSIONS[a.orbit.mission].name}{a.orbit.size ? ` · ${a.orbit.size} satellites` : ''}</div>
+            <p className="text-ops-dim">{REGIMES[a.orbit.regime].text}</p>
+            <p className="text-ops-dim">{MISSIONS[a.orbit.mission].text}</p>
+            <div className="mt-1 flex items-center gap-2"><span className="label">Propellant</span><span className="w-32"><Bar value={a.orbit.fuel} height={4} /></span><span>{Math.round(a.orbit.fuel)}%</span>
+              {a.orbit.destroyed && <span className="text-ops-red">Destroyed</span>}{a.orbit.drift && <span className="text-ops-amber">Drifting to {lonText(a.orbit.drift.toLon)}, {a.orbit.drift.left}h</span>}{jammed(s, a) && <span className="text-ops-red">Uplink jammed</span>}</div>
+            <button className="mt-1 text-ops-cyan underline" onClick={() => { ui.openAsset(null); ui.setView('space'); }}>Open the orbit map</button>
+          </div>
+        )}
         <div>
           <div className="label mb-1">Condition history (6h samples)</div>
           {a.history.length >= 2 ? (

@@ -9,6 +9,7 @@ import { isActive, isLive, recomputeMetrics } from './metrics';
 import { clamp, rand } from './rng';
 import { evaluateObjectives } from './scoring';
 import { scheduleWaves, tickTactical } from './tactical';
+import { launchSatellite, tickSpace } from './space';
 import type { Asset, GameEvent, LogLevel, OneTimeEffects, RegionId, SimState } from './types';
 import { DOMAINS, REGION_IDS } from './types';
 
@@ -348,6 +349,14 @@ function completeProject(s: SimState, id: string, region?: RegionId, domain?: st
         s.regions[region].infrastructure = clamp(s.regions[region].infrastructure + 8);
       }
       break;
+    case 'launch_warning':
+    case 'launch_relay':
+    case 'launch_imaging':
+    case 'launch_tracking': {
+      const sat = launchSatellite(s, id.slice(7) as 'warning' | 'relay' | 'imaging' | 'tracking', region);
+      if (sat) log(s, 'success', `${sat.name} is in orbit: ${sat.className}.`, region);
+      break;
+    }
     case 'industry':
       s.industry = Math.min(TACTICAL_CONFIG.industry.max, (s.industry ?? 0) + 1);
       break;
@@ -456,6 +465,7 @@ export function tick(s: SimState): void {
   if (ne && ne.reportedAt <= s.hour) {
     log(s, ne.severity >= 3 ? 'crit' : 'warn', `NEW ${ne.id}: ${ne.title} — ${s.regions[ne.region].name}.`, ne.region, ne.id);
   }
+  tickSpace(s);
   tickTactical(s);
   autoResupply(s);
   tickProjects(s);

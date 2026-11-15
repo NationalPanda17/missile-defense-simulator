@@ -2,7 +2,7 @@
 // so the guide can never drift from what the simulation does. Opened with ? from anywhere, including the start screen.
 import { useState, type ReactNode } from 'react';
 import {
-  THREAT_VARIANTS, type ThreatVariant, COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
+  MISSIONS, REGIMES, SPACE, THREAT_VARIANTS, type ThreatVariant, COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
   STOCKPILES, STORIES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, channelsOf, equipmentCost, isEffector, isUnlimited, type DefenseLayer, type EquipmentSpec, type FireDoctrine, type RadarBand, type ThreatClass,
 } from '../engine';
 import { Modal } from './components/ui';
@@ -10,7 +10,7 @@ import { DisplaySettings } from './a11y/DisplayControl';
 import { LAYER_COLOR } from './views/theater/icons';
 import { useUI } from './uiState';
 
-export type GuideTab = 'start' | 'first' | 'threats' | 'defenses' | 'equipment' | 'bands' | 'phase' | 'network' | 'score' | 'glossary' | 'keys';
+export type GuideTab = 'start' | 'first' | 'threats' | 'defenses' | 'equipment' | 'bands' | 'space' | 'phase' | 'network' | 'score' | 'glossary' | 'keys';
 
 const TABS: { id: GuideTab; label: string }[] = [
   { id: 'start', label: 'Start here' },
@@ -19,6 +19,7 @@ const TABS: { id: GuideTab; label: string }[] = [
   { id: 'defenses', label: 'Defenses' },
   { id: 'equipment', label: 'Equipment' },
   { id: 'bands', label: 'Radar bands' },
+  { id: 'space', label: 'Space' },
   { id: 'phase', label: 'During a phase' },
   { id: 'network', label: 'Network & reports' },
   { id: 'score', label: 'Scoring' },
@@ -338,6 +339,43 @@ function Equipment() {
 // ── Radar bands ──────────────────────────────────────────────────────────
 
 const BAND_USERS = (b: RadarBand) => EQUIPMENT.filter((e) => e.radar?.band === b).map((e) => e.name.replace(/\s*\(.*\)$/, ''));
+
+function Space() {
+  const pctOf = (x: number) => `${Math.round(x * 100)}%`;
+  return (
+    <>
+      <H>Satellites in real orbits</H>
+      <P>Your satellites keep fictional callsigns but fly real kinds of orbit, and what each one can see follows from its orbit. Open <B>Space Command</B> for the orbit map: each satellite’s position, its footprint, and where it goes next.</P>
+      <div className="mt-2 overflow-x-auto">
+        <table className="table-ops w-full text-[11px]">
+          <thead><tr><th>Orbit</th><th>Height</th><th>Period</th><th>What it means here</th></tr></thead>
+          <tbody>
+            {(Object.keys(REGIMES) as (keyof typeof REGIMES)[]).map((k) => (
+              <tr key={k} className="align-top"><td className="whitespace-nowrap text-white">{k}<div className="text-[10px] text-ops-dim">{REGIMES[k].name}</div></td><td className="whitespace-nowrap">{REGIMES[k].altitude}</td><td className="whitespace-nowrap">{REGIMES[k].periodH < 2 ? `${Math.round(REGIMES[k].periodH * 60)} min` : `${Math.round(REGIMES[k].periodH)} h`}</td><td>{REGIMES[k].text}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <H>What satellites do in the fight</H>
+      <List items={[
+        <><B>{MISSIONS.warning.name}</B> (geostationary, plus the highly elliptical one for the far north): {MISSIONS.warning.text} Systems react {pctOf(1 - SPACE.warningReaction)} faster, and a threat no radar sees still gets a {pctOf(SPACE.warningTrack)}-quality track.</>,
+        <><B>{MISSIONS.tracking.name}</B>: {MISSIONS.tracking.text} Track quality {pctOf(SPACE.trackingQuality)} at full health.</>,
+        <><B>{MISSIONS.nav.name}</B>: {MISSIONS.nav.text} Up to +{pctOf(SPACE.navBonus)} on every shot.</>,
+        <><B>{MISSIONS.relay.name}</B>: {MISSIONS.relay.text}</>,
+        <><B>{MISSIONS.imaging.name}</B>: {MISSIONS.imaging.text}</>,
+      ]} />
+      <P>The wave breakdown in the after-action review says which satellites warned of, tracked or imaged each wave.</P>
+      <H>Propellant, moves and launches</H>
+      <List items={[
+        <><B>Propellant</B> cannot be refilled in orbit. Dodging debris costs {SPACE.burn.dodge}%, evading an inspector satellite {SPACE.burn.evade}%. With none left, a satellite cannot dodge.</>,
+        <><B>Moving a geostationary satellite</B> to sit over another region costs {SPACE.drift.fuelBase}% plus {SPACE.drift.fuelPerDeg}% per degree, and it is off station (no coverage, no mission) while it drifts, about {SPACE.drift.degPerHour}° an hour here (far slower in reality).</>,
+        <><B>Launches</B> (Logistics): a missile-warning or relay satellite over a region you choose (the Polar region gets a highly elliptical orbit), a rideshare imaging satellite, or more satellites for the tracking layer.</>,
+      ]} />
+      <H>Attacks on satellites</H>
+      <P>Never on Recruit. From the second phase of a campaign the enemy may <B>jam a satellite’s uplink</B> (it cannot fly its mission until you switch to a protected waveform or locate the jammer) or send an <B>inspector satellite</B> towards a geostationary one (manoeuvre away or shield the payload). On Officer and Commander a ground-launched missile can <B>destroy a low-orbit satellite</B>: once at most on Officer from phase 3, up to twice on Commander from phase 2, where it goes after the low satellite that helped you most. The debris cloud makes close approaches about {SPACE.debris.conjunction}× as likely in low orbit for {SPACE.debris.hours} hours, for everyone. Solar storms swell the upper atmosphere and cost low satellites propellant.</P>
+    </>
+  );
+}
 
 function Bands() {
   return (
@@ -683,7 +721,7 @@ function Keys() {
 
 /** Each section of the guide, by tab. Exported so tests can render every page. */
 export const PAGES: Record<GuideTab, () => JSX.Element> = {
-  start: Start, first: First, threats: Threats, defenses: Defenses, equipment: Equipment, bands: Bands, phase: Phase, network: Network, score: Score, glossary: Glossary, keys: Keys,
+  start: Start, first: First, threats: Threats, defenses: Defenses, equipment: Equipment, bands: Bands, space: Space, phase: Phase, network: Network, score: Score, glossary: Glossary, keys: Keys,
 };
 
 export function GuideModal() {

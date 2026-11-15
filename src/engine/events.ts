@@ -2,7 +2,7 @@
 import { clamp, rand, randInt, randRange, weightedPick, pick } from './rng';
 import { levelOf } from './config';
 import type {
-  Asset, AssetRole, Domain, EffectSpec, EventCategory, GameEvent, OneTimeEffects, Region, RegionId,
+  Asset, AssetRole, Domain, EffectSpec, OrbitRegime, EventCategory, GameEvent, OneTimeEffects, Region, RegionId,
   ResponseSpec, Severity, SimState,
 } from './types';
 import { REGION_IDS } from './types';
@@ -13,7 +13,7 @@ export interface EventTemplate {
   title: string;
   narrative: (ctx: { region: Region; asset?: Asset; sev: Severity }) => string;
   domains: Domain[];
-  target?: { domains: Domain[]; roles?: AssetRole[] };
+  target?: { domains: Domain[]; roles?: AssetRole[]; orbits?: OrbitRegime[] };
   severity: [Severity, Severity];
   duration: [number, number];
   effects: EffectSpec[];
@@ -30,6 +30,10 @@ const monitor = (hours = 8): ResponseSpec => ({
   description: `No resources committed. Extends the decision window by ${hours}h once; effects continue.`,
   credits: 0, personnel: 0, crews: 0, hours, baseSuccess: 1, onSuccess: {},
 });
+
+/** How often the enemy works against your satellites: campaign, from phase 2, never on Recruit, most on Commander. */
+const counterspace = (s: SimState) =>
+  s.settings.mode !== 'campaign' || s.phaseIndex < 1 || s.settings.level === 'recruit' || !s.assets.some((a) => a.orbit && !a.orbit.destroyed) ? 0 : s.settings.level === 'commander' ? 1.5 : 1;
 
 const avgCond = (s: SimState, r: RegionId, role?: AssetRole) => {
   const l = s.assets.filter((a) => a.region === r && a.role !== 'defense' && (!role || a.role === role));
@@ -309,11 +313,40 @@ export const TEMPLATES: EventTemplate[] = [
     effects: [{ kind: 'assetDecay', value: 0.4 }],
     escalation: { effects: { assetCondition: -35 }, spawns: [{ templateId: 'sat_power', chance: 0.4 }], text: 'No avoidance manoeuvre: the platform was struck by debris.' },
     responses: [
-      { id: 'maneuver', label: 'Avoidance Manoeuvre', description: 'Burn propellant to move clear. Depends on Ground control readiness.', credits: 60, personnel: 2, crews: 0, hours: 3, baseSuccess: 0.9, domainDependency: 'ground', onSuccess: {} },
+      { id: 'maneuver', label: 'Avoidance Manoeuvre', description: 'Burn propellant to move clear. Depends on Ground control readiness.', credits: 60, personnel: 2, crews: 0, hours: 3, baseSuccess: 0.9, domainDependency: 'ground', onSuccess: {}, fuel: 8 },
       { id: 'safe', label: 'Safe Mode & Shield', description: 'Orient the platform to minimise exposure. Cheaper; less certain.', credits: 30, personnel: 1, crews: 0, hours: 2, baseSuccess: 0.7, onSuccess: {} },
       monitor(4),
     ],
-    weight: () => 0.15,
+    // A debris cloud from an anti-satellite strike makes close approaches far more common.
+    weight: (s) => 0.15 * ((s.space?.debrisUntil ?? -1) > s.hour ? 4 : 1),
+  },
+  {
+    id: 'sat_jam', category: 'satellite', title: 'Satellite Uplink Jamming', domains: ['space'],
+    target: { domains: ['space'], orbits: ['GEO', 'HEO', 'SSO'] }, severity: [1, 3], duration: [10, 16],
+    narrative: ({ asset }) =>
+      `Ground control is losing the command uplink to ${asset?.name ?? 'a satellite'}: a strong signal is being aimed at its receiver. Until it is cleared the satellite cannot fly its mission.`,
+    effects: [],
+    escalation: { effects: { assetCondition: -10 }, spawns: [], text: 'The satellite went into safe mode under sustained jamming and took hours to recover.' },
+    responses: [
+      { id: 'hop', label: 'Switch to Protected Waveform', description: 'Move the uplink to a frequency-hopping, jam-resistant mode. Depends on Ground control readiness.', credits: 60, personnel: 2, crews: 0, hours: 4, baseSuccess: 0.85, domainDependency: 'ground', onSuccess: {} },
+      { id: 'geolocate', label: 'Locate the Jammer', description: 'Pinpoint the jammer from several ground stations and hand it to regional forces. Slower, depends on regional comms.', credits: 90, personnel: 4, crews: 0, hours: 8, baseSuccess: 0.8, networkDependent: true, onSuccess: {} },
+      monitor(4),
+    ],
+    weight: (s) => 0.07 * counterspace(s),
+  },
+  {
+    id: 'sat_inspector', category: 'satellite', title: 'Inspector Satellite Approach', domains: ['space'],
+    target: { domains: ['space'], orbits: ['GEO'] }, severity: [2, 3], duration: [12, 20],
+    narrative: ({ asset }) =>
+      `A foreign satellite has left its slot and is closing on ${asset?.name ?? 'one of your geostationary satellites'}. At close range it could jam, dazzle or damage it.`,
+    effects: [{ kind: 'assetDecay', value: 0.3 }],
+    escalation: { effects: { assetCondition: -40 }, spawns: [{ templateId: 'sat_jam', chance: 0.4 }], text: 'The inspector closed in: the satellite’s sensors were dazzled and its payload badly degraded.' },
+    responses: [
+      { id: 'evade', label: 'Manoeuvre Away', description: 'Burn propellant to open the distance and change slot slightly. Reliable, but propellant cannot be replaced.', credits: 40, personnel: 2, crews: 0, hours: 3, baseSuccess: 0.9, domainDependency: 'ground', onSuccess: {}, fuel: 12 },
+      { id: 'shield', label: 'Shield the Payload', description: 'Turn the sensors away and shutter the payload while it passes. No propellant, less certain.', credits: 30, personnel: 1, crews: 0, hours: 4, baseSuccess: 0.6, onSuccess: {} },
+      monitor(4),
+    ],
+    weight: (s) => 0.05 * counterspace(s),
   },
   {
     id: 'heat', category: 'weather', title: 'Extreme Heat', domains: ['ground', 'air'],
@@ -352,7 +385,8 @@ export const SEV_FACTOR: Record<Severity, number> = { 1: 0.6, 2: 1, 3: 1.5, 4: 2
 function pickTarget(s: SimState, t: EventTemplate, region: RegionId): Asset | undefined {
   if (!t.target) return undefined;
   const ok = (a: Asset) =>
-    a.role !== 'defense' && t.target!.domains.includes(a.domain) && (!t.target!.roles || t.target!.roles.includes(a.role));
+    a.role !== 'defense' && t.target!.domains.includes(a.domain) && (!t.target!.roles || t.target!.roles.includes(a.role))
+    && !a.orbit?.destroyed && (!t.target!.orbits || (!!a.orbit && t.target!.orbits.includes(a.orbit.regime)));
   let list = s.assets.filter((a) => ok(a) && (a.domain === 'space' ? a.coverage.includes(region) : a.region === region));
   if (!list.length) list = s.assets.filter(ok);
   if (!list.length) return undefined;

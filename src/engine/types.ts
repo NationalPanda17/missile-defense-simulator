@@ -11,6 +11,30 @@ export type AssetRole = 'sensor' | 'comms' | 'support' | 'command' | 'defense'; 
 export type ThreatClass = 'slowDrone' | 'fastDrone' | 'cruise' | 'rocket' | 'ballistic' | 'hypersonic';
 export type AssetStatus = 'operational' | 'degraded' | 'maintenance' | 'offline' | 'transit';
 
+// Orbits (see space.ts)
+export type OrbitRegime = 'LEO' | 'SSO' | 'MEO' | 'GEO' | 'HEO';
+export type SpaceMission = 'warning' | 'tracking' | 'nav' | 'relay' | 'imaging';
+
+export interface Orbit {
+  regime: OrbitRegime;
+  mission: SpaceMission;
+  /** GEO: the longitude it is parked over. HEO: the longitude of its first apogee. */
+  lon?: number;
+  /** LEO and SSO: inclination, ascending-node longitude at the start and starting phase (0-1) of the orbit. */
+  incl?: number;
+  raan?: number;
+  phase?: number;
+  /** Propellant left, 0-100. Every manoeuvre spends some; none can be added in orbit. */
+  fuel: number;
+  /** GEO: drifting to a new slot. Off station (no mission, no coverage) until it arrives. */
+  drift?: { fromLon: number; toLon: number; left: number; hours: number };
+  /** Destroyed (an anti-satellite strike). */
+  destroyed?: boolean;
+  /** A constellation flown as one asset (tracking layer, navigation): how many satellites it has. */
+  size?: number;
+}
+
+
 export interface Asset {
   id: string;
   name: string;
@@ -30,6 +54,8 @@ export interface Asset {
   pos: [number, number]; // lon, lat for map placement
   history: number[]; // condition samples (every 6h)
   restoredAt?: number; // sim hour of last return to service
+  /** Satellites: the orbit it flies and its mission (absent for older saves, which keep fixed coverage). */
+  orbit?: Orbit;
 }
 
 export interface Region {
@@ -109,6 +135,8 @@ export interface ResponseSpec {
   networkDependent?: boolean; // success scaled by regional comms
   onSuccess: OneTimeEffects;
   passive?: boolean; // "accept/monitor" — no resolution, extends timer
+  /** Satellites: propellant (0-100) the manoeuvre burns from the targeted satellite. */
+  fuel?: number;
 }
 
 export interface GameEvent {
@@ -153,7 +181,7 @@ export interface Investment {
   id: string;
   label: string;
   description: string;
-  category: 'infrastructure' | 'resilience' | 'maintenance' | 'personnel' | 'comms' | 'sensors' | 'recovery' | 'modernization' | 'research';
+  category: 'infrastructure' | 'resilience' | 'maintenance' | 'personnel' | 'comms' | 'sensors' | 'recovery' | 'modernization' | 'research' | 'space';
   /** Can be done once per scenario (research). */
   once?: boolean;
   credits: number;
@@ -462,6 +490,8 @@ export interface Track {
 
 export interface ThreatWave {
   id: string;
+  /** What space did for this wave: the satellites that warned of it, tracked it and imaged its launch area. */
+  space?: { warned?: string; tracked?: string; imaged?: string; nav?: number };
   region: RegionId;
   phaseIndex: number;
   atHour: number; // sim hour the wave arrives (impact)
@@ -573,6 +603,8 @@ export interface SimState {
   branches?: Record<number, RegionId>;
   /** Research programmes completed (investment ids; absent in older saves). */
   research?: string[];
+  /** Space: which satellites helped in the fight, the enemy's anti-satellite strikes, and the debris they left. */
+  space?: { credit?: Record<string, number>; strikes?: { phase: number; hour: number; target?: string; why?: number }[]; debrisUntil?: number };
   logistics: number; // 0-100 logistics capacity
 
   regions: Record<RegionId, Region>;

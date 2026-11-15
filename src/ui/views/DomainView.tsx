@@ -5,9 +5,10 @@ import {
 import { dispatch } from '../../store/simStore';
 import { Bar, Chip, DOMAIN_COLOR, DOMAIN_LABEL, Gauge, LineChart, Panel, SEVERITY_WORD, Sparkline, Stat, TONE_TEXT, statusColor, tone } from '../components/ui';
 import { useUI } from '../uiState';
+import { SpaceOps } from './SpaceOps';
 
 const FOCUS: Record<Domain, { title: string; blurb: string }> = {
-  space: { title: 'Space Command', blurb: 'Global awareness, information continuity and communications resilience. Relay satellites carry 40% of global network capacity; survey satellites provide multi-region coverage.' },
+  space: { title: 'Space Command', blurb: 'Satellites in real orbits: geostationary missile-warning and relay satellites each watch about a third of the globe, a highly elliptical satellite covers the far north, imaging satellites pass over each region a few times a day, and a tracking layer and a navigation constellation cover everything. What each one sees, and when, decides how well the missile fight goes. Relay satellites carry 40% of global network capacity.' },
   air: { title: 'Air Command', blurb: 'Airborne situational awareness and inter-domain coordination. Aircraft can be redeployed between regions to backfill coverage gaps. Air depends on Space relays and Ground control.' },
   sea: { title: 'Sea Command', blurb: 'Maritime awareness, regional support and resource movement. Support vessels improve response success in their region. Maritime depends heavily on Space relays.' },
   ground: { title: 'Ground Command', blurb: 'Regional infrastructure protection, continuity of operations and resilience. Sensor stations, relay hubs and command centers anchor every region.' },
@@ -32,7 +33,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
   const due = assets.filter((a) => a.role !== 'defense' && a.hoursToService < 12 && a.status !== 'maintenance' && a.status !== 'transit');
   const overdueDue = due.filter((a) => a.hoursToService < 0).length;
   return (
-    <div className="grid gap-2 xl:grid-cols-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-2 xl:grid-cols-3">
       {due.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded border border-ops-amber/50 bg-ops-amber/10 px-3 py-2 text-[11px] xl:col-span-3" role="status">
           <span className="text-ops-amber">⛭ {due.length} asset{due.length === 1 ? '' : 's'} due for maintenance{overdueDue ? ` (${overdueDue} overdue, wearing ${SIM_CONFIG.overdueDecayMult}x faster)` : ''}.</span>
@@ -127,28 +128,7 @@ export function DomainView({ s, domain }: { s: SimState; domain: Domain }) {
 }
 
 function DomainSpecific({ s, domain }: { s: SimState; domain: Domain }) {
-  const color = DOMAIN_COLOR[domain];
-  if (domain === 'space') {
-    const sats = s.assets.filter((a) => a.domain === 'space');
-    return (
-      <Panel title="Orbital Coverage Matrix" bodyClass="p-0 overflow-x-auto">
-        <table className="table-ops w-full text-[10px]">
-          <thead><tr><th>Platform</th>{REGION_IDS.map((r) => <th key={r} className="text-center" title={s.regions[r].name}>{s.regions[r].short}</th>)}</tr></thead>
-          <tbody>
-            {sats.map((a) => {
-              const av = availability(s, a);
-              return (
-                <tr key={a.id}><td className="whitespace-nowrap">{a.name} <span className="text-ops-dim">{a.role === 'comms' ? 'RLY' : 'SRV'}</span></td>
-                  {REGION_IDS.map((r) => <td key={r} className="text-center">{a.coverage.includes(r) ? <span className="inline-block h-3 w-3 rounded-sm" style={{ background: color, opacity: 0.2 + av * 0.8 }} title={`${Math.round(av * 100)}%`} /> : <span className="text-ops-line">·</span>}</td>)}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="p-2 text-[10px] text-ops-dim">Cell intensity shows current platform availability over each region.</p>
-      </Panel>
-    );
-  }
+  if (domain === 'space') return <SpaceOps s={s} />;
   const title = domain === 'air' ? 'Airborne Coverage by Region' : domain === 'sea' ? 'Sea Presence by Region' : 'Regional Ground Network';
   return (
     <Panel title={title}>
