@@ -77,6 +77,8 @@ class SimStore {
     this.held = [];
     this.viewHold = false;
     this.lastBatchPause = -Infinity;
+    this.shown = { hour: -1, f: 0 };
+    this.acc = 0;
     this.toast('info', `New scenario: ${settings.name}`);
     this.ensureLoop();
     this.notify();
@@ -91,6 +93,8 @@ class SimStore {
     this.held = [];
     this.viewHold = false;
     this.lastBatchPause = -Infinity;
+    this.shown = { hour: -1, f: 0 };
+    this.acc = 0;
     this.ensureLoop();
     this.notify();
   }
@@ -404,10 +408,19 @@ class SimStore {
     const dt = Math.min(500, now - this.last);
     this.last = now;
     const s = this.state;
-    if (!s || s.paused || s.turnBased || s.status !== 'running') {
+    if (!s || s.turnBased || s.status !== 'running') {
       this.acc = 0;
       return;
     }
+    // Paused: hold the part-hour already elapsed (including what was on screen when the pause came), so everything
+    // stays exactly where it stopped and carries on from there.
+    if (s.paused) {
+      if (this.shown.hour === s.hour) this.acc = Math.max(this.acc, this.shown.f * SIM_CONFIG.msPerHourAt1x);
+      this.wasPaused = true;
+      return;
+    }
+    // The first tick after a pause counts none of the paused time.
+    if (this.wasPaused) { this.wasPaused = false; return; }
     this.acc += dt * s.speed;
     const per = SIM_CONFIG.msPerHourAt1x;
     if (this.acc >= per) {
@@ -417,11 +430,18 @@ class SimStore {
     }
   }
 
+  private shown = { hour: -1, f: 0 };
+  private wasPaused = false;
   /** Fraction of the current hour elapsed — used for smooth map animation. */
   hourFraction() {
     const s = this.state;
-    if (!s || s.paused || s.turnBased || s.status !== 'running') return 0;
-    return Math.min(0.999, this.acc / SIM_CONFIG.msPerHourAt1x);
+    if (!s || s.turnBased || s.status !== 'running') return 0;
+    // Between the 50 ms clock ticks, add the time since the last one, so motion updates every animation frame.
+    const since = s.paused || this.wasPaused || typeof performance === 'undefined' ? 0 : Math.min(500, performance.now() - this.last) * s.speed;
+    let f = Math.min(0.999, (this.acc + since) / SIM_CONFIG.msPerHourAt1x);
+    if (this.shown.hour === s.hour) f = Math.max(f, this.shown.f); // never step back within an hour
+    this.shown = { hour: s.hour, f };
+    return f;
   }
 
   /** Continuous sim time in hours: the current hour plus the fraction already elapsed, for smooth display. */

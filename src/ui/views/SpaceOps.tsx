@@ -1,10 +1,10 @@
 // Space operations: where every satellite is, what it covers, and what you can do with it (move a GEO slot, launch).
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   MISSIONS, REGIMES, REGION_IDS, SPACE, availability, debrisCloud, driftFuel, driftHours, inViewAt, jammed, lonText, missionUp,
   nextPass, repositionError, sats, spaceSupport, subPoint, type Asset, type RegionId, type SimState, type SpaceMission,
 } from '../../engine';
-import { dispatch } from '../../store/simStore';
+import { dispatch, useSimTime } from '../../store/simStore';
 import { Bar, Chip, Panel } from '../components/ui';
 import { useUI } from '../uiState';
 
@@ -42,6 +42,10 @@ function path(points: [number, number][]): string {
 
 function OrbitMap({ s, focus, setFocus }: { s: SimState; focus: string | null; setFocus: (id: string | null) => void }) {
   const list = sats(s);
+  // Continuous sim time, every animation frame: satellites glide instead of stepping hour by hour.
+  const t = useSimTime();
+  // Which regions have missile warning changes slowly: worked out once per hour, not every frame.
+  const warned = useMemo(() => new Set(REGION_IDS.filter((r) => spaceSupport(s, r, s.hour).warning)), [s, s.hour]);
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded border border-ops-line bg-[#06101c]" role="img" aria-label="Orbit map: where each satellite is now and what it can see">
       {[-60, -30, 0, 30, 60].map((lat) => <line key={lat} x1={0} x2={W} y1={px([0, lat])[1]} y2={px([0, lat])[1]} stroke="#16263a" strokeDasharray={lat === 0 ? '' : '2 4'} />)}
@@ -50,10 +54,9 @@ function OrbitMap({ s, focus, setFocus }: { s: SimState; focus: string | null; s
       <line x1={0} x2={W} y1={px([0, 70])[1]} y2={px([0, 70])[1]} stroke="#3d5470" strokeDasharray="1 3" />
       {REGION_IDS.map((r) => {
         const [x, y] = px(s.regions[r].center);
-        const sup = spaceSupport(s, r, s.hour);
         return (
           <g key={r}>
-            <circle cx={x} cy={y} r={4} fill={sup.warning ? '#f2545b' : '#3d5470'} />
+            <circle cx={x} cy={y} r={4} fill={warned.has(r) ? '#f2545b' : '#3d5470'} />
             <text x={x + 6} y={y + 3} fontSize={10} fill="#a9bdd6">{s.regions[r].short}</text>
           </g>
         );
@@ -61,22 +64,28 @@ function OrbitMap({ s, focus, setFocus }: { s: SimState; focus: string | null; s
       {list.map((a) => {
         const o = a.orbit!;
         const color = MISSION_COLOR[o.mission];
-        const p = subPoint(o, s.hour);
+        const p = subPoint(o, t);
         const dim = !missionUp(s, a);
         const on = focus === a.id;
         if (!p) return null;
         // Footprint now, and where it is heading (ground track over the next hours) for orbits that move.
         const reach = SPACE.footprint[o.regime];
         const showFoot = on && reach && !o.destroyed && !o.drift && (o.regime !== 'HEO' || p[1] >= 40);
-        const ahead = o.regime === 'LEO' || o.regime === 'SSO' ? (on ? 3 : 1) : o.regime === 'HEO' ? (on ? 12 : 0) : 0;
+        const ahead = o.regime === 'LEO' || o.regime === 'SSO' ? (on ? 3 : 1) : o.regime === 'HEO' ? (on ? 12 : 3) : 0;
         const track: [number, number][] = [];
-        for (let k = 0; k <= ahead * 12; k++) { const q = subPoint(o, s.hour + k / 12); if (q) track.push(q); }
+        const trail: [number, number][] = [];
+        if (!o.destroyed) {
+          for (let k = 0; k <= 36; k++) { const q = subPoint(o, t + (ahead * k) / 36); if (q) track.push(q); }
+          const back = o.regime === 'HEO' ? 2 : 0.25;
+          if (ahead) for (let k = 0; k <= 12; k++) { const q = subPoint(o, t - back + (back * k) / 12); if (q) trail.push(q); }
+        }
         const [x, y] = px(p);
         return (
           <g key={a.id} opacity={dim ? 0.35 : 1} onClick={() => setFocus(on ? null : a.id)} style={{ cursor: 'pointer' }}>
             {showFoot && <path d={path(circle(p, reach))} fill={color} fillOpacity={0.06} stroke={color} strokeOpacity={0.9} strokeWidth={1.5} />}
-            {track.length > 1 && <path d={path(track)} fill="none" stroke={color} strokeOpacity={on ? 0.8 : 0.35} strokeDasharray="3 3" />}
-            {o.drift && (() => { const [tx] = px([o.drift.toLon, 0]); return <line x1={x} y1={y} x2={tx} y2={y} stroke={color} strokeDasharray="4 2" markerEnd="" />; })()}
+            {track.length > 1 && <path d={path(track)} fill="none" stroke={color} strokeOpacity={on ? 0.8 : 0.3} strokeDasharray="3 3" />}
+            {trail.length > 1 && <path d={path(trail)} fill="none" stroke={color} strokeOpacity={0.7} strokeWidth={2} strokeLinecap="round" />}
+            {o.drift && (() => { const [tx] = px([((o.drift.toLon + 540) % 360) - 180, 0]); return <><line x1={x} y1={y} x2={tx} y2={y} stroke={color} strokeDasharray="4 2" /><circle cx={tx} cy={y} r={3} fill="none" stroke={color} /></>; })()}
             {o.destroyed
               ? <text x={x} y={y + 4} textAnchor="middle" fontSize={12} fill="#f2545b">✕</text>
               : <rect x={x - 4} y={y - 4} width={8} height={8} transform={`rotate(45 ${x} ${y})`} fill={color} stroke={on ? '#fff' : 'none'} />}

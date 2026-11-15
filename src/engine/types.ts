@@ -27,7 +27,7 @@ export interface Orbit {
   /** Propellant left, 0-100. Every manoeuvre spends some; none can be added in orbit. */
   fuel: number;
   /** GEO: drifting to a new slot. Off station (no mission, no coverage) until it arrives. */
-  drift?: { fromLon: number; toLon: number; left: number; hours: number };
+  drift?: { fromLon: number; toLon: number; left: number; hours: number; at?: number };
   /** Destroyed (an anti-satellite strike). */
   destroyed?: boolean;
   /** A constellation flown as one asset (tracking layer, navigation): how many satellites it has. */
