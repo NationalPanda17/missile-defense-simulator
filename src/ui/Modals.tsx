@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  COMMAND_LEVELS, MISSIONS, REGIMES, jammed, lonText, THREAT_VARIANTS, variantFrom, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, networkPracticeSettings, MISSIONS, REGIMES, jammed, lonText, THREAT_VARIANTS, variantFrom, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -264,6 +264,14 @@ const OBJECTIVE_HOW: Record<Objective['metric'], string> = {
   credits: 'keep this much in hand at the end of the phase; above the reserve level, idle money is reclaimed.',
 };
 
+/** The same hints for a scenario with no threat waves, where defending sites is not part of it. */
+const OBJECTIVE_HOW_NO_WAVES: Partial<Record<Objective['metric'], string>> = {
+  stability: 'resolve reports before they escalate; unrest lowers stability.',
+  infrastructure: 'fund Harden Regional Infrastructure or Regional Recovery in the weakest regions (Logistics), and fix power, cable and storm reports before they escalate.',
+  infrastructureGain: 'fund Harden Regional Infrastructure (+18) or Regional Recovery (+8) projects in the weakest regions.',
+  stabilityAvg: 'the average over every hour of the phase counts: resolve reports before they escalate.',
+};
+
 const DeployPanel = lazy(() => import('./views/TacticalDeploy').then((m) => ({ default: m.DeployPanel })));
 
 const SITE_EFFECT: [SiteType, string, 'power' | 'comms' | 'command'][] = [['power', 'readiness', 'power'], ['comms', 'communications', 'comms'], ['command', 'awareness', 'command']];
@@ -477,7 +485,7 @@ export function BriefingModal({ s }: { s: SimState }) {
               <ul className="space-y-1.5">{phase.objectives.map((o) => (
                 <li key={o.id}>
                   <div className="flex justify-between gap-2"><span>▸ {o.text}</span>{o.reward > 0 && <span className="shrink-0 text-ops-green">+{o.reward} cr</span>}</div>
-                  <div className="pl-3 text-[10px] leading-relaxed text-ops-dim">How: {OBJECTIVE_HOW[o.metric]}</div>
+                  <div className="pl-3 text-[10px] leading-relaxed text-ops-dim">How: {(!s.tactical?.enabled && OBJECTIVE_HOW_NO_WAVES[o.metric]) || OBJECTIVE_HOW[o.metric]}</div>
                 </li>
               ))}</ul>
             </div>}
@@ -764,8 +772,9 @@ export function StartScreen({ onSandbox }: { onSandbox: () => void }) {
           ))}
           <div className="panel flex flex-col p-4">
             <div className="font-sans text-lg font-semibold uppercase tracking-widest text-ops-cyan">{tr('Sandbox')}</div>
-            <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{tr('Configure starting resources, regional conditions, domain readiness, event frequency and duration in the Scenario Editor.')}</p>
+            <p className="mt-2 flex-1 text-[11px] leading-relaxed text-ops-dim">{tr('Configure starting resources, regional conditions, domain readiness, event frequency and duration in the Scenario Editor. Or start Network practice: no attacks, only the network and its infrastructure to keep running.')}</p>
             <button className="btn btn-primary mt-3" onClick={onSandbox}>{tr('Open scenario editor')}</button>
+            <button className="btn mt-1.5" onClick={() => { markWelcomed(); store.newGame(networkPracticeSettings()); }} title={tr('96 hours, no attacks: only network, satellite, power, sensor, supply and weather reports. For learning to keep the network running.')}>{tr('Network practice')}</button>
           </div>
         </div>
         <div className="panel p-4">

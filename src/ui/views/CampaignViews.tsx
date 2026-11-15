@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import {
-  DOMAINS, REGION_IDS, SLOTS, isAutosaveSlot, slotLabel, computeScore, defaultSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
+  DOMAINS, REGION_IDS, SLOTS, isAutosaveSlot, slotLabel, computeScore, defaultSettings, networkPracticeSettings, deleteSave, exportJSON, importJSON, listSaves, loadGame,
   formatObjective, objectiveProgress, objectiveValue, saveGame, type Domain, type RegionId, type ScenarioSettings, type SimState, type Slot,
 } from '../../engine';
 import { store, useStoreVersion } from '../../store/simStore';
@@ -140,15 +140,27 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
           <label className="block flex-1"><div className="label mb-0.5">Scenario name</div><input className="input w-full" value={cfg.name} onChange={(e) => set('name', e.target.value)} /></label>
           <button className="btn" onClick={() => setCfg({ ...defaultSettings('crisis'), mode: 'sandbox', name: 'Sandbox: Crisis Preset', seed: cfg.seed, waves: true })} title="Crisis conditions, with threat waves">Crisis preset · waves on</button>
           <button className="btn" onClick={() => setCfg({ ...defaultSettings('sandbox'), seed: cfg.seed, waves: true })} title="Default conditions, with threat waves">Defaults · waves on</button>
+          <button className="btn" onClick={() => setCfg(networkPracticeSettings(cfg.seed))} title="No attacks: network, satellite, power, sensor, supply and weather reports only">Network practice</button>
           {s && s.status !== 'complete'
             ? <ConfirmDelete className="btn-primary px-5 py-2" label="Launch this scenario (the game in progress is replaced)" text="Launch simulation ▶" confirmText="Replace the game in progress?" onConfirm={launch} />
             : <button className="btn btn-primary px-5 py-2" onClick={launch}>Launch simulation ▶</button>}
         </div>
-        <label className="mt-2 flex items-center gap-2 text-[11px]">
-          <input type="checkbox" checked={cfg.waves === true} onChange={(e) => set('waves', e.target.checked)} />
+        <fieldset className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+          <legend className="sr-only">What the scenario covers</legend>
+          <span className="label">Covers</span>
+          <label className="flex items-center gap-1.5"><input type="radio" name="focus" checked={cfg.focus !== 'network'} onChange={() => setCfg((c) => ({ ...c, focus: undefined }))} /><span className="text-white">Everything</span></label>
+          <label className="flex items-center gap-1.5"><input type="radio" name="focus" checked={cfg.focus === 'network'} onChange={() => setCfg((c) => ({ ...c, focus: 'network', waves: false }))} /><span className="text-white">Network & infrastructure only</span></label>
+          <span className="text-ops-dim">
+            {cfg.focus === 'network'
+              ? 'For learning to run the network: no attacks, no unrest, aircraft, ship or crew reports. Relays, cables, power, sensors, satellites, spare parts and weather fail, and some faults are scripted early so there is something to practise from the start.'
+              : 'Every kind of report, as in the campaign.'}
+          </span>
+        </fieldset>
+        <label className={`mt-2 flex items-center gap-2 text-[11px] ${cfg.focus === 'network' ? 'opacity-50' : ''}`}>
+          <input type="checkbox" disabled={cfg.focus === 'network'} checked={cfg.waves === true && cfg.focus !== 'network'} onChange={(e) => set('waves', e.target.checked)} />
           <span className="text-white">Threat waves</span>
           <span className="text-ops-dim">
-            {cfg.waves ? `On: the briefing has a Deploy defenses step, and about ${Math.max(1, Math.round(3 * cfg.durationHours / 72))} waves strike over ${cfg.durationHours}h.` : 'Off: network management only, no attacks and no defenses to place.'}
+            {cfg.focus === 'network' ? 'Off in network practice.' : cfg.waves ? `On: the briefing has a Deploy defenses step, and about ${Math.max(1, Math.round(3 * cfg.durationHours / 72))} waves strike over ${cfg.durationHours}h.` : 'Off: network management only, no attacks and no defenses to place.'}
           </span>
         </label>
         {s && <p className="mt-2 text-[10px] text-ops-amber">Launching replaces the current scenario. Save first from Campaign Management if you want to keep it.</p>}
@@ -191,7 +203,7 @@ export function ScenarioEditor({ s, onLaunched }: { s: SimState | null; onLaunch
               <input type="range" min={30} max={100} value={cfg.domainCondition[d] ?? 84} onChange={(e) => set('domainCondition', { ...cfg.domainCondition, [d]: Number(e.target.value) })} className="w-full accent-cyan-400" /></label>
           ))}
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2"><Stat label="Mode" value="SANDBOX" /><Stat label="All event types" value="ON" t="green" /></div>
+        <div className="mt-4 grid grid-cols-2 gap-2"><Stat label="Mode" value="SANDBOX" />{cfg.focus === 'network' ? <Stat label="Reports" value="NETWORK" t="cyan" /> : <Stat label="All event types" value="ON" t="green" />}</div>
       </Panel>
     </div>
   );

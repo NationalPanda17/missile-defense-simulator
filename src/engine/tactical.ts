@@ -32,7 +32,7 @@ const emptyStats = (): TacticalStats => ({ tracks: 0, stopped: 0, leaked: 0, dec
 const tacticalLesson = (s: SimState) => (s.settings.mode === 'training' && s.settings.lesson ? LESSON_MAP.get(s.settings.lesson) : undefined);
 const tacticalAllowed = (s: SimState) =>
   (s.settings.mode === 'campaign' && TACTICAL_CONFIG.enabledInCampaign) || !!tacticalLesson(s)?.waves?.length || !!tacticalLesson(s)?.makeWaves
-  || ((s.settings.mode === 'sandbox' || s.settings.mode === 'crisis') && s.settings.waves === true);
+  || ((s.settings.mode === 'sandbox' || s.settings.mode === 'crisis') && s.settings.waves === true && s.settings.focus !== 'network');
 
 /** A fresh tactical state for a game. Sites are generated from the seed; waves are scheduled separately. */
 export function createTactical(s: SimState): TacticalState {

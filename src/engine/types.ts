@@ -331,6 +331,8 @@ export interface ScenarioSettings {
   lesson?: string; // training mode: Training Academy lesson id (see training.ts)
   level?: CommandLevel; // campaign difficulty; absent means 'officer' (the campaign as designed)
   waves?: boolean; // sandbox and crisis: turn the tactical layer (threat waves, Deploy defenses) on
+  /** Sandbox: 'network' practises the network and infrastructure only (no attacks, no unrest, aircraft, ship or crew reports). */
+  focus?: 'network';
   /** Campaign: a written scenario with its own story (see STORIES). */
   story?: string;
   /** A raid written by a player: the waves a custom battle sends, and where. */
