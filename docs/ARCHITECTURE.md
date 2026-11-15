@@ -245,7 +245,7 @@ medals (`MEDALS`); medals live in the browser (`src/ui/medals.ts`) and unlock th
   practice range (`range.ts`, which records each shot's dice).
 - *Presentation:* radio chatter (`waveChatter`), scope view, storm cells and twilight in `WeatherOverlay`, music that
   tightens on a launch warning (`tensionOf`), an equipment encyclopedia in the guide, and translations (`src/ui/i18n.ts`:
-  English is the key; Spanish covers the start screen, top bar, navigation and briefing buttons).
+  English is the key; a partial, unreviewed Spanish dictionary exists but no screen offers the switch until it covers the whole game).
 - *Tests:* `tests/render.test.tsx` mounts every changed screen with realistic states.
 
 **Radar bands.** Each radar has a band (`RADAR_BANDS` in `equipment.ts`, long waves to short: UHF, L, S, C, X, Ku) with

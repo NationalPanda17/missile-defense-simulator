@@ -351,7 +351,7 @@ export const TACTICAL_CONFIG = {
   raid: {
     sizes: { skirmish: { points: 400, credits: 1000 }, standard: { points: 600, credits: 1400 }, major: { points: 900, credits: 2000 } },
     maxWaves: 5, hours: [4, 28] as [number, number], maxPerClass: 30,
-    secondAxis: 15, turn: 10, valley: 10, hunt: 20, huntShare: 0.35, decoy: 1, maxDecoys: 20, hidden: 0.25, jam: 60,
+    maxReserveShare: 0.5, secondAxis: 15, turn: 10, valley: 10, hunt: 20, huntShare: 0.35, decoy: 1, maxDecoys: 20, hidden: 0.25, jam: 60,
   },
   raids: { pincerByPhase: [0, 0.2, 0.3, 0.2], timedByPhase: [0, 0.15, 0.25, 0.15] },
   /**

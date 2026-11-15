@@ -1,5 +1,6 @@
 // Translations. English is the source text and the key: tr('Pause') returns the chosen language's wording, or the
 // English when a string has not been translated yet, so partly translated screens still read correctly.
+// The Spanish dictionary below is partial and unreviewed, so no screen offers the switch (setLang still works).
 // To add a language: add it to LANGS and give it a dictionary below. To translate more of the game: wrap the
 // English string in tr() where it is shown and add it to each dictionary.
 import { useSyncExternalStore } from 'react';
@@ -7,19 +8,14 @@ import { useSyncExternalStore } from 'react';
 export const LANGS = { en: 'English', es: 'Español' } as const;
 export type Lang = keyof typeof LANGS;
 
-const KEY = 'mds.lang';
 const listeners = new Set<() => void>();
-let current: Lang = (() => {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v && v in LANGS ? (v as Lang) : 'en';
-  } catch { return 'en'; }
-})();
+// The language switch is hidden until a translation covers the whole game: a half-translated screen reads worse
+// than an English one. The game therefore always starts in English, whatever was chosen before.
+let current: Lang = 'en';
 
 export const lang = () => current;
 export function setLang(l: Lang) {
   current = l;
-  try { localStorage.setItem(KEY, l); } catch { /* ignore */ }
   if (typeof document !== 'undefined') document.documentElement.lang = l;
   listeners.forEach((f) => f());
 }

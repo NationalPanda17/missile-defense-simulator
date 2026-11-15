@@ -69,6 +69,14 @@ describe('screens render', () => {
     expect(deploy).toContain('Radar picture');
     expect(deploy).toContain('Adjutant’s proposal');
     expect(deploy).not.toMatch(/NaN|\[object Object\]/);
+    // The theater opens on whichever region has a wave inbound, so every region gets a launcher to show.
+    s.credits += 500;
+    for (const site of s.tactical!.sites) {
+      if (s.tactical!.deployments.some((d) => d.region === site.region && d.equipmentId === 'sentinel')) continue;
+      execute(s, { type: 'deploy', equipmentId: 'stinger', region: site.region, ...spot(s, 'stinger', site.region, site.x, site.y) });
+      execute(s, { type: 'deploy', equipmentId: 'sentinel', region: site.region, ...spot(s, 'sentinel', site.region, site.x + 6, site.y + 6) });
+    }
+    for (const d of s.tactical!.deployments) if (d.equipmentId === 'sentinel') execute(s, { type: 'setEmcon', deploymentId: d.id, on: true });
     execute(s, { type: 'beginPhase' });
     while (!s.tactical!.waves.some((w) => w.phaseIndex === 2 && w.resolved) && s.status === 'running') execute(s, { type: 'advance', hours: 1 });
     const theater = html(<TheaterView s={s} />);

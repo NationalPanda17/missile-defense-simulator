@@ -4,9 +4,10 @@ import { log, maintenanceCostMult, beginPhase as begin, advance, responseSuccess
 import { isEffector, EQUIPMENT_MAP, equipmentCost, equipmentUpkeep } from './equipment';
 import {
   DOCTRINES, reinforceOptions, addDeployment, alertActive, alertCost, ensureTactical, isUnlimited, placementError, redeployCost, redeployHours, removeDeployment,
-  resupplyCost, resupplyRounds, stockpileOf, stockpileRules, theaterToLonLat,
+  resupplyCost, resupplyRounds, sendReserve, stockpileOf, stockpileRules, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
+import { reserveProblem, type ReserveWave } from './raid';
 import { isActive, recomputeMetrics } from './metrics';
 import { rand } from './rng';
 import type { Domain, FireDoctrine, RegionId, SimState, SpendCategory } from './types';
@@ -30,6 +31,7 @@ export type Command =
   | { type: 'setLoadout'; deploymentId: string; loadout: string }
   | { type: 'repairFirst'; siteId: string }
   | { type: 'reinforce'; region: RegionId }
+  | { type: 'commitReserve'; wave: ReserveWave }
   | { type: 'resupply'; deploymentId: string }
   | { type: 'emergencyRedeploy'; deploymentId: string; region: RegionId; x: number; y: number }
   | { type: 'raiseAlert'; region: RegionId }
@@ -317,6 +319,13 @@ function run(s: SimState, cmd: Command): CommandResult {
       t.repairFirst = [site.id, ...(t.repairFirst ?? []).filter((id) => id !== site.id)].slice(0, 12);
       record(s, 'repair', `Repair crews sent to ${site.name} first.`, 0, 'maintenance');
       return { ok: true, message: `Repair crews: ${site.name} first` };
+    }
+    case 'commitReserve': {
+      const problem = reserveProblem(s, cmd.wave);
+      if (problem) return fail(problem);
+      const w = sendReserve(s, cmd.wave);
+      if (!w) return fail('This battle has no raid.');
+      return { ok: true, message: `Reserve committed: it arrives in about ${Math.round(w.atHour - s.hour)} hours.` };
     }
     case 'reinforce': {
       const t = ensureTactical(s);

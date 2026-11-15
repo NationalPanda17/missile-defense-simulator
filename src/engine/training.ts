@@ -682,7 +682,7 @@ const ENDLESS_UNLOCK: [ThreatClass, number][] = [['slowDrone', 0], ['fastDrone',
 /** The wave Endless Defense sends in a phase: bigger each time, with a new kind of threat every so often. */
 export function endlessWave(seed: number, phaseIndex: number): ScriptedWave {
   const region = REGION_IDS[Math.floor(hash01(seed, 0x61) * REGION_IDS.length)];
-  const size = 6 + Math.round(phaseIndex * 2.5);
+  const size = 6 + Math.round(phaseIndex * 3.2);
   const classes = ENDLESS_UNLOCK.filter(([, from]) => phaseIndex >= from).map(([c]) => c);
   const tracks: Partial<Record<ThreatClass, number>> = {};
   for (let i = 0; i < size; i++) {
@@ -704,9 +704,9 @@ export const ENDLESS: TrainingLesson = {
   settings: { durationHours: 2000, startCredits: 700 },
   phase: { ...QUIET, name: 'Endless Defense', scripted: [],
     situation: 'One region, attacked again and again. Each wave is bigger than the last and new kinds of threat join as it goes on. Between waves you get a little more money and a briefing to spend it in. It ends when half the region’s site value is gone.' },
-  endless: { waves: 40, hours: 8, grant: 60, grantStep: 8, fallAt: 0.5 },
+  endless: { waves: 40, hours: 8, grant: 60, grantStep: 4, fallAt: 0.5 },
   makeWaves: (seed, phaseIndex) => [endlessWave(seed, phaseIndex)],
-  drill: { goal: 'Survive as many waves as you can.', score: (s) => Math.max(0, wavesSurvived(s)), stars: [5, 10, 15] },
+  drill: { goal: 'Survive as many waves as you can.', score: (s) => Math.max(0, wavesSurvived(s)), stars: [8, 14, 20] },
   steps: [
     { id: 'brief', title: 'Hold the region', check: running,
       text: 'Each wave gets a briefing first. The forecast check shows what is coming; spend what you have, then begin. A new briefing opens after every wave. The run ends when half the region’s site value is gone. Your score is the number of waves survived.',

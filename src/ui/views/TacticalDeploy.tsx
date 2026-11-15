@@ -4,7 +4,7 @@ import {
   EQUIPMENT, EQUIPMENT_MAP, LAYER_LABELS, PASSIVE_SENSOR, RADAR_BANDS, RADAR_BAND_IDS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, coverageAt,
   DOCTRINES, ENEMY_STYLES, resupplyCost, channelsOf, loadoutOf, proposeDefense, killRateOf, roundCostOf, JAMMING, suggestFixes, unitName, veteranOf, equipmentCost, isEffector, isUnlimited, jammedBand, previewDefense, forecastTargets, stockpileRules, stormWindows, type Deployment, type FireDoctrine, type RadarBand, type DefenseLayer, type RegionId, type SimState, type Site, type ThreatClass,
 } from '../../engine';
-import { dispatch } from '../../store/simStore';
+import { dispatch, store } from '../../store/simStore';
 import { TONE_HEX } from '../components/ui';
 import { useUI } from '../uiState';
 import { Meter } from '../Guide';
@@ -528,7 +528,7 @@ export function DeployPanel({ s }: { s: SimState }) {
                   {plan.map((p, i) => <li key={i}><span className="text-white">{EQUIPMENT_MAP.get(p.equipmentId)!.name}</span> ({p.cost} cr): {p.why}</li>)}
                 </ul>
                 <div className="mt-1 flex flex-wrap gap-1.5">
-                  <button className="btn btn-primary px-2 py-0.5" onClick={() => { for (const p of plan) dispatch({ type: 'deploy', equipmentId: p.equipmentId, region, x: p.x, y: p.y }); setPlanFor(null); }}>Place them all</button>
+                  <button className="btn btn-primary px-2 py-0.5" onClick={() => { store.batch(plan.map((p) => ({ type: 'deploy' as const, equipmentId: p.equipmentId, region, x: p.x, y: p.y })), (n, bad) => `${n} system${n === 1 ? '' : 's'} placed${bad ? `; ${bad} could not be` : ''}.`); setPlanFor(null); }}>Place them all</button>
                   <button className="btn px-2 py-0.5" onClick={() => setPlanFor(null)}>No thanks</button>
                   <span className="text-[10px] text-ops-dim">Anything placed can be moved, or taken back for a full refund, until the phase begins.</span>
                 </div>

@@ -7,6 +7,7 @@ import {
   isUnlimited, redeployCost, redeployHours,
   regionProtection, resupplyCost, resupplyRounds, stockpileOf, type Deployment, type ProtectionLevel, type RegionId, type SimState, type ThreatWave, type Track, conditionsAt, localHour, waveChatter, narrateWave, pointAlong, trackPath, trackStory, trackTarget, unitName, veteranOf } from '../../engine';
 import { dispatch, useSimTime } from '../../store/simStore';
+import { ReservePanel } from '../RaidDesigner';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
 import { LAYER_COLOR, MapLegend, TheaterMap, UnitOrders } from './TacticalDeploy';
 
@@ -298,6 +299,7 @@ export function TheaterView({ s }: { s: SimState }) {
 
   return (
     <div className="space-y-2">
+      <ReservePanel s={s} />
       {/* Always the same height, so the controls below don't jump when a warning appears or clears. */}
       <div className="flex min-h-[30px] flex-wrap items-center gap-1.5" role="status" aria-live="polite">
         {inbound.length === 0 && <span className="text-[11px] text-ops-dim">No waves inbound.</span>}

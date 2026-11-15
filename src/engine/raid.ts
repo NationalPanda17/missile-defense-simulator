@@ -2,7 +2,7 @@
 // raid travels between players as a code. Pure, and strict about what it accepts: a code is text from someone else.
 import { TACTICAL_CONFIG } from './config';
 import { RADAR_BANDS, THREAT_CLASSES, type RadarBand } from './equipment';
-import { REGION_IDS, type Raid, type RaidSize, type RaidWave, type SimState, type ThreatAxis } from './types';
+import { REGION_IDS, type Raid, type RaidSize, type RaidWave, type SimState, type ThreatAxis, type ThreatClass } from './types';
 
 const R = TACTICAL_CONFIG.raid;
 export const RAID_AXES: ThreatAxis[] = ['north', 'east', 'south', 'west'];
@@ -21,7 +21,9 @@ export function waveCost(w: RaidWave): { threats: number; options: number; total
   return { threats, options, total: threats + options };
 }
 
-export const raidCost = (raid: Raid) => raid.waves.reduce((a, w) => a + waveCost(w).total, 0) + (raid.jam ? R.jam : 0);
+export const raidCost = (raid: Raid) => raid.waves.reduce((a, w) => a + waveCost(w).total, 0) + (raid.jam ? R.jam : 0) + (raid.reserve ?? 0);
+/** The most that may be held in reserve for a raid of this size. */
+export const maxReserve = (raid: Pick<Raid, 'size'>) => Math.floor(raidPoints(raid) * R.maxReserveShare);
 
 /** Why a raid cannot be sent yet, in plain words; empty when it is ready. */
 export function raidProblems(raid: Raid): string[] {
@@ -67,6 +69,8 @@ export function cleanRaid(x: unknown): Raid | null {
   if (RAID_SIZES.includes(o.size as never) && o.size !== 'standard') raid.size = o.size as RaidSize;
   if (RAID_BANDS.includes(o.jam as never)) raid.jam = o.jam as string;
   if (o.seed !== undefined) raid.seed = int(o.seed, 0, 999_999_999, 0);
+  const reserve = int(o.reserve, 0, maxReserve(raid), 0);
+  if (reserve) raid.reserve = reserve;
   const name = text(o.name, 40);
   const note = text(o.note, 140);
   if (name) raid.name = name;
@@ -76,7 +80,7 @@ export function cleanRaid(x: unknown): Raid | null {
 
 /** A raid as a code to paste to someone else. */
 export function encodeRaid(raid: Raid): string {
-  const { attacker: _attacker, ...rest } = raid;
+  const { attacker: _attacker, byCode: _byCode, defender: _defender, ...rest } = raid;
   const bytes = new TextEncoder().encode(JSON.stringify(rest));
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
@@ -120,4 +124,76 @@ export function raidReport(s: SimState): RaidReport | null {
     defenderSpent: Math.round(waves.reduce((a, w) => a + w.cost, 0)),
     waves: waves.map(({ sent, through, damage, hidden, done }) => ({ sent, through, damage: Math.round(damage), hidden, done })),
   };
+}
+
+// ── The reserve: one more wave, written after seeing how the others did ──────────────────────
+
+/** A reserve wave is plain: threats, a side and, if wanted, one site. */
+export type ReserveWave = Pick<RaidWave, 'axis' | 'tracks' | 'target'>;
+
+/** Hours from sending a reserve wave to its arrival: an hour to launch, then its slowest threat's flight. */
+export const reserveLead = (w: Pick<RaidWave, 'tracks'>) =>
+  1 + Math.ceil(Math.max(0, ...THREAT_CLASSES.filter((c) => w.tracks[c]).map((c) => TACTICAL_CONFIG.flightHours[c])));
+
+/** Where the reserve stands: how many points, and whether it can be sent now (and if not, why). */
+export function reserveStatus(s: SimState): { points: number; ready: boolean; why: string } | null {
+  const raid = s.settings.raid;
+  const t = s.tactical;
+  if (!raid?.reserve || !t) return null;
+  const points = raid.reserve;
+  if (t.reserveSpent) return { points, ready: false, why: 'The reserve has been sent.' };
+  if (s.status !== 'running') return { points, ready: false, why: s.status === 'complete' ? 'The battle is over; the reserve was never sent.' : 'The reserve can be sent once the battle is under way.' };
+  if (!t.waves.some((w) => w.applied)) return { points, ready: false, why: 'The reserve can be sent once the first wave has landed.' };
+  const end = s.phaseStartHour + s.phases[s.phaseIndex].hours;
+  if (s.hour + 2 > end - 1) return { points, ready: false, why: 'Too late: a reserve wave could not arrive before the battle ends.' };
+  return { points, ready: true, why: '' };
+}
+
+/** Why a reserve wave cannot be sent, or null if it can. */
+export function reserveProblem(s: SimState, w: ReserveWave): string | null {
+  const st = reserveStatus(s);
+  if (!st) return 'This raid has no reserve.';
+  if (!st.ready) return st.why;
+  const cost = waveCost({ atHour: 0, ...w }).threats;
+  if (!raidThreats({ atHour: 0, ...w })) return 'The reserve wave has no threats in it.';
+  if (cost > st.points) return `That costs ${cost} attack points and the reserve is ${st.points}.`;
+  if (THREAT_CLASSES.some((c) => (w.tracks[c] ?? 0) > R.maxPerClass)) return `No more than ${R.maxPerClass} of one kind of threat in a wave.`;
+  if (s.hour + reserveLead(w) > s.phaseStartHour + s.phases[s.phaseIndex].hours - 1) return 'Too late for those threats to arrive before the battle ends: send faster ones.';
+  return null;
+}
+
+/**
+ * The reserve wave the game writes for an author who is not at the keyboard (a raid played from a code): more of
+ * whatever got through best for its cost, from the side that did best, with any change spent on drones.
+ */
+export function autoReserveWave(s: SimState): ReserveWave | null {
+  const raid = s.settings.raid;
+  const t = s.tactical;
+  if (!raid?.reserve || !t) return null;
+  const done = t.waves.filter((w) => w.applied);
+  const sent: Partial<Record<ThreatClass, number>> = {};
+  const through: Partial<Record<ThreatClass, number>> = {};
+  for (const w of done) for (const tr of w.tracks) {
+    if (tr.decoy) continue;
+    sent[tr.cls] = (sent[tr.cls] ?? 0) + 1;
+    if (tr.outcome === 'leaked') through[tr.cls] = (through[tr.cls] ?? 0) + 1;
+  }
+  const end = s.phaseStartHour + s.phases[s.phaseIndex].hours - 1;
+  const inTime = (c: ThreatClass) => s.hour + reserveLead({ tracks: { [c]: 1 } }) <= end;
+  // Damage bought per point, on the evidence so far (a threat never sent is assumed to get through half the time).
+  const worth = (c: ThreatClass) => ((sent[c] ? (through[c] ?? 0) / sent[c]! : 0.5) + 0.05) * TACTICAL_CONFIG.threatDamage[c] / TACTICAL_CONFIG.threatCost[c];
+  const order = THREAT_CLASSES.filter(inTime).sort((a, b) => worth(b) - worth(a));
+  if (!order.length) return null;
+  const tracks: Partial<Record<ThreatClass, number>> = {};
+  let left = raid.reserve;
+  for (const c of order) {
+    const n = Math.min(R.maxPerClass, Math.floor(left / TACTICAL_CONFIG.threatCost[c]));
+    if (n > 0) { tracks[c] = n; left -= n * TACTICAL_CONFIG.threatCost[c]; }
+  }
+  if (!THREAT_CLASSES.some((c) => tracks[c])) return null;
+  const best = [...done].sort((a, b) => {
+    const rate = (w: typeof a) => { const real = w.tracks.filter((x) => !x.decoy); return real.length ? real.filter((x) => x.outcome === 'leaked').length / real.length : 0; };
+    return rate(b) - rate(a);
+  })[0];
+  return { axis: best?.axis ?? raid.waves[0].axis, tracks };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EQUIPMENT_MAP, RAID_ID, TACTICAL_CONFIG, cleanRaid, computerDefense, createInitialState, decodeRaid, defaultSettings, encodeRaid, execute, jammedBand,
-  previewDefense, raidCost, raidPoints, raidProblems, raidReport, raidSettings, rehearseRaid, advance, waveCost, type Raid, type SimState,
+  autoReserveWave, exportJSON, importJSON, maxReserve, previewDefense, proposeDefense, reserveProblem, reserveStatus, raidCost, raidPoints, raidProblems, raidReport, raidSettings, rehearseRaid, advance, waveCost, type Raid, type SimState,
 } from '../src/engine';
 
 const base = (over: Partial<Raid> = {}): Raid => ({ region: 'EUR', seed: 4242, waves: [{ atHour: 8, axis: 'north', tracks: { slowDrone: 8, cruise: 4 } }], ...over });
@@ -136,5 +136,71 @@ describe('raid options in the fight', () => {
     expect(r.waves.map((w) => w.hidden)).toEqual([false, true]);
     expect(r.waves.every((w) => w.done)).toBe(true);
     expect(raidReport(createInitialState(defaultSettings('campaign')))).toBeNull();
+  });
+
+  it('holds points in reserve and spends them on one more wave once the first has landed', () => {
+    const raid = base({ reserve: 120 });
+    expect(raidCost(raid)).toBe(raidCost(base()) + 120);
+    expect(cleanRaid({ ...raid, reserve: 9999 })!.reserve).toBe(maxReserve(raid));
+    const s = start(raid);
+    expect(reserveStatus(s)!.ready).toBe(false);
+    execute(s, { type: 'beginPhase' });
+    expect(execute(s, { type: 'commitReserve', wave: { axis: 'south', tracks: { cruise: 4 } } }).ok).toBe(false); // nothing has landed
+    while (!s.tactical!.waves[0].applied) advance(s, 1);
+    expect(reserveStatus(s)!.ready).toBe(true);
+    expect(reserveProblem(s, { axis: 'south', tracks: { cruise: 5 } })).toContain('120'); // 150 points
+    expect(reserveProblem(s, { axis: 'south', tracks: {} })).toContain('no threats');
+    const hour = s.hour;
+    expect(execute(s, { type: 'commitReserve', wave: { axis: 'south', tracks: { cruise: 4 } } }).ok).toBe(true);
+    const w = s.tactical!.waves[1];
+    expect(w.forecast).toBe(false);
+    expect(w.atHour).toBeGreaterThan(hour);
+    expect(w.tracks.filter((x) => x.cls === 'cruise').length).toBe(4);
+    expect(execute(s, { type: 'commitReserve', wave: { axis: 'south', tracks: { cruise: 1 } } }).ok).toBe(false); // only once
+    while (s.status === 'running') advance(s, 1);
+    expect(w.applied).toBe(true);
+    expect(raidReport(s)!.sent).toBe(16);
+    expect(start(base()).tactical && reserveStatus(start(base()))).toBeNull();
+  });
+
+  it('commits the reserve for an author who is not there, with more of what got through', () => {
+    const s = start({ ...base({ reserve: 100 }), byCode: true });
+    execute(s, { type: 'beginPhase' });
+    while (!s.tactical!.waves[0].applied) advance(s, 1);
+    // It went the hour the written wave landed: nothing was defending, so the game sent more of the best value.
+    expect(s.tactical!.reserveSpent).toBe(true);
+    expect(s.tactical!.waves.length).toBe(2);
+    const extra = s.tactical!.waves[1];
+    expect(extra.forecast).toBe(false);
+    expect(extra.tracks.length).toBeGreaterThan(0);
+    expect(extra.tracks.reduce((a, x) => a + TACTICAL_CONFIG.threatCost[x.cls], 0)).toBeLessThanOrEqual(100);
+    expect(autoReserveWave(start(base()))).toBeNull();
+    // A raid handed over at the keyboard waits for its author instead.
+    const hand = start(base({ reserve: 100 }));
+    execute(hand, { type: 'beginPhase' });
+    while (hand.status === 'running') advance(hand, 1);
+    expect(hand.tactical!.waves.length).toBe(1);
+  });
+
+  it('packs the save of a raid being defended so the raid cannot be read from it, and loads it back', () => {
+    const s = start(base({ name: 'Secret Plan', waves: [base().waves[0], { atHour: 14, axis: 'south', tracks: { hypersonic: 2 }, hidden: true }] }));
+    const text = exportJSON(s);
+    expect(text).not.toContain('hypersonic');
+    expect(text).not.toContain('"hidden"');
+    const back = importJSON(text)!;
+    expect(back.settings.raid).toEqual(s.settings.raid);
+    expect(back.tactical!.waves.length).toBe(2);
+    // The author's own battle, and every other kind of save, stay plain.
+    expect(exportJSON(start({ ...base(), attacker: true }))).toContain('"raid"');
+    expect(exportJSON(createInitialState(defaultSettings('campaign')))).toContain('"state"');
+  });
+
+  it('the computer buys an upper-tier battery for gliders and rocket defense for rockets', () => {
+    const gliders = start(base({ waves: [{ atHour: 8, axis: 'north', tracks: { hypersonic: 5 } }] }));
+    expect(proposeDefense(gliders, 'EUR', gliders.credits - 150).some((p) => p.equipmentId === 'thaad')).toBe(true);
+    expect(rehearseRaid(base({ waves: [{ atHour: 8, axis: 'north', tracks: { hypersonic: 5 } }] }), 20)!.preview.prevented).toBeGreaterThan(0.45);
+    const rockets = start(base({ waves: [{ atHour: 8, axis: 'north', tracks: { rocket: 30 } }] }));
+    expect(proposeDefense(rockets, 'EUR', rockets.credits - 150).filter((p) => p.equipmentId === 'iron-dome').length).toBeGreaterThanOrEqual(2);
+    expect(rehearseRaid(base({ waves: [{ atHour: 8, axis: 'north', tracks: { rocket: 30 } }] }), 20)!.preview.prevented).toBeGreaterThan(0.45);
   });
 });

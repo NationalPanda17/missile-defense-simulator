@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   JAMMING, RADAR_BANDS, RAID_AXES, RAID_BANDS, RAID_SIZES, REGION_DEFS, REGION_IDS, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, cleanRaid, computerDefense,
   createInitialState, decodeRaid, defaultSettings, encodeRaid, isNight, localHour, raidCost, raidPoints, raidProblems, raidReport, raidSettings, raidThreats,
-  rehearseRaid, stormWindows, waveCost, type DefensePreview, type Raid, type RaidWave, type RegionId, type SimState, type ThreatAxis, type ThreatClass,
+  autoReserveWave, maxReserve, rehearseRaid, reserveLead, reserveProblem, reserveStatus, stormWindows, waveCost, type DefensePreview, type Raid, type RaidWave, type RegionId,
+  type ReserveWave, type SimState, type ThreatAxis, type ThreatClass,
 } from '../engine';
 import { dispatch, store } from '../store/simStore';
 import { Modal } from './components/ui';
@@ -40,13 +41,49 @@ function loadDraft(): Raid {
   return blank();
 }
 
-/** Start the battle: for a defender to play, or with the computer's defense in place while the author watches. */
-function startRaid(raid: Raid, attacker: boolean) {
-  store.newGame(raidSettings({ ...raid, attacker }, defaultSettings('training')));
+// ── A match: two players at one keyboard take turns attacking, and the better defender wins ───────────────
+
+interface Match { rounds: { id: string; defender: 1 | 2; score: number }[] }
+const MATCH_KEY = 'mds-raid-match';
+function loadMatch(): Match {
+  try {
+    const m = JSON.parse(localStorage.getItem(MATCH_KEY) ?? 'null') as Match | null;
+    if (m && Array.isArray(m.rounds)) return { rounds: m.rounds.filter((r) => (r.defender === 1 || r.defender === 2) && Number.isFinite(r.score)).slice(-20) };
+  } catch { /* none saved */ }
+  return { rounds: [] };
+}
+const saveMatch = (m: Match) => { try { localStorage.setItem(MATCH_KEY, JSON.stringify(m)); } catch { /* storage unavailable */ } };
+const matchAverage = (m: Match, p: 1 | 2) => { const xs = m.rounds.filter((r) => r.defender === p); return xs.length ? xs.reduce((a, r) => a + r.score, 0) / xs.length : null; };
+
+function MatchScore({ match }: { match: Match }) {
+  if (!match.rounds.length) return null;
+  const a = matchAverage(match, 1);
+  const b = matchAverage(match, 2);
+  const lead = a !== null && b !== null && a !== b ? (a > b ? 1 : 2) : null;
+  const side = (p: 1 | 2, avg: number | null) => (
+    <span>Player {p} defended {match.rounds.filter((r) => r.defender === p).map((r) => r.score).join(', ') || 'nothing yet'}{avg !== null && <> (average <b className="text-white">{Math.round(avg)}</b>)</>}</span>
+  );
+  return (
+    <p className="rounded border border-ops-line px-2 py-1 text-[11px] leading-snug text-ops-dim" role="status">
+      <b className="text-ops-text">Match so far:</b> {side(1, a)} · {side(2, b)}.{' '}
+      {lead ? <b className="text-ops-green">Player {lead} leads.</b> : a !== null && b !== null ? 'Level.' : 'The higher average defense score wins once both have defended.'}
+    </p>
+  );
+}
+
+/**
+ * Start the battle. `how`: 'watch' puts the computer's defense in place while the author watches; 'hand' starts it
+ * on the briefing of a defender at this keyboard; 'code' is a raid pasted from someone who is not here.
+ */
+function startRaid(raid: Raid, how: 'watch' | 'hand' | 'code', defender?: 1 | 2) {
+  const { attacker: _a, byCode: _b, defender: _d, ...rest } = raid;
+  store.newGame(raidSettings({ ...rest, ...(how === 'watch' ? { attacker: true } : how === 'code' ? { byCode: true } : { defender: defender ?? 2 }) }, defaultSettings('training')));
   const s = store.state;
-  if (!attacker || !s) return;
-  for (const p of computerDefense(s, raid.region)) dispatch({ type: 'deploy', equipmentId: p.equipmentId, region: raid.region, x: p.x, y: p.y });
-  dispatch({ type: 'setAutoResupply', region: raid.region, on: true });
+  if (how !== 'watch' || !s) return;
+  store.batch(
+    [...computerDefense(s, raid.region).map((p) => ({ type: 'deploy' as const, equipmentId: p.equipmentId, region: raid.region, x: p.x, y: p.y })), { type: 'setAutoResupply' as const, region: raid.region, on: true }],
+    (n) => `The computer placed ${n - 1} systems. Your raid is on its way.`,
+  );
   dispatch({ type: 'beginPhase' });
 }
 
@@ -256,9 +293,11 @@ function Rehearsal({ result, stale }: { result: { preview: DefensePreview; syste
   );
 }
 
-export function RaidDesigner({ onClose }: { onClose: () => void }) {
+export function RaidDesigner({ onClose, reply }: { onClose: () => void; reply?: { attacker: 1 | 2; size: Raid['size'] } }) {
   const ui = useUI();
-  const [raid, setRaidState] = useState<Raid>(loadDraft);
+  // A reply in a match starts from a clean sheet of the same size: the last raid was the other player's.
+  const [raid, setRaidState] = useState<Raid>(() => (reply ? { ...blank(), size: reply.size } : loadDraft()));
+  const match = useMemo(loadMatch, []);
   const [sel, setSel] = useState(0);
   const [code, setCode] = useState('');
   const [note, setNote] = useState('');
@@ -276,22 +315,29 @@ export function RaidDesigner({ onClose }: { onClose: () => void }) {
   const setWave = (k: number, w: RaidWave) => setRaid({ ...raid, waves: raid.waves.map((x, j) => (j === k ? w : x)) });
   /** A new map or region has different sites, so aimed waves go back to spreading out. */
   const remap = (patch: Partial<Raid>) => setRaid({ ...raid, ...patch, waves: raid.waves.map(({ target: _t, ...w }) => (w.route === 'valley' ? { ...w, route: undefined } : w)) });
-  const go = (attacker: boolean) => { startRaid(raid, attacker); ui.setView('theater'); onClose(); };
+  const go = (how: 'watch' | 'hand') => {
+    // Handing a raid over from the start screen opens a new match; a reply carries the match on.
+    if (how === 'hand' && !reply) saveMatch({ rounds: [] });
+    startRaid(raid, how, reply ? (reply.attacker === 1 ? 2 : 1) : 2);
+    ui.setView('theater');
+    onClose();
+  };
   const size = R.sizes[raid.size ?? 'standard'];
   return (
-    <Modal wide tall title="RAID DESIGNER · YOU ARE THE ATTACKER" onClose={onClose}
+    <Modal wide tall title={reply ? `RAID DESIGNER · PLAYER ${reply.attacker} ATTACKS` : 'RAID DESIGNER · YOU ARE THE ATTACKER'} onClose={onClose}
       footer={<>
         <span className={`mr-auto self-center text-[12px] ${ready ? 'text-ops-dim' : 'text-ops-red'}`} role="status">
           Attack points: <b className={cost > points ? 'text-ops-red' : 'text-white'}>{cost}</b> of {points}{problems[0] ? ` · ${problems[0]}` : ` · ${points - cost} left`}
         </span>
-        <button className="btn px-4 py-2 text-[13px]" disabled={!ready} title="The computer builds a defense from the forecast and you watch your raid go in" onClick={() => go(true)}>Attack the computer ▶</button>
-        <button className="btn btn-primary px-4 py-2 text-[13px]" disabled={!ready} title="Starts the battle on the defender’s briefing. Hand over the keyboard first: nothing of your raid is shown except its forecast." onClick={() => go(false)}>Hand to a defender ▶</button>
+        <button className="btn px-4 py-2 text-[13px]" disabled={!ready} title="The computer builds a defense from the forecast and you watch your raid go in" onClick={() => go('watch')}>Attack the computer ▶</button>
+        <button className="btn btn-primary px-4 py-2 text-[13px]" disabled={!ready} title="Starts the battle on the defender’s briefing. Hand over the keyboard first: nothing of your raid is shown except its forecast." onClick={() => go('hand')}>{reply ? `Hand to Player ${reply.attacker === 1 ? 2 : 1} ▶` : 'Hand to a defender ▶'}</button>
       </>}>
       <div className="space-y-3 text-[12px]">
         <p className="leading-relaxed text-ops-text">
           Write an attack on one region and try to get it through. Everything costs <b className="text-white">attack points</b>: the threats themselves, and each trick you add to a wave.
           The defender gets credits to match and sees only a forecast. Their <b className="text-white">defense score</b> is the share of your raid’s damage they prevented, so <b className="text-white">lower is better for you</b>.
         </p>
+        {reply && <MatchScore match={match} />}
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <label className="flex flex-col gap-0.5"><span className="label">Raid name</span>
             <input className="input w-44 py-1" maxLength={40} placeholder="optional" value={raid.name ?? ''} onChange={(e) => setRaid({ ...raid, name: e.target.value || undefined })} /></label>
@@ -306,10 +352,14 @@ export function RaidDesigner({ onClose }: { onClose: () => void }) {
               <option value="">No jamming</option>
               {RAID_BANDS.map((b) => <option key={b} value={b}>{b}-band ({RADAR_BANDS[b].nick})</option>)}
             </select></label>
+          <label className="flex flex-col gap-0.5"><span className="label">Hold in reserve</span>
+            <input type="number" className="input w-24 py-1" min={0} max={maxReserve(raid)} step={10} value={raid.reserve ?? 0} aria-label="Attack points held in reserve"
+              onChange={(e) => setRaid({ ...raid, reserve: Math.max(0, Math.min(maxReserve(raid), Math.round(Number(e.target.value)) || 0)) || undefined })} /></label>
           <button className="btn py-1" title="A different day: the sites, the valleys, the night and the storms all change" onClick={() => remap({ seed: newSeed() })}>New map and weather ↻</button>
         </div>
         <p className="text-[11px] leading-snug text-ops-dim">
           The defender starts with <b className="text-ops-text">{size.credits} credits</b>. Jamming cuts every radar on that band to {Math.round(JAMMING.range * 100)}% of its range for the whole battle and makes it worse at telling decoys from real threats; the defender is warned which band.
+          {' '}<b className="text-ops-text">Reserve:</b> points you hold back (up to {maxReserve(raid)}) buy one more wave during the battle, written after you have seen how the others did. If the raid is played from a code, the game writes that wave for you from what got through.
           {raid.jam ? ` ${raid.jam}-band: ${RADAR_BANDS[raid.jam as keyof typeof RADAR_BANDS].summary}` : ' Sharp bands (C, X, Ku) are the ones that guide shots and spot decoys.'}
         </p>
 
@@ -349,7 +399,7 @@ export function RaidDesigner({ onClose }: { onClose: () => void }) {
           <div className="flex flex-wrap items-center gap-1.5">
             <button className="btn" disabled={!ready} onClick={async () => { const c = encodeRaid(raid); try { await navigator.clipboard.writeText(c); setNote('Raid code copied. Send it to a friend: they paste it here and press “Hand to a defender”. Ask them to send back the result from their debrief.'); } catch { setCode(c); setNote('Copy the code from the box.'); } }}>Copy raid code</button>
             <input className="input min-w-0 flex-1 py-1" placeholder="…or paste a raid code here" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Raid code" />
-            <button className="btn" disabled={!code.trim()} title="Start defending the raid in the code without seeing what is in it" onClick={() => { const r = decodeRaid(code); if (r) { startRaid({ ...r, seed: r.seed ?? newSeed() }, false); ui.setView('theater'); onClose(); } else setNote('That is not a valid raid code.'); }}>Defend this code ▶</button>
+            <button className="btn" disabled={!code.trim()} title="Start defending the raid in the code without seeing what is in it" onClick={() => { const r = decodeRaid(code); if (r) { startRaid({ ...r, seed: r.seed ?? newSeed() }, 'code'); ui.setView('theater'); onClose(); } else setNote('That is not a valid raid code.'); }}>Defend this code ▶</button>
             <button className="btn" disabled={!code.trim()} title="Open the raid in the designer to read or change it" onClick={() => { const r = decodeRaid(code); if (r) { setRaid({ ...r, seed: r.seed ?? newSeed() }); setSel(0); setNote('Raid loaded into the designer.'); } else setNote('That is not a valid raid code.'); }}>Open it here</button>
             <button className="btn" onClick={() => { setRaid(blank()); setSel(0); setRehearsal(null); setNote('Started a fresh raid.'); }}>Start over</button>
           </div>
@@ -360,18 +410,108 @@ export function RaidDesigner({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** The attacker's reserve during a battle: where it stands, and the sheet to write the extra wave on. */
+export function ReservePanel({ s }: { s: SimState }) {
+  const [open, setOpen] = useState(false);
+  const st = reserveStatus(s);
+  const raid = s.settings.raid;
+  if (!st || !raid || raid.byCode) return null;
+  return (
+    <div className={`flex flex-wrap items-center gap-2 rounded border px-2 py-1.5 text-[11px] ${st.ready ? 'border-ops-amber/70 bg-ops-amber/10' : 'border-ops-line'}`} role="status">
+      <b className="text-ops-amber">ATTACKER’S RESERVE · {st.points} points</b>
+      <span className="min-w-0 flex-1 basis-48 text-ops-dim">
+        {st.ready ? (raid.attacker ? 'Your earlier waves have shown what gets through. Write one more.' : 'Defender: when the attacker wants to send it, pause and hand them the keyboard. It will arrive outside the forecast.') : st.why}
+      </span>
+      {st.ready && <button className="btn btn-primary px-2 py-0.5" onClick={() => { dispatch({ type: 'setPaused', paused: true }); setOpen(true); }}>Commit the reserve…</button>}
+      {open && <ReserveSheet s={s} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function ReserveSheet({ s, onClose }: { s: SimState; onClose: () => void }) {
+  const raid = s.settings.raid!;
+  const t = s.tactical!;
+  const points = raid.reserve ?? 0;
+  const [w, setW] = useState<ReserveWave>(() => autoReserveWave(s) ?? { axis: raid.waves[0].axis, tracks: {} });
+  const sites = t.sites.filter((x) => x.region === raid.region && x.integrity > 0);
+  const done = t.waves.filter((x) => x.applied);
+  const cost = waveCost({ atHour: 0, ...w }).threats;
+  const problem = reserveProblem(s, w);
+  const num = (c: ThreatClass, n: number) => setW({ ...w, tracks: { ...w.tracks, [c]: Math.max(0, Math.min(R.maxPerClass, Math.round(n) || 0)) } });
+  const tally = THREAT_CLASSES.map((c) => {
+    const real = done.flatMap((x) => x.tracks).filter((x) => !x.decoy && x.cls === c);
+    return { c, sent: real.length, through: real.filter((x) => x.outcome === 'leaked').length };
+  }).filter((x) => x.sent);
+  return (
+    <Modal title="COMMIT THE RESERVE · ATTACKER ONLY" onClose={onClose}
+      footer={<>
+        <span className={`mr-auto self-center text-[12px] ${problem ? 'text-ops-red' : 'text-ops-dim'}`} role="status">{cost} of {points} points{problem ? ` · ${problem}` : ` · arrives in about ${reserveLead(w)} hours`}</span>
+        <button className="btn px-3 py-1.5" onClick={onClose}>Not yet</button>
+        <button className="btn btn-primary px-3 py-1.5" disabled={!!problem} onClick={() => { if (dispatch({ type: 'commitReserve', wave: w }).ok) onClose(); }}>Send it ▶</button>
+      </>}>
+      <div className="space-y-2 text-[12px]">
+        <p className="leading-relaxed text-ops-text">One more wave, bought with the points you held back. It is not in the defender’s forecast; they get only the launch warning. It can be sent once, and points left over are lost. The game is paused.</p>
+        <div className="rounded border border-ops-line p-2">
+          <div className="label mb-1">What your raid has done so far</div>
+          {tally.length ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]">
+              {tally.map((x) => <span key={x.c}>{THREAT_LABELS[x.c]}: <b className={x.through / x.sent >= 0.4 ? 'text-ops-green' : 'text-ops-amber'}>{x.through} of {x.sent} got through</b></span>)}
+            </div>
+          ) : <p className="text-[11px] text-ops-dim">Nothing has landed yet.</p>}
+        </div>
+        <div className="grid gap-x-3 gap-y-1 sm:grid-cols-2">
+          {THREAT_CLASSES.map((c) => (
+            <div key={c} className="flex items-center justify-between gap-1 text-[11px]">
+              <span className="min-w-0 truncate">{THREAT_LABELS[c]} <span className="text-ops-dim">({TACTICAL_CONFIG.threatCost[c]})</span></span>
+              <span className="flex shrink-0 items-center gap-0.5">
+                <button className="btn px-1.5 py-0" onClick={() => num(c, (w.tracks[c] ?? 0) - 1)} aria-label={`One fewer ${THREAT_LABELS[c]}`}>−</button>
+                <input type="number" className="input w-12 px-1 py-0.5 text-center" min={0} max={R.maxPerClass} value={w.tracks[c] ?? 0} aria-label={`${THREAT_LABELS[c]} in the reserve wave`} onChange={(e) => num(c, Number(e.target.value))} />
+                <button className="btn px-1.5 py-0" onClick={() => num(c, (w.tracks[c] ?? 0) + 1)} aria-label={`One more ${THREAT_LABELS[c]}`}>＋</button>
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <label className="flex items-center gap-1">From the
+            <select className="input py-0.5" value={w.axis} onChange={(e) => setW({ ...w, axis: e.target.value as ThreatAxis })}>{RAID_AXES.map((a) => <option key={a} value={a}>{a}</option>)}</select></label>
+          <label className="flex items-center gap-1">Aimed at
+            <select className="input max-w-[12rem] py-0.5" value={w.target ?? ''} onChange={(e) => setW({ ...w, target: e.target.value || undefined })}>
+              <option value="">every site, by its value</option>
+              {sites.map((x) => <option key={x.id} value={x.id}>{x.name} (value {x.importance}, {Math.round(x.integrity)}% standing)</option>)}
+            </select></label>
+          <button className="btn px-2 py-0.5" title="More of whatever got through best for its cost, from the side that did best" onClick={() => { const a = autoReserveWave(s); if (a) setW(a); }}>Let the game choose</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /** The debrief of a raid battle from the attacker's side, with a line to send back to whoever wrote the raid. */
 export function RaidDebrief({ s, score }: { s: SimState; score: number }) {
   const [copied, setCopied] = useState(false);
+  const [reply, setReply] = useState(false);
+  const [match, setMatch] = useState<Match>(loadMatch);
   const r = raidReport(s);
   const raid = s.settings.raid;
+  const final = s.status === 'complete';
+  const defender = raid?.defender;
+  const id = s.campaignId ?? '';
+  // A finished round of a match is written down once.
+  useEffect(() => {
+    if (!final || !defender || !id) return;
+    const m = loadMatch();
+    if (m.rounds.some((x) => x.id === id)) return;
+    const next = { rounds: [...m.rounds, { id, defender, score }] };
+    saveMatch(next);
+    setMatch(next);
+  }, [final, defender, id, score]);
   if (!r || !raid) return null;
   const done = r.waves.every((w) => w.done);
   const line = `${raid.name ? `Raid “${raid.name}”` : 'Your raid'} on ${regionName(raid.region)}: defense score ${score} of 100. ${r.through} of ${r.sent} threats got through for ${r.damage} damage${r.radarsHit ? `, and ${r.radarsHit} defending system${r.radarsHit === 1 ? ' was' : 's were'} hit` : ''}. The raid cost ${r.spent} attack points; the defender fired ${r.defenderSpent} credits of interceptors.`;
   return (
     <div className="space-y-2 text-[12px]">
       <p className="leading-relaxed text-ops-text">
-        {raid.attacker ? 'You wrote this raid and the computer defended it.' : 'Another commander wrote this raid.'} It cost <b className="text-white">{r.spent} attack points</b>.{' '}
+        {raid.attacker ? 'You wrote this raid and the computer defended it.' : defender ? `Player ${defender === 1 ? 2 : 1} wrote this raid and Player ${defender} defended it.` : 'Another commander wrote this raid.'} It cost <b className="text-white">{r.spent} attack points</b>.{' '}
         <b className="text-white">{r.through} of {r.sent}</b> threats got through and did <b className="text-white">{r.damage}</b> damage{r.spent ? <> ({(r.damage / r.spent * 100).toFixed(1)} per 100 points)</> : null}.
         The defender fired <b className="text-white">{r.defenderSpent} credits</b> of interceptors. For the attacker, a lower defense score is a better raid.
       </p>
@@ -383,7 +523,18 @@ export function RaidDebrief({ s, score }: { s: SimState; score: number }) {
           ))}
         </tbody>
       </table>
-      {done && !raid.attacker && (
+      {final && defender && (
+        <div className="space-y-1.5 rounded border border-ops-cyan/40 p-2">
+          <MatchScore match={match} />
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-primary" onClick={() => setReply(true)}>Swap sides: Player {defender} writes the reply ▶</button>
+            <span className="min-w-0 flex-1 basis-48 text-[11px] text-ops-dim">Player {defender} now attacks and Player {defender === 1 ? 2 : 1} defends, with a raid of the same size. The better average defense score wins.</span>
+            <button className="btn" onClick={() => { saveMatch({ rounds: [] }); setMatch({ rounds: [] }); }}>End the match</button>
+          </div>
+          {reply && <RaidDesigner reply={{ attacker: defender, size: raid.size }} onClose={() => setReply(false)} />}
+        </div>
+      )}
+      {done && raid.byCode && (
         <div className="flex flex-wrap items-center gap-2">
           <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(line); setCopied(true); } catch { setCopied(false); } }}>Copy the result for the author</button>
           <span className="min-w-0 flex-1 basis-64 text-[11px] text-ops-dim">{copied ? 'Copied. Paste it to whoever sent you the raid.' : line}</span>
