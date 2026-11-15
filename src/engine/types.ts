@@ -448,6 +448,10 @@ export interface Track {
   handoff?: boolean;
   /** Flew in along a valley. */
   valley?: boolean;
+  /** Real-world type within its class (see threats.ts); absent = the class's baseline. */
+  variant?: string;
+  /** Got through but landed wide of its target (unguided). */
+  wide?: boolean;
   /** Radar band of the sharpest sensor that tracked it ('passive' for acoustic or RF sensors); absent if unseen. */
   band?: string;
   /** A decoy that a sharp radar recognised, so nothing fired at it. */
@@ -510,6 +514,7 @@ export interface EnemyPlan {
   axis: Partial<Record<RegionId, ThreatAxis>>; // preferred approach per region
   doubleTap?: RegionId; // a region whose magazines ran low: two waves close together
   decoys: number; // decoy multiplier
+  variants?: Record<string, number>; // × weight of threat variants it switched to (absent in older saves)
   jam?: string; // radar band it jams this phase: the one the defense leaned on most (absent in older saves)
   learned: string[]; // what it noticed, for the debrief
   intel: { text: string; accurate: boolean; actual?: string }; // actual: what was really true, when intel was wrong
