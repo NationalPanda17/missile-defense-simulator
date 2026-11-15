@@ -1,4 +1,5 @@
 // What happened to every threat in a wave, and why: shared by the after-action review and Mission Replay.
+import { spaceLine } from './SpaceOps';
 import { jamIn, variantOf, leakText, targetName, unitName, whyEntries, type SimState, type ThreatWave } from '../../engine';
 
 export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
@@ -34,6 +35,7 @@ export function WaveBreakdown({ s, wave }: { s: SimState; wave: ThreatWave }) {
         </p>
       )}
       {jam && <p className="text-ops-amber">The enemy jammed {jam}-band radars this phase: they saw half as far and recognised half as many decoys.</p>}
+      {spaceLine(s, wave) && <p className="text-ops-cyan">{spaceLine(s, wave)}</p>}
       <div className="overflow-x-auto">
         <table className="table-ops w-full">
           <thead><tr><th>Threat</th><th>Target</th><th>Seen</th><th>Engaged by</th><th>Result</th></tr></thead>

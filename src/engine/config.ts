@@ -73,6 +73,26 @@ export const REGION_DEFS: { id: RegionId; name: string; short: string; center: [
 
 export const INVESTMENTS: Investment[] = [
   {
+    id: 'launch_warning', label: 'Launch Missile-Warning Satellite', category: 'space', scope: 'region',
+    description: 'A new missile-warning satellite, parked in geostationary orbit over the chosen region (for the Polar region, a highly elliptical orbit, since GEO cannot see that far north). Warns of ballistic and hypersonic launches there.',
+    credits: 480, personnel: 6, hours: 30,
+  },
+  {
+    id: 'launch_relay', label: 'Launch Relay Satellite', category: 'space', scope: 'region',
+    description: 'A new communications relay in geostationary orbit over the chosen region (highly elliptical for the Polar region). Raises the communications of the regions it covers.',
+    credits: 400, personnel: 6, hours: 26,
+  },
+  {
+    id: 'launch_imaging', label: 'Rideshare Imaging Satellite', category: 'space', scope: 'global',
+    description: 'A small imaging satellite on a shared launch into sun-synchronous orbit. More passes over launch areas, so more waves are known in advance.',
+    credits: 150, personnel: 3, hours: 12,
+  },
+  {
+    id: 'launch_tracking', label: 'Tracking-Layer Launch', category: 'space', scope: 'global',
+    description: 'Eight more satellites for the low tracking constellation (or rebuilds it if it was lost): +30 condition and better tracks on ballistic missiles and gliders.',
+    credits: 300, personnel: 5, hours: 20,
+  },
+  {
     id: 'rebuild', label: 'Rebuild Damaged Sites', category: 'recovery', scope: 'region',
     description: 'Repairs the region\'s sites hit by threat waves (+35 integrity each). Damaged sites drag stability down and make the region a likelier target.',
     credits: 160, personnel: 6, hours: 18,

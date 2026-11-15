@@ -170,6 +170,7 @@ export function AARView({ s }: { s: SimState }) {
           </div>
           <FixSuggestions s={s} />
           <EnemyAdaptation s={s} />
+          <SpaceReport s={s} />
           <CostExchange s={s} />
           <WaveBreakdowns s={s} />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -278,6 +279,30 @@ export function AARView({ s }: { s: SimState }) {
 }
 
 /** Per wave: interceptor credits spent against the attacker cost of what was stopped. */
+/** What the satellites did: waves they warned of, tracked or imaged, and what the enemy did to them. */
+function SpaceReport({ s }: { s: SimState }) {
+  const waves = (s.tactical?.waves ?? []).filter((w) => w.resolved && w.space);
+  const strikes = (s.space?.strikes ?? []).filter((x) => x.target);
+  if (!waves.length && !strikes.length) return null;
+  const count = (k: 'warned' | 'tracked' | 'imaged') => waves.filter((w) => w.space?.[k]).length;
+  const top = Object.entries(s.space?.credit ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const name = (id: string) => s.assets.find((a) => a.id === id)?.name ?? id;
+  return (
+    <div className="mt-4">
+      <div className="label mb-1">Space</div>
+      <p className="text-[11px]">
+        Satellites gave launch warning for {count('warned')} wave{count('warned') === 1 ? '' : 's'}, tracked {count('tracked')} from orbit and had imaged the launch area of {count('imaged')}.
+        {top.length > 0 && <> Most useful: {top.map(([id, n]) => `${name(id)} (${n})`).join(', ')}.</>}
+      </p>
+      {strikes.map((x, i) => (
+        <p key={i} className="text-[11px] text-ops-red">
+          Phase {x.phase + 1}: an anti-satellite strike hit {name(x.target!)}{x.why ? `, chosen because it had helped you in ${x.why} wave${x.why === 1 ? '' : 's'}` : ''}.
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** Commander: how the enemy adapted each phase, and whether the briefing's intel called it. */
 function EnemyAdaptation({ s }: { s: SimState }) {
   const plans = s.tactical?.enemy ?? [];

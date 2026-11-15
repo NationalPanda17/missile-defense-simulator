@@ -78,18 +78,26 @@ describe('Commander: the enemy adapts', () => {
     expect(favoured).toBeGreaterThan(neutral);
   });
 
-  it('intel is right most of the time and wrong some of the time', () => {
-    let wrong = 0;
-    const n = 80;
-    for (let seed = 1; seed <= n; seed++) {
-      const s = fresh(seed);
-      atPhaseTwo(s, [pastWave(s, 'EUR', [['cruise', 'leaked', 5]])]);
-      const { intel } = enemyPlan(s)!;
-      if (!intel.accurate) wrong++;
-      expect(!!intel.actual).toBe(!intel.accurate); // a wrong call always comes with what was really true
-    }
-    expect(wrong / n).toBeGreaterThan(0.15);
-    expect(wrong / n).toBeLessThan(0.45);
+  it('intel is right most of the time and wrong some of the time, less often with imaging satellites up', () => {
+    const rate = (imaging: boolean) => {
+      let wrong = 0;
+      const n = 120;
+      for (let seed = 1; seed <= n; seed++) {
+        const s = fresh(seed);
+        if (!imaging) for (const a of s.assets) if (a.orbit?.mission === 'imaging') { a.orbit.destroyed = true; a.condition = 0; }
+        atPhaseTwo(s, [pastWave(s, 'EUR', [['cruise', 'leaked', 5]])]);
+        const { intel } = enemyPlan(s)!;
+        if (!intel.accurate) wrong++;
+        expect(!!intel.actual).toBe(!intel.accurate); // a wrong call always comes with what was really true
+      }
+      return wrong / n;
+    };
+    const blind = rate(false);
+    const imaged = rate(true);
+    expect(blind).toBeGreaterThan(0.18);
+    expect(blind).toBeLessThan(0.42);
+    expect(imaged).toBeGreaterThan(0.05);
+    expect(imaged).toBeLessThan(blind);
   });
 
   it('plays a full Commander campaign with a plan for every later phase', () => {

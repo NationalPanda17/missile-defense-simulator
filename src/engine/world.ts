@@ -5,8 +5,10 @@ import { recomputeMetrics } from './metrics';
 import { rand } from './rng';
 import { normalizeTactical } from './scenarios';
 import { createTactical, scheduleWaves } from './tactical';
+import { SAT_CLASS, tickSpace } from './space';
+import { hash01 } from './weather';
 import type {
-  Asset, AssetRole, Domain, GameMode, PhaseConfig, Region, RegionId, ScenarioSettings, SimState,
+  Asset, AssetRole, Domain, GameMode, Orbit, PhaseConfig, Region, RegionId, ScenarioSettings, SimState,
   CommandLevel,
 } from './types';
 import { DOMAINS, REGION_IDS } from './types';
@@ -20,18 +22,26 @@ interface AssetSeed {
   coverage?: RegionId[];
   capability: number;
   pos: [number, number];
+  orbit?: Orbit;
 }
+
+/** Satellites added with real orbits. Listed after the original inventory so every older asset keeps its id. */
+const NEW_SATS: AssetSeed[] = [
+  { name: 'ARGUS-1', className: SAT_CLASS['SSO:imaging'], domain: 'space', role: 'sensor', region: 'EUR', capability: 10, pos: [0, 0], orbit: { regime: 'SSO', mission: 'imaging', incl: 98, raan: 20, phase: 0, fuel: 85 } },
+  { name: 'ARGUS-2', className: SAT_CLASS['SSO:imaging'], domain: 'space', role: 'sensor', region: 'IPA', capability: 10, pos: [0, 0], orbit: { regime: 'SSO', mission: 'imaging', incl: 98, raan: 110, phase: 0.5, fuel: 90 } },
+  { name: 'TRACER', className: SAT_CLASS['LEO:tracking'], domain: 'space', role: 'sensor', region: 'NAM', capability: 12, pos: [-30, 30], orbit: { regime: 'LEO', mission: 'tracking', incl: 53, fuel: 90, size: 24 } },
+];
 
 const SEEDS: AssetSeed[] = [
   // ── SPACE ─────────────────────────────────────────────
-  { name: 'VIGIL-1', className: 'Survey Satellite', domain: 'space', role: 'sensor', region: 'NAM', coverage: ['NAM', 'SAM', 'POL'], capability: 30, pos: [-100, 60] },
-  { name: 'VIGIL-2', className: 'Survey Satellite', domain: 'space', role: 'sensor', region: 'EUR', coverage: ['EUR', 'AFR', 'MDE'], capability: 30, pos: [20, 60] },
-  { name: 'VIGIL-3', className: 'Survey Satellite', domain: 'space', role: 'sensor', region: 'IPA', coverage: ['IPA', 'MDE', 'POL'], capability: 30, pos: [120, 50] },
-  { name: 'AURORA-P', className: 'Polar Survey Satellite', domain: 'space', role: 'sensor', region: 'POL', coverage: ['POL', 'NAM', 'EUR', 'IPA'], capability: 22, pos: [-20, 80] },
-  { name: 'LODESTAR-A', className: 'Relay Satellite', domain: 'space', role: 'comms', region: 'NAM', coverage: ['NAM', 'SAM', 'EUR'], capability: 34, pos: [-60, 0] },
-  { name: 'LODESTAR-B', className: 'Relay Satellite', domain: 'space', role: 'comms', region: 'MDE', coverage: ['EUR', 'AFR', 'MDE'], capability: 34, pos: [40, 0] },
-  { name: 'LODESTAR-C', className: 'Relay Satellite', domain: 'space', role: 'comms', region: 'IPA', coverage: ['IPA', 'POL', 'SAM'], capability: 34, pos: [140, 0] },
-  { name: 'HALCYON', className: 'Orbital Resilience Node', domain: 'space', role: 'comms', region: 'AFR', coverage: ['AFR', 'SAM', 'MDE', 'POL'], capability: 18, pos: [0, -20] },
+  { name: 'VIGIL-1', className: SAT_CLASS['GEO:warning'], domain: 'space', role: 'sensor', region: 'NAM', capability: 30, pos: [-100, 0], orbit: { regime: 'GEO', mission: 'warning', lon: -100, fuel: 80 } },
+  { name: 'VIGIL-2', className: SAT_CLASS['GEO:warning'], domain: 'space', role: 'sensor', region: 'EUR', capability: 30, pos: [20, 0], orbit: { regime: 'GEO', mission: 'warning', lon: 20, fuel: 75 } },
+  { name: 'VIGIL-3', className: SAT_CLASS['GEO:warning'], domain: 'space', role: 'sensor', region: 'IPA', capability: 30, pos: [105, 0], orbit: { regime: 'GEO', mission: 'warning', lon: 105, fuel: 70 } },
+  { name: 'AURORA-P', className: SAT_CLASS['HEO:warning'], domain: 'space', role: 'sensor', region: 'POL', capability: 22, pos: [-40, 63], orbit: { regime: 'HEO', mission: 'warning', lon: -40, phase: 0.3, fuel: 60 } },
+  { name: 'LODESTAR-A', className: SAT_CLASS['GEO:relay'], domain: 'space', role: 'comms', region: 'NAM', capability: 34, pos: [-60, 0], orbit: { regime: 'GEO', mission: 'relay', lon: -60, fuel: 70 } },
+  { name: 'LODESTAR-B', className: SAT_CLASS['GEO:relay'], domain: 'space', role: 'comms', region: 'MDE', capability: 34, pos: [40, 0], orbit: { regime: 'GEO', mission: 'relay', lon: 40, fuel: 65 } },
+  { name: 'LODESTAR-C', className: SAT_CLASS['GEO:relay'], domain: 'space', role: 'comms', region: 'IPA', capability: 34, pos: [140, 0], orbit: { regime: 'GEO', mission: 'relay', lon: 140, fuel: 75 } },
+  { name: 'HALCYON', className: SAT_CLASS['MEO:nav'], domain: 'space', role: 'comms', region: 'AFR', capability: 18, pos: [0, -20], orbit: { regime: 'MEO', mission: 'nav', fuel: 100, size: 24 } },
   // ── AIR ───────────────────────────────────────────────
   { name: 'KESTREL-07', className: 'Airborne Surveillance Platform', domain: 'air', role: 'sensor', region: 'NAM', capability: 24, pos: [-88, 38] },
   { name: 'KESTREL-11', className: 'Airborne Surveillance Platform', domain: 'air', role: 'sensor', region: 'EUR', capability: 24, pos: [8, 49] },
@@ -240,7 +250,20 @@ export function createInitialState(settings: ScenarioSettings): SimState {
       upkeep: UPKEEP[s.domain],
       pos: s.pos,
       history: [condition],
+      ...(s.orbit ? { orbit: { ...s.orbit } } : {}),
     };
+  });
+  // The newer satellites draw nothing from the random stream (from the seed instead), so every campaign that existed
+  // before them still plays out the same way on the ground.
+  NEW_SATS.forEach((sd, k) => {
+    const h = (salt: number) => hash01(settings.seed, k, salt);
+    const condition = Math.round(Math.max(30, Math.min(100, (settings.domainCondition.space ?? 84) + (h(1) - 0.5) * 24)));
+    assets.push({
+      id: `A${(assets.length + 1).toString().padStart(3, '0')}`, name: sd.name, className: sd.className, domain: sd.domain, role: sd.role, region: sd.region,
+      coverage: [], condition, capability: sd.capability, status: 'operational',
+      hoursToService: Math.round(SIM_CONFIG.serviceInterval.space * (0.15 + h(2) * 0.85)), maintenanceRemaining: 0, upkeep: UPKEEP.space,
+      pos: sd.pos, history: [condition], orbit: { ...sd.orbit! },
+    });
   });
 
   const phases = buildPhases(settings);
@@ -291,6 +314,7 @@ export function createInitialState(settings: ScenarioSettings): SimState {
     baseline: { infrastructure: 0, readiness: 0 },
     minReadiness: 100,
   };
+  tickSpace(state); // place satellites and work out what each one covers
   recomputeMetrics(state);
   // Settle derived regional values so the opening briefing shows a coherent picture.
   recomputeMetrics(state);

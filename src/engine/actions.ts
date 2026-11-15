@@ -7,6 +7,7 @@ import {
   resupplyCost, resupplyRounds, sendReserve, stockpileOf, stockpileRules, theaterToLonLat,
 } from './tactical';
 import { TEMPLATE_MAP } from './events';
+import { lonText, reposition, repositionError } from './space';
 import { reserveProblem, type ReserveWave } from './raid';
 import { isActive, recomputeMetrics } from './metrics';
 import { rand } from './rng';
@@ -17,6 +18,7 @@ export type Command =
   | { type: 'confirm'; eventId: string }
   | { type: 'dismiss'; eventId: string }
   | { type: 'maintain'; assetId: string }
+  | { type: 'moveSat'; assetId: string; lon: number }
   | { type: 'redeploy'; assetId: string; region: RegionId }
   | { type: 'invest'; investmentId: string; region?: RegionId; domain?: Domain }
   | { type: 'cancelMaintenance'; assetId: string }
@@ -123,6 +125,10 @@ function run(s: SimState, cmd: Command): CommandResult {
       }
       const err = canAfford(s, r.credits, r.personnel, r.crews);
       if (err) return fail(err);
+      // A manoeuvre burns the satellite's propellant, which cannot be replaced in orbit.
+      const sat = r.fuel ? s.assets.find((x) => x.id === e.assetId)?.orbit : undefined;
+      if (sat && sat.fuel < r.fuel!) return fail(`Not enough propellant (${Math.round(sat.fuel)}% left, needs ${r.fuel}%).`);
+      if (sat) sat.fuel = Math.max(0, sat.fuel - r.fuel!);
       spend(s, r.credits, r.personnel, 'response');
       s.crewsBusy += r.crews;
       if (e.status === 'confirming') e.confirmProgress = 0;
@@ -175,6 +181,7 @@ function run(s: SimState, cmd: Command): CommandResult {
     case 'maintain': {
       const a = s.assets.find((x) => x.id === cmd.assetId);
       if (!a) return fail('Unknown asset.');
+      if (a.orbit?.destroyed) return fail('Destroyed: launch a replacement from Logistics.');
       if (a.status === 'maintenance' || a.status === 'transit') return fail('Asset is not available for maintenance.');
       const cost = maintenanceCost(s, a.domain);
       const err = canAfford(s, cost, 2, 1);
@@ -186,6 +193,18 @@ function run(s: SimState, cmd: Command): CommandResult {
       record(s, 'maintain', `Maintenance scheduled: ${a.name} (${a.maintenanceRemaining}h).`, cost, 'maintenance');
       log(s, 'info', `${a.name} entered maintenance (${a.maintenanceRemaining}h).`, a.region);
       return { ok: true, message: `${a.name} in maintenance` };
+    }
+    case 'moveSat': {
+      const a = s.assets.find((x) => x.id === cmd.assetId);
+      if (!a) return fail('Unknown asset.');
+      const err = repositionError(s, a, cmd.lon);
+      if (err) return fail(err);
+      const from = a.orbit!.lon!;
+      reposition(s, a, cmd.lon);
+      const hrs = a.orbit!.drift!.hours;
+      record(s, 'redeploy', `${a.name} drifting from ${lonText(from)} to ${lonText(cmd.lon)} (${hrs}h, off station).`, 0, 'redeploy');
+      log(s, 'info', `${a.name} is drifting to ${lonText(cmd.lon)}: off station for ${hrs}h, ${Math.round(a.orbit!.fuel)}% propellant left.`);
+      return { ok: true, message: `${a.name} moving` };
     }
     case 'cancelMaintenance': {
       const a = s.assets.find((x) => x.id === cmd.assetId);

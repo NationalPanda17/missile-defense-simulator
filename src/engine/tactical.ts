@@ -11,6 +11,7 @@ import { LESSON_MAP, type ScriptedWave } from './training';
 import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
 import { ADAPTATION, enemyPlan } from './adaptation';
 import { pickVariant, traitsOf } from './threats';
+import { SPACE, creditSat, waveSupport } from './space';
 import { siteDamageShare } from './sites';
 import { autoReserveWave, reserveLead, reserveProblem, type ReserveWave } from './raid';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
@@ -719,12 +720,17 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
   // Weather and daylight when the wave launches (when its outcome is decided).
   const wx = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
   const vt = traitsOf(tr); // its real-world type: signature, speed, manoeuvring
+  // Space: launch warning and the tracking layer follow ballistic missiles and gliders; navigation sharpens every shot.
+  const sup = waveSupport(s, w);
+  const highArc = tr.cls === 'ballistic' || tr.cls === 'hypersonic';
+  const warned = highArc && !!sup.warning;
+  const spaceTrack = highArc ? SPACE.trackingQuality * sup.trackingHealth : 0;
   // Every working sensor that tracks it: surface sensors within their horizon and line of sight, aircraft from above.
   // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
   // Commander: the enemy jams one radar band for the phase, shortening those radars' range and blurring their picture.
   const jam = t.enemy?.find((p) => p.phaseIndex === w.phaseIndex)?.jam ?? s.settings.raid?.jam;
   const jammed = (spec: EquipmentSpec) => !!jam && spec.radar?.band === jam && !hasResearch(s, 'r_ecm');
-  const sharpOf = (spec: EquipmentSpec) => Math.min(0.97, (sensorTraits(spec).sharp + (spec.radar && hasResearch(s, 'r_discrim') ? TACTICAL_CONFIG.research.discrim : 0)) * (jammed(spec) ? JAMMING.sharp : 1));
+  const sharpOf = (spec: EquipmentSpec) => Math.min(0.97, (sensorTraits(spec).sharp + (spec.radar && hasResearch(s, 'r_discrim') ? TACTICAL_CONFIG.research.discrim : 0)) * (jammed(spec) ? JAMMING.sharp : 1) * (sup.imaging ? 1 + SPACE.imagingDiscrim : 1));
   const watchers = working
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
     .filter(({ d }) => !d.emcon) // a silent radar sees nothing
@@ -733,7 +739,8 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
   const seen = watchers.length > 0;
   const alert = alertActive(s, w.region);
   const A = TACTICAL_CONFIG.alert;
-  const unseen = alert ? Math.max(TACTICAL_CONFIG.unseenDetection, A.minDetectionUnseen) : TACTICAL_CONFIG.unseenDetection;
+  const unseen = Math.max(alert ? Math.max(TACTICAL_CONFIG.unseenDetection, A.minDetectionUnseen) : TACTICAL_CONFIG.unseenDetection, warned ? SPACE.warningTrack : 0, spaceTrack);
+  const tracked = seen || warned || spaceTrack > 0; // a track exists, from the ground or from space
   /**
    * How good a track a system shoots on: its own sensor's track is full quality; otherwise the best track another
    * sensor can hand it, which depends on that sensor's band; with no track at all, the unseen value.
@@ -745,7 +752,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
     return Math.max(unseen, ...watchers.map((x) => sensorTraits(x.spec).cue));
   };
   const awarenessF = (0.7 + 0.3 * (region.awareness / 100)) * (alert ? 1 + A.detectionBonus : 1);
-  tr.detected = seen;
+  tr.detected = tracked;
   if (seen) tr.band = sharpestBand(watchers.map((x) => x.spec)) ?? 'passive';
   // A sharp radar can tell a decoy from the real thing: recognised decoys are left alone and cost nothing.
   if (tr.decoy && seen && rand(t) < Math.max(...watchers.map((x) => sharpOf(x.spec)))) {
@@ -794,7 +801,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
     const avail = Math.min(1, availability(s, asset!));
     if (avail <= 0) { why.set(d.id, 'oa'); continue; }
     const vet = veteranOf(d);
-    const reaction = spec.reactionSec * (seen ? 1 : 2) * (alert ? A.reactionMult : 1) * (vet?.reaction ?? 1);
+    const reaction = spec.reactionSec * (tracked ? 1 : 2) * (alert ? A.reactionMult : 1) * (vet?.reaction ?? 1) * (warned ? SPACE.warningReaction : 1);
     const window = chord / speed - reaction;
     if (window <= 0) { why.set(d.id, seen ? 'fast' : 'late'); continue; }
     const shots = Math.min(TACTICAL_CONFIG.maxShotsPerSystem, 1 + Math.floor(window / Math.max(reaction, 30)));
@@ -811,7 +818,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
       const quality = trackQuality(d);
       if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
-      const need = Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1) * (vt.evade ?? 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark;
+      const need = Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1) * (vt.evade ?? 1) * (1 + SPACE.navBonus * sup.nav)) * avail * Math.min(1, quality * awarenessF) * commsF * dark;
       const roll = rand(t);
       if (t.recordRolls) (tr.rolls ??= []).push({ dep: d.id, need, roll, window: Math.round(window), reaction: Math.round(reaction), quality });
       if (roll < need) {
@@ -1014,6 +1021,20 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave, live = false)
   for (const tr of w.tracks) {
     tr.launchAt = w.atHour - TACTICAL_CONFIG.flightHours[tr.cls];
     resolveTrack(s, t, w, tr, deps, load);
+  }
+  // What space did for this wave, for the debrief (and the Commander enemy's idea of which satellite to strike).
+  const sup = waveSupport(s, w);
+  const highArc = w.tracks.some((x) => !x.decoy && (x.cls === 'ballistic' || x.cls === 'hypersonic'));
+  const sp: NonNullable<ThreatWave['space']> = {};
+  if (highArc && sup.warning) sp.warned = sup.warning.id;
+  if (highArc && sup.tracking && sup.trackingHealth > 0) sp.tracked = sup.tracking.id;
+  if (sup.imaging) sp.imaged = sup.imaging.id;
+  if (sup.nav > 0) sp.nav = Math.round(sup.nav * 100) / 100;
+  if (Object.keys(sp).length) w.space = sp;
+  if (live) {
+    creditSat(s, sp.warned ? sup.warning : undefined);
+    creditSat(s, sp.tracked ? sup.tracking : undefined);
+    creditSat(s, sp.imaged ? sup.imaging : undefined);
   }
   // Shoot and scoot: systems with those orders that fired move off, out of action while they do.
   if (live) {
