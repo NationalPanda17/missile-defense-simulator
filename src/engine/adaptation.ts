@@ -2,6 +2,7 @@
 // player's current choices, only what it could have observed in past fighting, so there is always a phase to answer.
 // Decided from the scenario seed and past results (never the game's random streams), so replays stay identical.
 import { EQUIPMENT_MAP } from './equipment';
+import { variantsNow, type ThreatVariant } from './threats';
 import { isUnlimited, regionProtection } from './tactical';
 import { hash01 } from './weather';
 import { REGION_IDS, type EnemyPlan, type RegionId, type SimState, type ThreatAxis, type ThreatClass, type ThreatWave } from './types';
@@ -20,6 +21,8 @@ export const ADAPTATION = {
   decoyWaste: 0.15,
   /** Chance the briefing's intel line gets the enemy's plan wrong. */
   intelError: 0.3,
+  /** × weight of the hardest available type of a class the defense handled well. */
+  variantSwitch: 2.5,
 };
 
 const CLASSES: ThreatClass[] = ['slowDrone', 'fastDrone', 'cruise', 'rocket', 'ballistic', 'hypersonic'];
@@ -63,6 +66,17 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   const dropped = [...CLASSES].sort((a, b) => mix[a] - mix[b])[0];
   if (mix[favored] > 1.1) learned.push(`${cap(PLURAL[favored])} got through your defenses, so it sent more of them.`);
   if (mix[dropped] < 0.9) learned.push(`Your defenses stopped its ${PLURAL[dropped]}, so it used fewer.`);
+  // A class the defense handled well gets its hardest type now available: stealthier, faster or harder to hit.
+  const variants: Record<string, number> = {};
+  let switched: ThreatVariant | undefined;
+  for (const c of CLASSES) {
+    if (mix[c] >= 0.9) continue;
+    const hardest = variantsNow(s, c).filter((v) => v.from > 0 && !v.traits.group && !v.traits.miss).sort((a, b) => toughness(b) - toughness(a))[0];
+    if (!hardest) continue;
+    variants[hardest.id] = ADAPTATION.variantSwitch;
+    if (!switched) switched = hardest;
+  }
+  if (switched) learned.push(`It switched to the ${switched.designation} (${switched.name.toLowerCase()}), harder for your defenses to stop.`);
 
   // 2. Targets: thin regions draw attacks, fortresses fewer (but still some probing).
   const target: Partial<Record<RegionId, number>> = {};
@@ -147,9 +161,12 @@ function learn(s: SimState, past: ThreatWave[]): EnemyPlan {
   }
   const dir = axis[place];
   const what = shifted || (wrong && which === 'weapon') ? `more ${PLURAL[cls]}` : 'a similar mix of threats';
-  const text = `Analysts expect ${what}${dir ? `, mostly from the ${dir}` : ''}, with ${s.regions[place].name} the likeliest target.${jam ? ` Signals intelligence is certain of one thing: it will jam ${jam}-band radars this phase, halving their range and their eye for decoys.` : ''}`;
+  const text = `Analysts expect ${what}${dir ? `, mostly from the ${dir}` : ''}, with ${s.regions[place].name} the likeliest target.${switched ? ` Watch for the ${switched.designation}.` : ''}${jam ? ` Signals intelligence is certain of one thing: it will jam ${jam}-band radars this phase, halving their range and their eye for decoys.` : ''}`;
 
-  return { phaseIndex: s.phaseIndex, mix, target, axis, doubleTap, decoys, jam, learned, intel: { text, accurate: !wrong, ...(truth ? { actual: truth } : {}) } };
+  return { phaseIndex: s.phaseIndex, mix, target, axis, doubleTap, decoys, jam, learned, ...(switched ? { variants } : {}), intel: { text, accurate: !wrong, ...(truth ? { actual: truth } : {}) } };
 }
+
+/** How much harder a type is to stop than its class's baseline. */
+const toughness = (v: ThreatVariant) => (1 / (v.traits.sig ?? 1)) * (v.traits.speed ?? 1) ** 0.5 / (v.traits.evade ?? 1) + (v.traits.decoys ?? 0) * 0.2 + (v.traits.hunt ? 0.3 : 0);
 
 const cap = (x: string) => x[0].toUpperCase() + x.slice(1);

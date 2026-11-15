@@ -418,6 +418,8 @@ export const ENEMY_STYLES: Record<EnemyStyle, {
   mix: Partial<Record<ThreatClass, number>>; waveSize: number; waveCount: number; surprise: number; turn: number; decoys: number;
   /** Multiplier on the share of missiles that go for the defender's radars, and the first phase (index) they do. */
   strike: number; strikeFrom: number;
+  /** × weight of the threat variants he favours (see threats.ts). */
+  variants?: Record<string, number>;
 }> = {
   planner: {
     name: 'Marshal Venn', title: 'the Planner', text: 'Methodical and balanced: a mixed threat, forecastable attacks, no favourite trick.',
@@ -425,19 +427,19 @@ export const ENEMY_STYLES: Record<EnemyStyle, {
     mix: {}, waveSize: 1, waveCount: 1, surprise: 1, turn: 1, decoys: 1, strike: 1, strikeFrom: 1,
   },
   swarm: {
-    name: 'General Halvard', title: 'the Swarm', text: 'Buries the defense in cheap drones and decoys, in bigger waves, and saves his missiles.',
+    name: 'General Halvard', title: 'the Swarm', text: 'Buries the defense in cheap drones and decoys, in bigger waves, and saves his missiles. Favours Lancet-3 drones in threes.',
     counter: 'Guns and jammers on every site, a sharp radar for the decoys, and big interceptors set to “Missiles only”.',
-    mix: { slowDrone: 1.8, fastDrone: 1.5, cruise: 0.7, ballistic: 0.6, hypersonic: 0.5 }, waveSize: 1.25, waveCount: 1, surprise: 1, turn: 1, decoys: 1.4, strike: 0.5, strikeFrom: 1,
+    mix: { slowDrone: 1.8, fastDrone: 1.5, cruise: 0.7, ballistic: 0.6, hypersonic: 0.5 }, waveSize: 1.25, waveCount: 1, surprise: 1, turn: 1, decoys: 1.4, strike: 0.5, strikeFrom: 1, variants: { lancet: 3 },
   },
   fox: {
-    name: 'Admiral Sorrel', title: 'the Fox', text: 'More, smaller raids that strike outside the forecast twice as often and turn in flight to come round your defenses.',
+    name: 'Admiral Sorrel', title: 'the Fox', text: 'More, smaller raids that strike outside the forecast twice as often and turn in flight to come round your defenses. Favours stealthy Kh-101 and supersonic BrahMos cruise missiles.',
     counter: 'Cover more than the forecast regions, keep all-round coverage rather than facing one way, and be ready to redeploy.',
-    mix: { cruise: 1.3 }, waveSize: 0.85, waveCount: 1.34, surprise: 2, turn: 2, decoys: 1, strike: 1, strikeFrom: 1,
+    mix: { cruise: 1.3 }, waveSize: 0.85, waveCount: 1.34, surprise: 2, turn: 2, decoys: 1, strike: 1, strikeFrom: 1, variants: { 'kh-101': 2.5, brahmos: 1.5 },
   },
   hunter: {
-    name: 'Colonel Drax', title: 'the Hunter', text: 'Goes for your radars from the very first phase, then sends missiles through the gap.',
+    name: 'Colonel Drax', title: 'the Hunter', text: 'Goes for your radars from the very first phase, then sends missiles through the gap. Favours radar-hunting Harop drones and Iskander-M missiles with decoys.',
     counter: 'Point defense beside your radars, passive sensors and aircraft (which he cannot target), and spare radars on other bands.',
-    mix: { cruise: 1.4, ballistic: 1.3, slowDrone: 0.8 }, waveSize: 1, waveCount: 1, surprise: 1, turn: 1, decoys: 1, strike: 2.5, strikeFrom: 0,
+    mix: { cruise: 1.4, ballistic: 1.3, slowDrone: 0.8 }, waveSize: 1, waveCount: 1, surprise: 1, turn: 1, decoys: 1, strike: 2.5, strikeFrom: 0, variants: { harop: 3, iskander: 1.5 },
   },
 };
 export const ENEMY_STYLE_IDS: EnemyStyle[] = ['planner', 'swarm', 'fox', 'hunter'];

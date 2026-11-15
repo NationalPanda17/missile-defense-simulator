@@ -2,7 +2,7 @@
 // so the guide can never drift from what the simulation does. Opened with ? from anywhere, including the start screen.
 import { useState, type ReactNode } from 'react';
 import {
-  COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
+  THREAT_VARIANTS, type ThreatVariant, COMMAND_LEVELS, COMMAND_LEVEL_IDS, DOCTRINES, ENEMY_STYLES, ENEMY_STYLE_IDS, EQUIPMENT, INVESTMENTS, JAMMING, MEDALS, THEME_UNLOCKS, LAYER_LABELS, PASSIVE_SENSOR, PROTECTION_SCORE_WEIGHT, RADAR_BANDS, RADAR_BAND_IDS, SIM_CONFIG,
   STOCKPILES, STORIES, TACTICAL_CONFIG, THREAT_CLASSES, THREAT_LABELS, WEATHER, channelsOf, equipmentCost, isEffector, isUnlimited, type DefenseLayer, type EquipmentSpec, type FireDoctrine, type RadarBand, type ThreatClass,
 } from '../engine';
 import { Modal } from './components/ui';
@@ -81,11 +81,26 @@ const THREAT_WHAT: Record<ThreatClass, { what: string; stop: string }> = {
   },
 };
 
+/** A threat type's traits in game terms, e.g. "seen at 60% range · 3 at a time". */
+function traitLine(v: ThreatVariant): string {
+  const x = v.traits;
+  const out: string[] = [];
+  if (x.sig) out.push(`seen at ${pct(x.sig)} of normal range`);
+  if (x.speed) out.push(`${x.speed}× speed`);
+  if (x.evade) out.push(`each shot ${pct(1 - x.evade)} less likely to stop it`);
+  if (x.group) out.push(`${x.group} at a time`);
+  if (x.damage) out.push(`${pct(x.damage)} damage`);
+  if (x.decoys) out.push(`${x.decoys} decoys each`);
+  if (x.miss) out.push(`${pct(x.miss)} land wide`);
+  if (x.hunt) out.push('targets radars');
+  return out.join(' · ');
+}
+
 function Threats() {
   const C = TACTICAL_CONFIG;
   return (
     <>
-      <H>The five kinds of threat</H>
+      <H>The six kinds of threat</H>
       <P>Every attack is a <B>wave</B>: a group of threats that arrives together from one side of the map, each aimed at one of your sites. There are six kinds, and no single weapon is good against all of them. The two-letter codes appear throughout the game.</P>
       <div className="mt-2 overflow-x-auto">
         <table className="table-ops w-full text-[11px]">
@@ -98,6 +113,23 @@ function Threats() {
                 <td>{THREAT_WHAT[c].stop}</td>
                 <td className="whitespace-nowrap">{C.lowAltitude.classes.includes(c) ? <span className="text-ops-amber">low</span> : <span>high ({C.threatAltitudeKm[c]} km)</span>}</td>
                 <td className="tabular-nums">{C.threatDamage[c]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <H>Threat types</H>
+      <P>Each kind comes in a few real-world types. A type keeps its kind’s rules (which systems can engage it, how high it flies) and changes one or two things. The standard type of each kind appears from the start. Each later phase of a campaign brings in one more type (a phase later on Recruit), shown in that phase’s briefing; which ones you meet changes from campaign to campaign, and enemy commanders bring in their favourites more often. On Commander the enemy also switches to harder types of whatever you stop well. The designations are real; how each behaves here is a game value.</P>
+      <div className="mt-2 overflow-x-auto">
+        <table className="table-ops w-full text-[11px]">
+          <thead><tr><th>Type</th><th>Earliest</th><th>What is different</th><th>What beats it</th></tr></thead>
+          <tbody>
+            {THREAT_VARIANTS.map((v) => (
+              <tr key={v.id} className="align-top">
+                <td className="text-white"><span className="mr-1 rounded-sm border border-ops-line px-1 text-ops-cyan">{THREAT_ABBR[v.cls]}</span>{v.name}<div className="text-[10px] text-ops-dim">{v.designation}</div></td>
+                <td className="whitespace-nowrap">{v.from === 0 ? 'start' : `phase ${v.from + 1}`}</td>
+                <td>{v.text}{traitLine(v) && <div className="text-[10px] text-ops-dim">{traitLine(v)}</div>}</td>
+                <td>{v.counter}</td>
               </tr>
             ))}
           </tbody>

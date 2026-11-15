@@ -1,7 +1,7 @@
 // Turning what happened into words: the narrated replay of a wave, the story of one threat, the front page for a
 // phase, and the medals a finished game earns. Pure: everything is read from the recorded state.
+import { trackLabel } from './threats';
 import { TACTICAL_CONFIG, enemyStyleOf } from './config';
-import { THREAT_LABELS } from './equipment';
 import { computeScore, protectionScore } from './scoring';
 import { leakText, unitName, veteranOf } from './tactical';
 import { QUICK_BATTLE_ID, starsFor, LESSON_MAP } from './training';
@@ -36,7 +36,7 @@ export function targetName(s: SimState, tr: Track): string {
 /** The whole story of one threat in two or three sentences: what it was, who saw it, who fired, how it ended. */
 export function trackStory(s: SimState, w: ThreatWave, tr: Track): string {
   const t = s.tactical!;
-  const what = `${tr.decoy ? 'Decoy (looked like a ' + SINGLE[tr.cls] + ')' : THREAT_LABELS[tr.cls]} aimed at ${targetName(s, tr)}${tr.via ? ', turning in flight' : ''}.`;
+  const what = `${tr.decoy ? 'Decoy (looked like a ' + SINGLE[tr.cls] + ')' : trackLabel(tr)} aimed at ${targetName(s, tr)}${tr.via ? ', turning in flight' : ''}.`;
   if (!w.resolved) return `${what} Not launched yet.`;
   const seen = tr.detected === false ? 'No sensor saw it coming.'
     : tr.band ? `Tracked by ${tr.band === 'passive' ? 'a passive sensor' : `${tr.band}-band radar`}.` : 'Tracked by sensors.';
@@ -45,7 +45,7 @@ export function trackStory(s: SimState, w: ThreatWave, tr: Track): string {
   let end: string;
   if (tr.outcome === 'stopped' || tr.outcome === 'decoyStopped') end = `Stopped by ${depName(s, tr.stoppedBy)}${tr.decoy ? ': rounds wasted on a fake' : ''}.`;
   else if (tr.decoy) end = tr.shots ? 'It drew fire and flew on: rounds wasted on a fake.' : 'Nothing fired at it; it did no harm.';
-  else end = `Got through${tr.depTarget ? ' and hit the system' : tr.damage ? ` (−${tr.damage} integrity)` : ''}. ${leakText(tr, t.deployments)}`;
+  else end = `Got through${tr.depTarget ? ' and hit the system' : tr.wide ? ' but landed wide of its target' : tr.damage ? ` (−${tr.damage} integrity)` : ''}. ${leakText(tr, t.deployments)}`;
   return [what, seen, fired, end].filter(Boolean).join(' ');
 }
 

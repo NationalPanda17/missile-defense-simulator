@@ -1,7 +1,7 @@
 // Contextual windows: event investigation, asset inspection, briefings, start screen, help, tutorial, toasts.
 import { Suspense, lazy, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  COMMAND_LEVELS, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
+  COMMAND_LEVELS, THREAT_VARIANTS, variantFrom, escalationOf, reinforceOptions, ENEMY_STYLES, ENEMY_STYLE_IDS, MEDALS, THEME_UNLOCKS, type EnemyStyle, adaptiveEnemy, COMMAND_LEVEL_IDS, LESSONS, lessonOf, QUICK_BATTLE_ID, ENDLESS_ID, STORIES, quickBattle, advise, previewDefense, siteDamageShare, siteLoss, type SiteType, REGION_IDS, SIM_CONFIG, withLevel, type CommandLevel, TACTICAL_CONFIG, TEMPLATE_MAP, confidenceLabel, crewsFree, defaultSettings, deleteSave, importJSON, slotLabel, isActive, listSaves, loadGame,
   maintenanceCost, responseSuccessChance, SEVERITY_LABEL, canAfford, type EffectSpec, type Objective, type RegionId, type SimState, type Slot,
 } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
@@ -332,6 +332,21 @@ export function Reinforce({ s }: { s: SimState }) {
   );
 }
 
+/** Threat types the enemy starts using this phase, so they are not a surprise the first time. */
+function NewThreatTypes({ s }: { s: SimState }) {
+  if (s.settings.mode !== 'campaign') return null;
+  const fresh = THREAT_VARIANTS.filter((v) => v.from > 0 && variantFrom(s, v) === s.phaseIndex);
+  if (!fresh.length) return null;
+  return (
+    <div className="mt-1.5 rounded border border-ops-line px-2 py-1">
+      <span className="label text-ops-cyan">New threat types this phase</span>
+      <ul className="mt-0.5 space-y-0.5">
+        {fresh.map((v) => <li key={v.id}><b className="text-white">{v.name}</b> <span className="text-ops-dim">({v.designation})</span>: {v.text} <span className="text-ops-dim">Beat it with: {v.counter.charAt(0).toLowerCase() + v.counter.slice(1)}</span></li>)}
+      </ul>
+    </div>
+  );
+}
+
 /** Commander: what intelligence expects the adapting enemy to do. It is right most of the time, not always. */
 function EnemyIntel({ s }: { s: SimState }) {
   if (!adaptiveEnemy(s)) return null;
@@ -489,6 +504,7 @@ export function BriefingModal({ s }: { s: SimState }) {
                 Incoming attacks expected in {tactical.forecast.map((r) => s.regions[r].name).join(' and ')}.{' '}
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
                 <EnemyIntel s={s} />
+                <NewThreatTypes s={s} />
                 {escalationOf(s).text && <div className={`mt-1.5 rounded border px-2 py-1 ${escalationOf(s).level === 'heavy' ? 'border-ops-red/50 text-ops-red' : 'border-ops-line text-ops-dim'}`}><span className="label mr-1">Escalation</span>{escalationOf(s).text}</div>}
                 <ul className="mt-1 space-y-0.5">
                   {tactical.forecast.map((r) => {

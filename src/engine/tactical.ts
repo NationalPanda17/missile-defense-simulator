@@ -10,6 +10,7 @@ import { normalizeTactical } from './scenarios';
 import { LESSON_MAP, type ScriptedWave } from './training';
 import { WEATHER, conditionsAt, hash01, nearestNightHour } from './weather';
 import { ADAPTATION, enemyPlan } from './adaptation';
+import { pickVariant, traitsOf } from './threats';
 import { siteDamageShare } from './sites';
 import { autoReserveWave, reserveLead, reserveProblem, type ReserveWave } from './raid';
 import { TERRAIN_PROFILES, generateTerrain, isSea, lowHorizonKm, masked, randomCoastal, randomLand } from './terrain';
@@ -328,6 +329,9 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
     const j = Math.floor(rand(t) * (i + 1));
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
+  // Which real-world types it sends within each class: the commander's favourites and, on Commander, what it learned.
+  const prefer: Record<string, number> = { ...(style.variants ?? {}) };
+  for (const [id, m] of Object.entries(plan?.variants ?? {})) prefer[id] = (prefer[id] ?? 1) * m;
   const addWave = (region: RegionId, surprise: boolean, atHour: number, maxTracks = Infinity) => {
     let axis = AXES[Math.floor(rand(t) * AXES.length)];
     const preferred = plan?.axis[region];
@@ -338,6 +342,16 @@ export function scheduleWaves(s: SimState, fromHour?: number) {
       const cls = weighted(t, CLASSES.map((c) => ({ item: c, w: profile.mix[c] })));
       const tr = makeTrack(t, region, cls, axis, false);
       if (!tr) continue;
+      const v = pickVariant(s, cls, [s.phaseIndex, atHour, REGION_IDS.indexOf(region), i], prefer);
+      tr.variant = v.id;
+      // A group launch (small drones): the rest of the group flies in beside the first.
+      for (let g = 1; g < (v.traits.group ?? 1); g++) {
+        const mate = makeTrack(t, region, cls, axis, false);
+        if (!mate) break;
+        mate.variant = v.id;
+        mate.from = tr.from;
+        tracks.push(mate);
+      }
       const turnChance = Math.min(0.9, (TACTICAL_CONFIG.turning.chanceByPhase[s.phaseIndex] ?? 0) * style.turn);
       if (turnChance > 0 && TACTICAL_CONFIG.turning.classes.includes(cls) && rand(t) < turnChance) tr.via = turnPoint(t, tr);
       if (TACTICAL_CONFIG.alwaysTurn.includes(cls)) tr.via = turnPoint(t, tr);
@@ -663,10 +677,16 @@ export function trackTarget(t: Pick<TacticalState, 'sites'>, tr: Pick<Track, 'si
   return site ? [site.x, site.y] : null;
 }
 
+/** A threat's expected damage if it gets through: its class's, scaled by its variant (an unguided one may miss). */
+export function threatWorth(tr: Pick<Track, 'cls' | 'variant'>): number {
+  const x = traitsOf(tr);
+  return TACTICAL_CONFIG.threatDamage[tr.cls] * (x.damage ?? 1) * (1 - (x.miss ?? 0));
+}
+
 /** What a threat is worth to the protection score: its damage × the importance of what it is aimed at. */
 export function trackValue(t: Pick<TacticalState, 'sites'>, tr: Track): number {
   const importance = tr.depTarget ? TACTICAL_CONFIG.strikes.value : t.sites.find((x) => x.id === tr.siteId)?.importance ?? 1;
-  return TACTICAL_CONFIG.threatDamage[tr.cls] * importance;
+  return threatWorth(tr) * importance;
 }
 
 /** A unit's standing from its service record (threats stopped), or null for a new unit. */
@@ -698,6 +718,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
   // Airborne early warning sees low threats beyond the horizon and over terrain, and cues surface systems.
   // Weather and daylight when the wave launches (when its outcome is decided).
   const wx = conditionsAt(s, w.region, w.launchAt ?? w.atHour);
+  const vt = traitsOf(tr); // its real-world type: signature, speed, manoeuvring
   // Every working sensor that tracks it: surface sensors within their horizon and line of sight, aircraft from above.
   // A storm shortens each sensor's range by its radar band (long waves barely notice, short waves lose most of it).
   // Commander: the enemy jams one radar band for the phase, shortening those radars' range and blurring their picture.
@@ -707,7 +728,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
   const watchers = working
     .map((d) => ({ d, spec: EQUIPMENT_MAP.get(d.equipmentId)! }))
     .filter(({ d }) => !d.emcon) // a silent radar sees nothing
-    .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1) * (jammed(spec) ? JAMMING.range : 1), false) > 0);
+    .filter(({ d, spec }) => reachPath(terrain, d, spec, tr.cls, path, detectionRange(spec, tr.cls) * (wx.storm ? sensorTraits(spec).storm : 1) * (jammed(spec) ? JAMMING.range : 1) * (vt.sig ?? 1), false) > 0);
   const cued = isLowFlying(tr.cls) && watchers.some((x) => x.spec.domain === 'air');
   const seen = watchers.length > 0;
   const alert = alertActive(s, w.region);
@@ -735,7 +756,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
     return;
   }
   const commsF = 0.6 + 0.4 * (region.comms / 100);
-  const speed = TACTICAL_CONFIG.threatSpeedKmS[tr.cls];
+  const speed = TACTICAL_CONFIG.threatSpeedKmS[tr.cls] * (vt.speed ?? 1);
 
   // Outer layers engage first.
   const shooters = deps
@@ -790,7 +811,7 @@ export function resolveTrack(s: SimState, t: TacticalState, w: ThreatWave, tr: T
       const dark = wx.night && WEATHER.nightLimited.includes(spec.id) ? WEATHER.nightKill : 1;
       const quality = trackQuality(d);
       if (seen) tr.cueQ = Math.min(tr.cueQ ?? 1, quality);
-      const need = Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark;
+      const need = Math.min(0.98, (killRateOf(d, spec, tr.cls) + (vet?.kill ?? 0)) * (missed ? 1 + TACTICAL_CONFIG.handoff : 1) * (vt.evade ?? 1)) * avail * Math.min(1, quality * awarenessF) * commsF * dark;
       const roll = rand(t);
       if (t.recordRolls) (tr.rolls ??= []).push({ dep: d.id, need, roll, window: Math.round(window), reaction: Math.round(reaction), quality });
       if (roll < need) {
@@ -893,7 +914,14 @@ function applyImpacts(s: SimState, t: TacticalState, w: ThreatWave) {
     }
     const site = t.sites.find((x) => x.id === tr.siteId);
     if (!site) continue;
-    const damage = Math.min(site.integrity, TACTICAL_CONFIG.threatDamage[tr.cls]);
+    const vt = traitsOf(tr);
+    // An unguided rocket that gets through can still land wide of its target.
+    if (vt.miss && hash01(s.settings.seed, w.atHour, w.tracks.indexOf(tr), 0x6d) < vt.miss) {
+      tr.damage = 0;
+      tr.wide = true;
+      continue;
+    }
+    const damage = Math.min(site.integrity, Math.round(TACTICAL_CONFIG.threatDamage[tr.cls] * (vt.damage ?? 1)));
     tr.damage = damage;
     site.integrity -= damage;
     t.stats.siteDamage += damage;
@@ -927,7 +955,26 @@ function resolveWave(s: SimState, t: TacticalState, w: ThreatWave, live = false)
     const tr = makeTrack(t, w.region, rand(t) < 0.7 ? 'slowDrone' : 'fastDrone', w.axis, true);
     if (tr) w.tracks.push(tr);
   }
+  // Some missiles carry their own decoys, which look just like them on radar.
+  for (const real of w.tracks.filter((x) => !x.decoy && traitsOf(x).decoys)) {
+    for (let i = 0; i < traitsOf(real).decoys!; i++) {
+      const tr = makeTrack(t, w.region, real.cls, w.axis, true);
+      if (!tr) break;
+      tr.from = real.from;
+      tr.variant = real.variant;
+      w.tracks.push(tr);
+    }
+  }
   const deps = t.deployments.filter((d) => d.region === w.region);
+  // Radar hunters always go for a radar if one is giving itself away; with none, they fall back on their site.
+  const beacons = deps.filter((d) => { const sp = EQUIPMENT_MAP.get(d.equipmentId)!; return ((!!sp.radar && !d.emcon) || !!sp.lure) && sp.domain !== 'air' && !d.transit; });
+  for (const tr of w.tracks) {
+    if (tr.decoy || tr.depTarget || !beacons.length || !traitsOf(tr).hunt) continue;
+    const d = weighted(t, beacons.map((x) => { const sp = EQUIPMENT_MAP.get(x.equipmentId)!; return { item: x, w: sp.lure ? 2500 : 20 + (sp.radar?.rangeKm ?? 0) }; }));
+    tr.depTarget = d.id;
+    tr.aim = [d.x, d.y];
+    if (tr.via) tr.via = undefined;
+  }
   // Some missiles home on the defender's radars instead of a site (their emissions give them away).
   const share = strikeShare(s, w);
   if (share > 0) {
@@ -1028,7 +1075,7 @@ export function previewDefense(s: SimState, region: RegionId, runs = 24, all = f
       ...t,
       rng: (0x9e3779b9 + k * 2654435761 + s.hour * 97) >>> 0,
       deployments: t.deployments.map((d) => ({ ...d })),
-      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined, cueQ: undefined, band: undefined, rejected: undefined, depTarget: undefined, aim: undefined })) })),
+      waves: waves.map((w) => ({ ...w, tracks: w.tracks.map((tr) => ({ ...tr, shots: 0, outcome: undefined, stoppedBy: undefined, stopAt: undefined, cueQ: undefined, band: undefined, rejected: undefined, depTarget: undefined, aim: undefined, wide: undefined })) })),
       stats: emptyStats(),
     };
     const s2 = { ...s, tactical: t2, log: [] } as SimState;
@@ -1083,7 +1130,7 @@ export function forecastTargets(s: SimState, region: RegionId): ForecastTarget[]
       const site = t.sites.find((x) => x.id === tr.siteId);
       if (!site) continue;
       if (!cover.has(site.id)) cover.set(site.id, coverageAt(s, region, site.x, site.y));
-      const v = TACTICAL_CONFIG.threatDamage[tr.cls] * site.importance;
+      const v = threatWorth(tr) * site.importance;
       const e = by.get(site.id) ?? { site, threat: 0, uncovered: 0, classes: [] };
       e.threat += v;
       if (!(cover.get(site.id)![tr.cls] > 0)) e.uncovered += v;
@@ -1428,7 +1475,7 @@ function replayRegion(s: SimState, region: RegionId, extra: { spec: EquipmentSpe
     if (extra) deployments.push({ id: 'WHATIF', equipmentId: extra.spec.id, assetId: 'WHATIF', region, x: extra.x, y: extra.y, stock: extra.spec.magazine, deployedAt: 0 });
     const t2: TacticalState = {
       ...t, rng: (0x7f4a7c15 + k * 2246822519) >>> 0, deployments, stats: emptyStats(), alerts: [],
-      waves: waves.map((w) => ({ ...w, resolved: false, tracks: w.tracks.filter((x) => !x.decoy).map((tr) => ({ id: tr.id, cls: tr.cls, siteId: tr.siteId, from: tr.from, via: tr.via, depTarget: tr.depTarget, aim: tr.aim, decoy: false, shots: 0 })) })),
+      waves: waves.map((w) => ({ ...w, resolved: false, tracks: w.tracks.filter((x) => !x.decoy).map((tr) => ({ id: tr.id, cls: tr.cls, siteId: tr.siteId, from: tr.from, via: tr.via, depTarget: tr.depTarget, aim: tr.aim, variant: tr.variant, decoy: false, shots: 0 })) })),
     };
     // Defended sites as they were before the waves hit, and the same weather and daylight at each launch.
     const s2 = { ...s, tactical: t2, log: [], assets: extraAsset ? [...s.assets, extraAsset] : s.assets } as SimState;

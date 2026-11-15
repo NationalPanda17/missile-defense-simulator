@@ -4,6 +4,7 @@ import {
   earnedMedals, execute, lessonSettings, narrateWave, phaseDispatch, placementError, previewDefense, suggestFixes, trackStory, trackTarget, unitName, veteranOf, withLevel,
   type EnemyStyle, type RegionId, type SimState,
 } from '../src/engine';
+import { traitsOf } from '../src/engine/threats';
 
 function spot(s: SimState, id: string, region: RegionId, x: number, y: number) {
   const spec = EQUIPMENT_MAP.get(id)!;
@@ -56,7 +57,8 @@ describe('strikes on the defense', () => {
     expect(hunters.length).toBeGreaterThan(0);
     for (const tr of hunters) {
       expect(tr.decoy).toBe(false);
-      expect(TACTICAL_CONFIG.strikes.classes).toContain(tr.cls);
+      // Missiles of the striking classes, or a radar-hunting drone (a threat variant built to do it).
+      expect(TACTICAL_CONFIG.strikes.classes.includes(tr.cls) || !!traitsOf(tr).hunt).toBe(true);
       expect(trackTarget(s.tactical!, tr)).toEqual(tr.aim);
       if (tr.outcome === 'leaked') expect(tr.damage).toBe(0); // the system takes the hit, not a site
     }
