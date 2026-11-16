@@ -82,6 +82,11 @@ function groundSeeds(): AssetSeed[] {
 
 const UPKEEP: Record<Domain, number> = { space: 0.6, air: 0.35, sea: 0.4, ground: 0.2 };
 
+/** A sandbox for practising the network and infrastructure: no attacks, only the reports that are about them. */
+export function networkPracticeSettings(seed = Math.floor(Math.random() * 1e6)): ScenarioSettings {
+  return { ...defaultSettings('sandbox'), name: 'Network & Infrastructure Practice', seed, focus: 'network', waves: false, durationHours: 96, eventFrequency: 1.2 };
+}
+
 export function defaultSettings(mode: GameMode, overrides: Partial<ScenarioSettings> = {}): ScenarioSettings {
   const base: ScenarioSettings = {
     name: 'Operation Steadfast Horizon',
@@ -131,6 +136,9 @@ function levelNote(lv: (typeof COMMAND_LEVELS)[CommandLevel], baseFalse: number,
   const income = lv.incomeMult === 1 ? '' : `, ${more(lv.incomeMult, 'more', 'less')} income`;
   return `${lv.label} difficulty: ${more(lv.eventFrequency, 'more', 'fewer')} incidents, ${pct(falseRate)}% of reports false (Officer ${pct(baseFalse)}%)${time}${income}, ${lv.waveSize > 1 ? 'bigger' : 'smaller'} attack waves`;
 }
+
+/** The report categories a network and infrastructure practice sandbox uses. */
+export const NETWORK_CATEGORIES: PhaseConfig['categories'] = ['comms', 'satellite', 'ground', 'sensor', 'logistics', 'weather'];
 
 export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
   if (settings.mode === 'campaign') {
@@ -197,6 +205,30 @@ export function buildPhases(settings: ScenarioSettings): PhaseConfig[] {
         { id: 't_conf', text: 'Task an independent confirmation', metric: 'confirmations', target: 1, reward: 0 },
         { id: 't_maint', text: 'Complete one maintenance cycle', metric: 'maintenanceDone', target: 1, reward: 0 },
         { id: 't_res', text: 'Resolve two events', metric: 'resolved', target: 2, reward: 0 },
+      ],
+    }];
+  }
+  // sandbox: network and infrastructure practice
+  if (settings.focus === 'network') {
+    return [{
+      id: 1, name: 'Network & Infrastructure Practice', hours: settings.durationHours, eventRate: 0.12 * settings.eventFrequency,
+      falseRate: settings.falseReportRate, maxSeverity: 3, delayedInfo: true, conflicting: false, chains: true,
+      categories: NETWORK_CATEGORIES,
+      // A few faults early on, so there is something to practise from the first hours.
+      scripted: [
+        { atHour: 2, templateId: 'relay_degradation', region: 'AFR' },
+        { atHour: 6, templateId: 'power_fault', region: 'EUR' },
+        { atHour: 12, templateId: 'sat_power' },
+        { atHour: 20, templateId: 'cable_fault', region: 'IPA' },
+      ],
+      grant: 0,
+      situation: 'No attacks and no unrest: only the network and what it runs on. Relays, cables, power, sensors, satellites, spare parts and weather will all fail at some point. Keep communications up, keep assets maintained before they break, and harden the regions that keep failing.',
+      special: ['No threat waves', 'Network, satellite, power, sensor, supply and weather reports only', 'Fault chains on: an ignored fault can cause the next one'],
+      objectives: [
+        { id: 'n_net', text: 'Average network health of 75% or more over the scenario', metric: 'networkAvg', target: 75, reward: 0 },
+        { id: 'n_infra', text: 'End with average infrastructure at 75 or higher', metric: 'infrastructure', target: 75, reward: 0 },
+        { id: 'n_maint', text: `Complete at least ${Math.max(4, Math.round(settings.durationHours / 12))} maintenance cycles`, metric: 'maintenanceDone', target: Math.max(4, Math.round(settings.durationHours / 12)), reward: 0 },
+        { id: 'n_esc', text: 'Allow no more than 3 escalations', metric: 'escalationsMax', target: 3, reward: 0 },
       ],
     }];
   }

@@ -168,6 +168,8 @@ function escalate(s: SimState, e: GameEvent) {
   if (t && phase.chains) {
     for (const sp of t.escalation.spawns) {
       if (rand(s) < sp.chance) {
+        // Network practice keeps to its own kinds of report: a follow-on of any other kind does not happen.
+        if (s.settings.focus === 'network' && !phase.categories.includes(TEMPLATE_MAP.get(sp.templateId)?.category ?? 'instability')) continue;
         const child = spawnEvent(s, sp.templateId, { region: e.region, parentId: e.id });
         if (child) {
           child.log.push({ t: s.hour, text: `Follow-on complication from ${e.id}.` });
