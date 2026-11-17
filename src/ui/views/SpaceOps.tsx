@@ -2,11 +2,12 @@
 import { useMemo, useState } from 'react';
 import {
   MISSIONS, REGIMES, REGION_IDS, SPACE, availability, debrisCloud, driftFuel, driftHours, inViewAt, jammed, lonText, missionUp,
-  nextPass, repositionError, sats, spaceSupport, subPoint, type Asset, type RegionId, type SimState, type SpaceMission,
+  missionFloor, nextPass, repositionError, sats, spaceOutlook, spaceSupport, subPoint, type Asset, type RegionId, type SimState, type SpaceMission,
 } from '../../engine';
 import { dispatch, useSimTime } from '../../store/simStore';
 import { Bar, Chip, Panel } from '../components/ui';
 import { useUI } from '../uiState';
+import { SpaceCover } from './SpaceCover';
 
 export const MISSION_COLOR: Record<SpaceMission, string> = { warning: '#f2545b', tracking: '#f5a623', nav: '#8b9cff', relay: '#38d6f5', imaging: '#4ade80' };
 
@@ -102,7 +103,9 @@ function Status({ s, a }: { s: SimState; a: Asset }) {
   if (o.destroyed) return <Chip t="red">destroyed</Chip>;
   if (o.drift) return <Chip t="amber" title={`Arrives over ${lonText(o.drift.toLon)}`}>drifting {o.drift.left}h</Chip>;
   if (jammed(s, a)) return <Chip t="red">jammed</Chip>;
-  if (availability(s, a) <= 0.3) return <Chip t="red">down</Chip>;
+  if (a.status === 'maintenance') return <Chip t="amber">servicing {a.maintenanceRemaining}h</Chip>;
+  if (availability(s, a) <= 0.3) return <Chip t="red" title="Too worn to fly its mission: service it">down</Chip>;
+  if (a.condition < missionFloor(s) + SPACE.fadeMargin) return <Chip t="amber" title={`Condition ${Math.round(a.condition)}%: close to dropping out of its mission`}>fading</Chip>;
   return <Chip t="green">on mission</Chip>;
 }
 
@@ -150,8 +153,14 @@ export function SpaceOps({ s }: { s: SimState }) {
     );
   }
   const strikes = (s.space?.strikes ?? []).filter((x) => x.target);
+  const outlook = spaceOutlook(s);
   return (
     <>
+      {(outlook.gaps.length > 0 || outlook.watch.length > 0) && (
+        <Panel className="min-w-0 xl:col-span-3" title="Space Outlook" right={<span className="text-ops-dim">Forecast regions, next {outlook.window}h</span>}>
+          <SpaceCover s={s} />
+        </Panel>
+      )}
       <Panel className="min-w-0 xl:col-span-2" title="Orbit Map" right={<span className="text-ops-dim">Click a satellite for its footprint and track</span>}>
         <OrbitMap s={s} focus={focus} setFocus={setFocus} />
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
@@ -200,7 +209,12 @@ export function SpaceOps({ s }: { s: SimState }) {
                   <td className="text-ops-dim">{where(s, a)}</td>
                   <td><Status s={s} a={a} /></td>
                   <td><Bar value={o.fuel} showValue height={5} color={o.fuel < 15 ? '#f2545b' : undefined} /></td>
-                  <td className="text-right">{o.regime === 'GEO' && !o.destroyed && <MoveSlot s={s} a={a} />}</td>
+                  <td className="text-right"><span className="flex items-center justify-end gap-1">
+                    {!o.destroyed && a.status !== 'maintenance' && a.condition < missionFloor(s) + SPACE.fadeMargin + 10 && (
+                      <button className="btn px-1.5 py-0 text-[10px]" title={`Condition ${Math.round(a.condition)}%. Off station for 18h while serviced.`} onClick={() => dispatch({ type: 'maintain', assetId: a.id })}>Service</button>
+                    )}
+                    {o.regime === 'GEO' && !o.destroyed && <MoveSlot s={s} a={a} />}
+                  </span></td>
                 </tr>
               );
             })}

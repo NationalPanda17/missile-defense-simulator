@@ -28,6 +28,8 @@ const TABS: { id: GuideTab; label: string }[] = [
 ];
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+/** Condition below which a degraded satellite drops out of its mission (with no modernization). */
+const missionFloorPct = (0.3 / 0.75) * 100;
 const H = ({ children }: { children: ReactNode }) => <h3 className="mt-4 font-sans text-[15px] font-semibold text-white first:mt-0">{children}</h3>;
 const P = ({ children }: { children: ReactNode }) => <p className="mt-1.5 text-[12px] leading-relaxed text-ops-text">{children}</p>;
 const B = ({ children }: { children: ReactNode }) => <b className="font-semibold text-white">{children}</b>;
@@ -365,6 +367,8 @@ function Space() {
         <><B>{MISSIONS.imaging.name}</B>: {MISSIONS.imaging.text}</>,
       ]} />
       <P>The wave breakdown in the after-action review says which satellites warned of, tracked or imaged each wave.</P>
+      <H>Keeping them flying</H>
+      <P>A satellite stops flying its mission once wear and faults take its condition to about {Math.round(missionFloorPct)}%. The <B>Space cover</B> line in each briefing, and the <B>Space Outlook</B> on Space Ops, list the forecast regions that will go without missile warning in the next {SPACE.outlookH} hours, the satellites that are down or fading, and the quickest fix: service it, drift a geostationary satellite over, or launch. Servicing takes a satellite off station for 18 hours, so do it between waves. The adjutant gives the same advice.</P>
       <H>Propellant, moves and launches</H>
       <List items={[
         <><B>Propellant</B> cannot be refilled in orbit. Dodging debris costs {SPACE.burn.dodge}%, evading an inspector satellite {SPACE.burn.evade}%. With none left, a satellite cannot dodge.</>,
