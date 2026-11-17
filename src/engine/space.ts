@@ -46,6 +46,10 @@ export const SPACE = {
   burn: { dodge: 8, evade: 12 },
   /** A debris cloud after an anti-satellite strike: hours it lasts, and × the chance of a conjunction for low satellites. */
   debris: { hours: 96, conjunction: 4 },
+  /** Outlook: hours ahead it looks, the fewest uncovered hours worth a warning, and how close to the mission floor counts as fading. */
+  outlookH: 48,
+  gapMinH: 4,
+  fadeMargin: 8,
 };
 
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -336,3 +340,117 @@ function antiSatellite(s: SimState) {
 
 /** Is low orbit full of fresh debris? */
 export const debrisCloud = (s: SimState) => (s.space?.debrisUntil ?? -1) > s.hour;
+
+// ── Space outlook: what the player can see coming in orbit, for the briefing, Space Ops and the advisor ──────────
+
+/** Missions that feed the missile fight directly (relay and navigation are covered by the network numbers). */
+const FIGHT_MISSIONS: SpaceMission[] = ['warning', 'tracking', 'imaging'];
+
+/** A satellite whose mission is lost, or about to be. */
+export interface SatWatch {
+  asset: Asset;
+  mission: SpaceMission;
+  /** down: not flying its mission now; fading: still flying it, but one more knock takes it off. */
+  state: 'down' | 'fading';
+  why: 'worn' | 'jammed' | 'servicing' | 'drifting';
+  /** Forecast regions it gives missile warning to (warning satellites only). */
+  regions: RegionId[];
+}
+
+/** A forecast region with hours of no missile warning in the window ahead, and the quickest fix. */
+export interface WarningGap {
+  region: RegionId;
+  /** Hours in the window with no warning satellite flying its mission over the region. */
+  hours: number;
+  window: number;
+  /** First uncovered hour (absolute). */
+  from: number;
+  fix:
+    | { kind: 'move'; asset: Asset; lon: number; hours: number; fuel: number }
+    | { kind: 'launch'; region: RegionId }
+    | { kind: 'launching' }
+    | { kind: 'service'; asset: Asset };
+}
+
+export interface SpaceOutlook {
+  watch: SatWatch[];
+  gaps: WarningGap[];
+  /** Hours ahead the outlook looks at. */
+  window: number;
+}
+
+/** Condition below which a degraded satellite no longer flies its mission (availability under 0.3). */
+export function missionFloor(s: SimState): number {
+  return (0.3 / (0.75 * (1 + s.modernization / 100))) * 100;
+}
+
+/** Forecast regions for the current phase (what the briefing tells the player to expect). */
+function forecastRegions(s: SimState): RegionId[] {
+  return s.tactical?.enabled ? [...s.tactical.forecast] : [];
+}
+
+/** Does a warning satellite cover a region at an hour, if it were flying its mission? */
+const warnsOver = (s: SimState, o: Orbit, r: RegionId, h: number) => inViewDuring(s, o, h).includes(r);
+
+const outlookCache = new WeakMap<SimState, { key: string; v: SpaceOutlook }>();
+
+/**
+ * What is about to go wrong in orbit for the regions the player expects attacks in. Uses only what the player knows:
+ * the forecast, satellite health and orbits (never the hidden wave times). Empty outside campaigns with orbits.
+ */
+export function spaceOutlook(s: SimState): SpaceOutlook {
+  const window = Math.max(1, Math.min(SPACE.outlookH, (s.phaseStartHour + (s.phases[s.phaseIndex]?.hours ?? 0)) - s.hour || SPACE.outlookH));
+  const satKey = sats(s).map((a) => `${Math.round(a.condition)}${a.status[0]}${a.orbit!.destroyed ? 'x' : ''}${a.orbit!.lon ?? ''}`).join(',');
+  const key = `${s.hour}:${s.phaseIndex}:${s.status}:${s.commands.length}:${s.events.length}:${s.projects.length}:${s.tactical?.forecast.join('')}:${satKey}`;
+  const hit = outlookCache.get(s);
+  if (hit && hit.key === key) return hit.v;
+  const out: SpaceOutlook = { watch: [], gaps: [], window };
+  const regions = forecastRegions(s);
+  const all = sats(s);
+  if (!regions.length || !all.length || s.status === 'complete') { outlookCache.set(s, { key, v: out }); return out; }
+  const start = s.status === 'briefing' ? s.phaseStartHour : s.hour;
+  const floor = missionFloor(s);
+
+  // Satellites whose mission is lost or about to be.
+  for (const a of all) {
+    const o = a.orbit!;
+    if (o.destroyed || !FIGHT_MISSIONS.includes(o.mission)) continue;
+    const served = o.mission === 'warning' ? regions.filter((r) => Array.from({ length: window }, (_, h) => warnsOver(s, o, r, start + h)).some(Boolean)) : [];
+    if (o.mission === 'warning' && !served.length && !o.drift) continue; // it warns no one we expect to be attacked
+    const why: SatWatch['why'] | null = a.status === 'maintenance' ? 'servicing' : o.drift ? 'drifting' : jammed(s, a) ? 'jammed' : null;
+    if (why) { if (why !== 'drifting') out.watch.push({ asset: a, mission: o.mission, state: 'down', why, regions: served }); continue; }
+    if (!missionUp(s, a)) out.watch.push({ asset: a, mission: o.mission, state: 'down', why: 'worn', regions: served });
+    else if (a.condition < floor + SPACE.fadeMargin) out.watch.push({ asset: a, mission: o.mission, state: 'fading', why: 'worn', regions: served });
+  }
+
+  // Forecast regions left without missile warning for part of the window.
+  const up = all.filter((a) => a.orbit!.mission === 'warning' && missionUp(s, a));
+  for (const r of regions) {
+    const blind = Array.from({ length: window }, (_, h) => start + h).filter((h) => !up.some((a) => warnsOver(s, a.orbit!, r, h)));
+    if (blind.length < SPACE.gapMinH) continue;
+    let fix: WarningGap['fix'];
+    // A worn or jammed warning satellite that normally covers it: getting it back is the fix.
+    const lost = out.watch.find((w) => w.mission === 'warning' && w.state === 'down' && w.regions.includes(r));
+    if (lost) fix = { kind: 'service', asset: lost.asset };
+    else if (s.projects.some((p) => p.investmentId === 'launch_warning' && p.region === r)) fix = { kind: 'launching' };
+    else {
+      // A geostationary warning satellite that could drift over without uncovering another forecast region.
+      const lon = Math.round(s.regions[r].center[0]);
+      const moves = up
+        .filter((a) => a.orbit!.regime === 'GEO' && !repositionError(s, a, lon))
+        .map((a) => {
+          const there: Orbit = { ...a.orbit!, lon, drift: undefined };
+          const d = Math.abs(wrap(lon - a.orbit!.lon!));
+          return { a, there, d };
+        })
+        .filter(({ a, there }) => inViewAt(s, there, start).includes(r)
+          && regions.every((x) => x === r || !inViewAt(s, a.orbit!, start).includes(x) || inViewAt(s, there, start).includes(x)
+            || up.some((b) => b !== a && inViewAt(s, b.orbit!, start).includes(x))))
+        .sort((p, q) => p.d - q.d);
+      fix = moves.length ? { kind: 'move', asset: moves[0].a, lon, hours: driftHours(moves[0].d), fuel: Math.ceil(driftFuel(moves[0].d)) } : { kind: 'launch', region: r };
+    }
+    out.gaps.push({ region: r, hours: blind.length, window, from: blind[0], fix });
+  }
+  outlookCache.set(s, { key, v: out });
+  return out;
+}

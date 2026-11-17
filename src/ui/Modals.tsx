@@ -15,6 +15,7 @@ import { DisplayControl } from './a11y/DisplayControl';
 import { DispatchCard } from './Dispatch';
 import { tr, useLang } from './i18n';
 import { RaidDesigner } from './RaidDesigner';
+import { SpaceCover } from './views/SpaceCover';
 import { Term } from './Term';
 import { MainMenuButton } from './Shell';
 import { loadMedals, subscribeMedals } from './medals';
@@ -526,6 +527,7 @@ export function BriefingModal({ s }: { s: SimState }) {
                 <button className="text-ops-cyan underline" onClick={() => setStep('deploy')}>Deploy defenses</button> before the phase begins.
                 <EnemyIntel s={s} />
                 <NewThreatTypes s={s} />
+                <SpaceCover s={s} compact />
                 {escalationOf(s).text && <div className={`mt-1.5 rounded border px-2 py-1 ${escalationOf(s).level === 'heavy' ? 'border-ops-red/50 text-ops-red' : 'border-ops-line text-ops-dim'}`}><span className="label mr-1">Escalation</span>{escalationOf(s).text}</div>}
                 <ul className="mt-1 space-y-0.5">
                   {tactical.forecast.map((r) => {

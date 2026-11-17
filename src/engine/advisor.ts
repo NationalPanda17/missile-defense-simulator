@@ -6,6 +6,7 @@ import { isActive } from './metrics';
 import { incomingWaves, isUnlimited, resupplyRounds, siteDamageShare, stockpileOf } from './tactical';
 import { formatObjective, objectiveMet, objectiveValue } from './scoring';
 import { WEATHER, conditionsAt } from './weather';
+import { MISSIONS, lonText, spaceOutlook } from './space';
 import type { Domain, Objective, RegionId, SimState } from './types';
 import { REGION_IDS } from './types';
 
@@ -117,6 +118,42 @@ export function advise(s: SimState): Advice[] {
           text: `A wave is due to launch at ${name(r)} in about ${Math.max(1, Math.round(x.launchIn))}h. Raising an alert now improves detection and reaction.`,
           action: { label: 'Theater', view: 'theater', region: r },
         });
+      }
+    }
+  }
+
+  // Space: forecast regions about to lose missile warning, and fight satellites lost or about to be.
+  if (t) {
+    const { watch, gaps } = spaceOutlook(s);
+    const hr = (h: number) => (h <= s.hour ? 'now' : `from hour ${h}`);
+    for (const g of gaps) {
+      const f = g.fix;
+      const fix = f.kind === 'move'
+        ? ` Move ${f.asset.name} to ${lonText(f.lon)} (${f.hours}h drift, ${f.fuel}% propellant), or launch a warning satellite.`
+        : f.kind === 'service' ? ` ${f.asset.name} normally covers it: get it flying again.`
+          : f.kind === 'launching' ? ' A warning satellite for it is already being launched.'
+            : g.region === 'POL' && s.assets.some((a) => a.orbit?.regime === 'HEO' && a.orbit.mission === 'warning' && !a.orbit.destroyed)
+              ? ' One Molniya satellite only hangs over the pole for part of each orbit: a second, half an orbit behind, closes the gap (launch from Logistics).'
+              : ` No satellite can move to cover it: launch one${g.region === 'POL' ? ' into a Molniya orbit' : ''} from Logistics.`;
+      if (f.kind === 'launching' || (f.kind === 'service' && f.asset.status === 'maintenance')) continue; // already in hand
+      out.push({
+        id: `spacegap:${g.region}:${s.phaseIndex}:${f.kind}`,
+        level: f.kind === 'launch' ? 'info' : 'warn',
+        text: `${name(g.region)} has no missile warning for ${g.hours} of the next ${g.window}h (${hr(g.from)}): ballistic missiles and gliders launched then get no early track and slower reactions.${fix}`,
+        action: f.kind === 'launch' ? { label: 'Logistics', view: 'logistics' } : { label: 'Space', view: 'space', assetId: f.kind === 'move' || f.kind === 'service' ? f.asset.id : undefined },
+      });
+    }
+    for (const w of watch) {
+      const a = w.asset;
+      const what = MISSIONS[w.mission].name.toLowerCase();
+      const covers = w.regions.length ? ` It gives warning to ${w.regions.map(name).join(' and ')}.` : '';
+      if (w.why === 'servicing') continue; // the player chose this
+      if (w.why === 'jammed') {
+        out.push({ id: `satjam:${a.id}`, level: 'warn', text: `${a.name} is jammed and cannot fly its ${what} mission until the jamming report is dealt with.${covers}`, action: { label: 'Space', view: 'space', assetId: a.id } });
+      } else if (w.state === 'down') {
+        out.push({ id: `satdown:${a.id}:${s.phaseIndex}`, level: w.mission === 'warning' || w.mission === 'tracking' ? 'warn' : 'info', text: `${a.name} is down to ${Math.round(a.condition)}% condition, too worn to fly its ${what} mission.${covers} Servicing takes it off station for 18h, so do it between waves.`, action: { label: 'Open', view: 'space', assetId: a.id } });
+      } else {
+        out.push({ id: `satfade:${a.id}:${s.phaseIndex}`, level: 'info', text: `${a.name} (${what}) is at ${Math.round(a.condition)}% and close to dropping out of its mission.${covers} Service it in a quiet spell, before a fault takes it off.`, action: { label: 'Open', view: 'space', assetId: a.id } });
       }
     }
   }
