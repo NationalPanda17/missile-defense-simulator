@@ -1,12 +1,13 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { SIM_CONFIG, lessonOf, saveGame, urgentList } from '../engine';
+import { SIM_CONFIG, incomingWaves, lessonOf, saveGame, urgentList } from '../engine';
 import { dispatch, store, useStoreVersion } from '../store/simStore';
 import { AccountModal } from './Account';
 import { AssetModal, BriefingModal, EventModal, StartScreen, Toasts, TutorialPanel } from './Modals';
 import { GuideModal } from './Guide';
 import { awardMedals } from './medals';
-import { useLang } from './i18n';
-import { BottomPanel, LeftNav, NAV, RightSidebar, TopBar, WaveCard, chooseSpeed, goToUrgent } from './Shell';
+import { tr, useLang } from './i18n';
+import { BottomPanel, LeftNav, MobileTabs, NAV, RightSidebar, TopBar, WaveCard, chooseSpeed, goToUrgent, opensOverBattle } from './Shell';
+import { followWaves } from './follow';
 import { sound } from './audio/sound';
 import { PausePrompt } from './PausePrompt';
 import { installA11y } from './a11y/settings';
@@ -105,6 +106,10 @@ function Root() {
   const s = store.state;
   const lastStatus = useRef<string | null>(null);
   const lastMode = useRef<string | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  // The battle underneath a screen opened over it can't be focused or clicked (React 18 has no inert prop).
+  const isOver = !!s && opensOverBattle(s, ui.view);
+  useEffect(() => { mainRef.current?.toggleAttribute('inert', isOver); }, [isOver]);
 
   useEffect(() => {
     if (!s) return;
@@ -118,7 +123,8 @@ function Root() {
       lastMode.current = s.settings.name + s.settings.seed;
       ui.setTutorial(s.settings.mode === 'training' && !lessonOf(s));
       // A new or loaded game starts on the main screen with nothing left open from the last one.
-      ui.setView(lessonOf(s)?.makeWaves ? 'theater' : 'global'); // a Quick Battle opens on its map
+      // The battle is home: anything with threat waves opens on the theater map; the rest on Global Operations.
+      ui.setView(s.tactical?.enabled ? 'theater' : 'global');
       ui.setRegion(null);
       ui.openEvent(null);
       ui.openAsset(null);
@@ -131,6 +137,29 @@ function Root() {
   // Hold the clock while a planning view is open (see store.holdForPlanning).
   const planning = PLANNING_VIEWS.includes(ui.view);
   useEffect(() => { store.holdForPlanning(planning); }, [planning, s?.campaignId, s?.status]);
+
+  // Follow waves: when one launches, go to it on the theater map and drop to 1x until the last wave in flight lands,
+  // then return to the player's speed. Waves already in flight when a game is opened are not followed.
+  const follow = useRef<{ game?: string; seen: Set<string>; speed: number | null }>({ seen: new Set(), speed: null });
+  useEffect(() => {
+    if (!s?.tactical?.enabled) return;
+    const f = follow.current;
+    const flying = incomingWaves(s).filter((x) => x.launched);
+    const game = s.campaignId ?? s.settings.name + s.settings.seed;
+    if (f.game !== game) { f.game = game; f.seen = new Set(flying.map((x) => x.wave.id)); f.speed = null; return; }
+    if (s.status !== 'running') return;
+    const fresh = flying.filter((x) => !f.seen.has(x.wave.id));
+    for (const x of fresh) f.seen.add(x.wave.id);
+    if (fresh.length && followWaves()) {
+      ui.setTheaterFocus(fresh[0].wave.region);
+      if (!planning) ui.setView('theater');
+      if (!s.turnBased && s.speed > 1) { f.speed = f.speed ?? s.speed; dispatch({ type: 'setSpeed', speed: 1 }); }
+    }
+    if (!flying.length && f.speed !== null) {
+      if (!s.turnBased && s.speed === 1) dispatch({ type: 'setSpeed', speed: f.speed as 1 | 2 | 4 | 8 });
+      f.speed = null;
+    }
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -154,7 +183,12 @@ function Root() {
       }
       if (['1', '2', '3', '4'].includes(e.key)) return chooseSpeed(st, ([1, 2, 4, 8] as const)[Number(e.key) - 1]);
       if (e.key === '?') return ui.setHelp(true);
-      if (e.key === 'Escape') { if (!ui.eventId && !ui.assetId) ui.setRegion(null); return; }
+      if (e.key === 'Escape') {
+        if (ui.eventId || ui.assetId) return;
+        if (opensOverBattle(st, ui.view)) return ui.setView('theater'); // close a screen opened over the battle
+        ui.setRegion(null);
+        return;
+      }
       const k = e.key.toUpperCase();
       if (k === 'T') { if (dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours }).ok && !st.turnBased) store.toast('info', `Advanced ${SIM_CONFIG.turnHours} hours.`); return; }
       if (k === 'B') return ui.setBottomOpen(!ui.bottomOpen);
@@ -202,11 +236,14 @@ function Root() {
     }
   })();
 
+  const over = opensOverBattle(s, ui.view);
+  const overTitle = NAV.find((n) => n.id === ui.view)?.label ?? '';
+  const inbound = incomingWaves(s);
   return (
-    <div className="app-root flex min-h-full flex-col lg:h-full">
+    <div className="app-root flex min-h-full flex-col pb-[var(--tabbar-h)] lg:h-full lg:pb-0">
       <TopBar s={s} />
       {s.status === 'complete' && (
-        <div className="flex items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">
+        <div className="flex flex-wrap items-center justify-center gap-3 border-b border-ops-green/40 bg-ops-green/10 px-3 py-1 text-ops-green">
           SCENARIO COMPLETE — review the after-action report.
           <button className="btn" onClick={() => ui.setView('aar')}>Open AAR</button>
           <button className="btn" onClick={() => { store.quit(); ui.setView('global'); }} title="Back to the start screen to begin a new run (this run stays in your autosave)">New run: start screen ▸</button>
@@ -215,11 +252,31 @@ function Root() {
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <LeftNav s={s} />
         <div className="flex min-w-0 flex-1 flex-col lg:min-h-0 lg:flex-row">
-          <main className="min-w-0 flex-1 p-2 lg:min-h-0 lg:overflow-y-auto" id="main"><Suspense fallback={<Loading />}>{view}</Suspense></main>
+          <div className="relative flex min-w-0 flex-1 flex-col lg:min-h-0">
+            {/* The battle stays live underneath a network or staff screen opened over it. */}
+            <main className="min-w-0 flex-1 p-2 lg:min-h-0 lg:overflow-y-auto" id="main" ref={mainRef} aria-hidden={over || undefined}>
+              <Suspense fallback={<Loading />}>{over ? <TheaterView s={s} /> : view}</Suspense>
+            </main>
+            {over && (
+              <section className="fixed inset-x-0 bottom-[var(--tabbar-h)] top-[var(--header-h,3.5rem)] z-30 flex flex-col border-l border-ops-cyan/30 bg-ops-bg shadow-2xl lg:absolute lg:inset-0" aria-label={overTitle} data-over-battle>
+                <div className="flex flex-wrap items-center gap-2 border-b border-ops-line bg-ops-panel/90 px-2 py-1.5">
+                  <button className="btn" onClick={() => ui.setView('theater')} title="Back to the battle (Esc)">◂ {tr('Battle')}</button>
+                  <span className="font-sans text-[13px] font-semibold uppercase tracking-[0.14em] text-white">{tr(overTitle)}</span>
+                  {inbound.length > 0 && (
+                    <button className="chip blink ml-auto border-ops-red/60 bg-ops-red/15 px-2 py-0.5 text-[11px] text-ops-red" onClick={() => { ui.setTheaterFocus(inbound[0].wave.region); ui.setView('theater'); }}>
+                      ⚠ {inbound.length} wave{inbound.length === 1 ? '' : 's'} inbound · {s.regions[inbound[0].wave.region].short}
+                    </button>
+                  )}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-2"><Suspense fallback={<Loading />}>{view}</Suspense></div>
+              </section>
+            )}
+          </div>
           <RightSidebar s={s} />
         </div>
       </div>
       <BottomPanel s={s} />
+      <MobileTabs s={s} />
       {s.status === 'briefing' && <BriefingModal s={s} />}
       <PausePrompt s={s} docked={PLANNING_VIEWS.includes(ui.view)} />
       <WaveCard s={s} />

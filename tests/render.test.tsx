@@ -65,9 +65,14 @@ describe('screens render', () => {
     const s = midCampaign();
     expect(s.status).toBe('briefing');
     store.state = s;
-    const deploy = html(<DeployPanel s={s} />);
+    const deploy = html(<DeployPanel s={s} openDetails />);
+    expect(deploy).toContain('Readiness ·');
     expect(deploy).toContain('Radar picture');
-    expect(deploy).toContain('Adjutant’s proposal');
+    expect(deploy).toContain('Propose a defense');
+    // Folded by default: one readiness line keeps the map on screen.
+    const folded = html(<DeployPanel s={s} />);
+    expect(folded).toContain('damage prevented');
+    expect(folded).not.toContain('Radar picture');
     expect(deploy).not.toMatch(/NaN|\[object Object\]/);
     // The theater opens on whichever region has a wave inbound, so every region gets a launcher to show.
     s.credits += 500;
@@ -108,7 +113,7 @@ describe('screens render', () => {
       createInitialState({ ...lessonSettings(RAID_ID, defaultSettings('training')), raid }),
     ]) {
       store.state = s;
-      const out = html(<DeployPanel s={s} />);
+      const out = html(<DeployPanel s={s} openDetails />);
       expect(out, s.settings.name).toContain('Forecast check');
       expect(out, s.settings.name).not.toMatch(/NaN|\[object Object\]/);
     }

@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   SIM_CONFIG, createInitialState, execute, saveGame, type Command, type CommandResult, type ScenarioSettings, type SimState, type Slot,
-  BATCH_HOURS, applyPacing, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
+  BATCH_HOURS, applyPacing, wantsPause, autosaveSlot, defaultAutoPause, pauseMemo, pauseReasons, type AutoPauseSettings, type PauseMemo, type PauseReason,
 } from '../engine';
 import type { AccountInfo, CampaignSummary, SaveSummary } from '../shared/api';
 import { api, ApiError, forgetLegacyPlayerId, legacyPlayerId, newId } from './remote';
@@ -141,11 +141,11 @@ class SimStore {
       const found = pauseReasons(this.pMemo, s);
       this.pMemo = found.memo;
       const want = this.autoPause();
-      const wanted = want ? found.reasons.filter((x) => want[x.kind]) : [];
+      const wanted = want ? found.reasons.filter((x) => wantsPause(want, x)) : [];
       // Batch report and escalation pauses (at most one per BATCH_HOURS); keep what happened meanwhile for the prompt.
       // A report about to escalate cannot wait for the next batch: it pauses at once, like a launch.
-      this.held.push(...wanted.filter((x) => x.kind === 'report'));
-      const launch = wanted.filter((x) => x.kind !== 'report');
+      this.held.push(...wanted.filter((x) => x.kind === 'report' && !x.severe));
+      const launch = wanted.filter((x) => x.kind !== 'report' || x.severe); // a severe report cannot wait for the batch
       const due = this.held.length > 0 && s.hour - this.lastBatchPause >= BATCH_HOURS;
       if (launch.length || due) {
         const hits = [...launch, ...this.held.filter((x) => isStillRelevant(s, x))];

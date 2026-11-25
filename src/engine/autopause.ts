@@ -12,6 +12,8 @@ export interface PauseReason {
   region?: RegionId;
   waveId?: string;
   eventId?: string;
+  /** A new report of the highest severity: it can pause on its own even when every new report does not. */
+  severe?: boolean;
 }
 
 export interface PauseMemo {
@@ -57,12 +59,21 @@ export function pauseReasons(prev: PauseMemo | null, s: SimState): { reasons: Pa
     reasons.push({ kind: 'deadline', eventId: e.id, region: e.region, text: `${e.title} (${name(e.region)}) escalates in ${Math.max(1, Math.round(e.deadline - s.hour))}h and nothing has been ordered.` });
   }
   for (const e of s.events.filter((x) => isActive(x) && x.reportedAt <= s.hour && !prev.seen.has(x.id))) {
-    reasons.push({ kind: 'report', eventId: e.id, region: e.region, text: `New report: ${e.title} in ${name(e.region)}.` });
+    reasons.push({ kind: 'report', eventId: e.id, region: e.region, severe: e.severity >= 3 || undefined, text: `New report: ${e.title} in ${name(e.region)}.` });
   }
   return { reasons, memo };
 }
 
-export interface AutoPauseSettings { launch: boolean; deadline: boolean; report: boolean }
+export interface AutoPauseSettings {
+  launch: boolean; deadline: boolean; report: boolean;
+  /** Pause for a new report of the highest severity, even when other new reports go to the inbox (absent: off). */
+  severe?: boolean;
+}
+
+/** Does this reason pause under these settings? */
+export function wantsPause(p: AutoPauseSettings, r: PauseReason): boolean {
+  return p[r.kind] || (r.kind === 'report' && !!r.severe && !!p.severe);
+}
 
 /**
  * The player's saved choice applied to a scenario. "Waves only" means "only the urgent moments": where there are no
@@ -75,13 +86,12 @@ export function applyPacing(p: AutoPauseSettings, hasWaves: boolean): AutoPauseS
 
 /**
  * Defaults by difficulty. Launch warnings pause on every difficulty (the decision window is too short in real time
- * otherwise); Recruit also stops for every report, Officer for reports about to escalate, Commander for launches only.
- * Scenarios without threat waves (Crisis, Sandbox) never have a launch to stop for, so they always stop before a
- * report escalates.
+ * otherwise). Routine reports never stop the clock by default: they wait in the inbox. Recruit and Officer also stop
+ * for the most severe new reports and for reports about to escalate; Commander for launches only. Scenarios without
+ * threat waves (Crisis, Sandbox) never have a launch to stop for, so they always stop before a report escalates.
  */
 export function defaultAutoPause(level: CommandLevel | undefined, hasWaves = true): AutoPauseSettings {
-  if (!hasWaves) return { launch: true, deadline: true, report: level === 'recruit' };
-  if (level === 'commander') return { launch: true, deadline: false, report: false };
-  if (level === 'recruit') return { launch: true, deadline: true, report: true };
-  return { launch: true, deadline: true, report: false };
+  if (!hasWaves) return { launch: true, deadline: true, report: false, severe: true };
+  if (level === 'commander') return { launch: true, deadline: false, report: false, severe: false };
+  return { launch: true, deadline: true, report: false, severe: true };
 }

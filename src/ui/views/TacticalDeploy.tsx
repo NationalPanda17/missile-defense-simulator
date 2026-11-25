@@ -9,6 +9,7 @@ import { TONE_HEX } from '../components/ui';
 import { useUI } from '../uiState';
 import { Meter } from '../Guide';
 import { SiteIcon } from './theater/icons';
+import { PinchZoom } from '../components/PinchZoom';
 import { LAYER_COLOR, MapLegend, TheaterMap, effectorsCovering } from './theater/TheaterMap';
 
 export { LAYER_COLOR, MapLegend, TheaterMap } from './theater/TheaterMap';
@@ -219,7 +220,7 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
           </button>
         ))}
       </div>
-      <ul data-catalog className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[max(16rem,calc(100dvh-22rem-var(--coach-h,0px)))]">
+      <ul data-catalog className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 md:max-h-[max(16rem,calc(100dvh-15rem-var(--coach-h,0px)))]">
         {list.map((e) => {
           const cost = equipmentCost(e);
           const sel = e.id === selected;
@@ -238,20 +239,24 @@ function Catalog({ s, selected, onSelect }: { s: SimState; selected: string | nu
                   <span className={`shrink-0 tabular-nums ${short ? 'text-ops-red' : 'text-ops-green'}`}>{cost} cr</span>
                 </div>
                 <div className="truncate text-[10px] text-ops-dim">{e.origin} · {DOMAIN_WORD[e.domain]}</div>
+                {/* The essentials always; the full specification once picked. */}
                 <div className="mt-1 flex flex-wrap gap-1 text-[9.5px]">
                   {e.lure ? <StatChip label="Lure" value="draws missiles that hunt radars" tone="green" /> : <StatChip label={isEffector(e) ? 'Range' : 'Detects'} value={`${e.rangeKm} km`} />}
-                  {isEffector(e) && <StatChip label="Handles" value={Number.isFinite(channelsOf(e)) ? `${channelsOf(e) * TACTICAL_CONFIG.saturationPasses} a wave` : 'any number'} />}
-                  {e.loadouts && <StatChip label="Loads" value={`${e.loadouts.length + 1}`} />}
-                  {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
                   {isEffector(e) && <StatChip label="Rounds" value={isUnlimited(e) ? '∞' : String(e.magazine)} />}
-                  {e.radar && <StatChip label={jammedBand(s) === e.radar.band ? 'Radar (jammed)' : 'Radar'} tone={jammedBand(s) === e.radar.band ? 'amber' : 'dim'} value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
-                  {isEffector(e) && e.roundCr !== undefined && <StatChip label="Per round" value={`${e.roundCr} cr`} />}
+                  {e.radar && !sel && <StatChip label={jammedBand(s) === e.radar.band ? 'Radar (jammed)' : 'Radar'} tone={jammedBand(s) === e.radar.band ? 'amber' : 'dim'} value={`${e.radar.band}-band`} />}
                   {!e.radar && isEffector(e) && <StatChip label="No radar" value="needs a sensor nearby" tone="amber" />}
-                  {!e.radar && !isEffector(e) && !e.lure && <StatChip label="Passive" value="drones only" />}
-                  {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
-                  {e.domain !== 'air' && isEffector(e) && e.rangeKm > TACTICAL_CONFIG.lowAltitude.horizonKm && (
-                    <StatChip label="Low-level" value={`≤${TACTICAL_CONFIG.lowAltitude.horizonKm} km`} tone="amber" />
-                  )}
+                  {sel && <>
+                    {isEffector(e) && <StatChip label="Handles" value={Number.isFinite(channelsOf(e)) ? `${channelsOf(e) * TACTICAL_CONFIG.saturationPasses} a wave` : 'any number'} />}
+                    {e.loadouts && <StatChip label="Loads" value={`${e.loadouts.length + 1}`} />}
+                    {isEffector(e) && <StatChip label="Ceiling" value={`${e.altitudeKm} km`} />}
+                    {e.radar && <StatChip label={jammedBand(s) === e.radar.band ? 'Radar (jammed)' : 'Radar'} tone={jammedBand(s) === e.radar.band ? 'amber' : 'dim'} value={`${e.radar.band}-band${isEffector(e) ? ` · sees ${e.radar.rangeKm} km` : ''}`} />}
+                    {isEffector(e) && e.roundCr !== undefined && <StatChip label="Per round" value={`${e.roundCr} cr`} />}
+                    {!e.radar && !isEffector(e) && !e.lure && <StatChip label="Passive" value="drones only" />}
+                    {e.domain === 'air' && <StatChip label="Sees" value="past horizon" tone="green" />}
+                    {e.domain !== 'air' && isEffector(e) && e.rangeKm > TACTICAL_CONFIG.lowAltitude.horizonKm && (
+                      <StatChip label="Low-level" value={`≤${TACTICAL_CONFIG.lowAltitude.horizonKm} km`} tone="amber" />
+                    )}
+                  </>}
                 </div>
                 {sel && <p className="mt-1 text-[11px] leading-snug text-ops-text">{e.description}</p>}
                 {sel && (e.radar || !isEffector(e)) && !e.lure && <BandLine band={e.radar?.band ?? null} />}
@@ -422,7 +427,47 @@ function ForecastCheck({ s, region }: { s: SimState; region: RegionId }) {
 /** Bring the deploy map back on screen, for buttons further down the page that start a placement. */
 const showMap = () => window.requestAnimationFrame(() => document.querySelector('[data-coach="deploy-map"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
 
-export function DeployPanel({ s }: { s: SimState }) {
+/**
+ * One line for a region's readiness: the simulated outcome, the grade against each threat, uncovered targets and the
+ * radar picture, with the full checks folded underneath. Keeps the map on screen.
+ */
+function ReadinessBar({ s, region, open, onToggle, onPropose, proposing }: {
+  s: SimState; region: RegionId; open: boolean; onToggle: () => void; onPropose?: () => void; proposing: boolean;
+}) {
+  const t = s.tactical!;
+  const key = t.deployments.filter((d) => d.region === region).map((d) => `${d.id}:${d.x}:${d.y}:${d.stock}:${d.doctrine ?? ''}`).join('|');
+  const p = useMemo(() => previewDefense(s, region), [key, region, s.phaseIndex, s.hour]);
+  const targets = useMemo(() => forecastTargets(s, region), [key, region, s.phaseIndex, s.hour]);
+  const exposed = targets.filter((x) => x.uncovered >= x.threat / 2).length;
+  const specs = t.deployments.filter((d) => d.region === region).map((d) => EQUIPMENT_MAP.get(d.equipmentId)!);
+  const bands = RADAR_BAND_IDS.filter((b) => specs.some((sp) => sp.radar?.band === b));
+  const pct = p ? Math.round(p.prevented * 100) : null;
+  const tone = pct === null ? 'text-ops-dim' : pct >= 70 ? 'text-ops-green' : pct >= 40 ? 'text-ops-amber' : 'text-ops-red';
+  const worst = p ? (Object.entries(p.mix) as [ThreatClass, number][]).sort((a, b) => (p.byClass[a[0]] ?? 0) - (p.byClass[b[0]] ?? 0)).slice(0, 3) : [];
+  return (
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-[11px] ${pct === null ? 'border-ops-line' : pct >= 70 ? 'border-ops-green/40' : pct >= 40 ? 'border-ops-amber/40' : 'border-ops-red/40'}`} data-readiness>
+      <span className="label">Readiness · {s.regions[region].short}</span>
+      {p ? (
+        <span title={`Simulated outcome with this layout: about ${pct}% of the expected damage prevented (likely ${Math.round(p.range[0] * 100)}–${Math.round(p.range[1] * 100)}%)`}>
+          <b className={`font-sans text-[15px] ${tone}`}>{pct}%</b> <span className="text-ops-dim">damage prevented</span>
+        </span>
+      ) : <span className="text-ops-dim">{t.forecast.includes(region) ? 'Place a system to see the forecast check.' : 'Not in this phase’s forecast.'}</span>}
+      {worst.map(([c]) => {
+        const g = gradeOf(p!.byClass[c] ?? 0);
+        return <span key={c} className={`rounded-sm border px-1 ${GRADE_TONE[g]}`} title={`${THREAT_LABELS[c]}: about ${Math.round((p!.byClass[c] ?? 0) * 100)}% stopped`}>{CLASS_SHORT[c]} <b>{g}</b></span>;
+      })}
+      {exposed > 0 && <span className="text-ops-amber" title="Sites the forecast waves aim at that sit outside your systems' reach">⚠ {exposed} target{exposed === 1 ? '' : 's'} uncovered</span>}
+      <span className={bands.length ? 'text-ops-dim' : 'text-ops-amber'}>{bands.length ? `radar ${bands.join(' ')}` : 'no radar'}</span>
+      <span className="ml-auto flex gap-1">
+        {onPropose && !proposing && <button className="btn px-2 py-0.5" onClick={onPropose}>Propose a defense</button>}
+        <button className={`btn px-2 py-0.5 ${open ? 'btn-active' : ''}`} aria-expanded={open} onClick={onToggle}>{open ? 'Hide details ▴' : 'Details ▾'}</button>
+      </span>
+    </div>
+  );
+}
+
+/** `openDetails`: start with the readiness details unfolded (tests, and players who asked for them last time). */
+export function DeployPanel({ s, openDetails = false }: { s: SimState; openDetails?: boolean }) {
   const t = s.tactical!;
   const ui = useUI();
   // Open on the region last worked on (in this briefing or the last), else the first forecast region.
@@ -437,6 +482,7 @@ export function DeployPanel({ s }: { s: SimState }) {
   const [selectedDep, setSelectedDep] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [pane, setPane] = useState<'map' | 'systems'>('map'); // phones only
+  const [details, setDetails] = useState(openDetails);
   const spec = equipment ? EQUIPMENT_MAP.get(equipment)! : null;
   const dep = t.deployments.find((d) => d.id === selectedDep && d.region === region) ?? null;
   const depSpec = dep ? EQUIPMENT_MAP.get(dep.equipmentId)! : null;
@@ -499,7 +545,15 @@ export function DeployPanel({ s }: { s: SimState }) {
   return (
     // Short screens: region tabs, the forecast check and the map come first; the forecast note and guide follow.
     <div className="flex flex-col gap-3">
-      <div className="order-4 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
+      <div className="order-2 space-y-1">
+        <ReadinessBar s={s} region={region} open={details} onToggle={() => setDetails(!details)} proposing={!!plan}
+          onPropose={t.forecast.includes(region) ? () => setPlanFor(region) : undefined} />
+        {details && (
+          <div className="space-y-1">
+            <ForecastCheck s={s} region={region} />
+            <RadarPicture s={s} region={region} />
+            <AltitudeStrip s={s} region={region} />
+      <div className="rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
         <span className="label mr-2 text-ops-red">Threat forecast</span>
         Attacks are expected in{' '}
         {t.forecast.map((r, i) => <span key={r} className="text-white">{i ? ' and ' : ''}{s.regions[r].name}</span>)}.
@@ -511,14 +565,16 @@ export function DeployPanel({ s }: { s: SimState }) {
         )}
       </div>
 
-      <div className="order-2 space-y-1">
-        <ForecastCheck s={s} region={region} />
-        <RadarPicture s={s} region={region} />
-        <AltitudeStrip s={s} region={region} />
-        {t.forecast.includes(region) && (
+            {s.settings.mode === 'campaign' && s.settings.enemy && s.settings.enemy !== 'planner' && (
+              <div className="rounded border border-ops-line px-2 py-1 text-[11px] text-ops-dim">
+            <span className="label mr-2">Opponent</span><span className="text-white">{ENEMY_STYLES[s.settings.enemy].name}, {ENEMY_STYLES[s.settings.enemy].title}.</span> {ENEMY_STYLES[s.settings.enemy].text} <span className="text-ops-text">Answer: {ENEMY_STYLES[s.settings.enemy].counter}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {t.forecast.includes(region) && plan && (
           <div className="rounded border border-ops-line px-2 py-1 text-[11px]">
             <span className="label mr-2">Adjutant’s proposal</span>
-            {!plan && <><span className="text-ops-dim">Not sure where to start? </span><button className="btn px-2 py-0.5" onClick={() => setPlanFor(region)}>Propose a defense for {s.regions[region].name}</button></>}
             {plan && plan.length === 0 && <span className="text-ops-dim">Nothing more to add within about {budget} credits. <button className="underline" onClick={() => setPlanFor(null)}>Close</button></span>}
             {plan && plan.length > 0 && (
               <>
@@ -540,11 +596,6 @@ export function DeployPanel({ s }: { s: SimState }) {
           <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ops-amber/40 bg-ops-amber/5 px-2 py-1 text-[11px]">
             <span><span className="label mr-2 text-ops-amber">From the last review</span>{fix.text} <span className="text-ops-dim">The amber ring on the map marks the spot.</span></span>
             <button className="btn shrink-0 px-2 py-0.5" onClick={() => { setEquipment(fix.equipmentId); setSelectedDep(null); setMoving(false); setPane('map'); showMap(); }}>Pick {fixSpec.name}</button>
-          </div>
-        )}
-        {s.settings.mode === 'campaign' && s.settings.enemy && s.settings.enemy !== 'planner' && (
-          <div className="rounded border border-ops-line px-2 py-1 text-[11px] text-ops-dim">
-            <span className="label mr-2">Opponent</span><span className="text-white">{ENEMY_STYLES[s.settings.enemy].name}, {ENEMY_STYLES[s.settings.enemy].title}.</span> {ENEMY_STYLES[s.settings.enemy].text} <span className="text-ops-text">Answer: {ENEMY_STYLES[s.settings.enemy].counter}</span>
           </div>
         )}
       </div>
@@ -589,16 +640,15 @@ export function DeployPanel({ s }: { s: SimState }) {
             )}
             {(spec || moving) && <button className="btn px-2 py-0" onClick={() => { setEquipment(null); setMoving(false); }}>Cancel</button>}
           </div>
-          {/* Phones: the map is drawn at full size and scrolls sideways, so taps land precisely. */}
-          <div className="-mx-1 overflow-x-auto px-1 md:mx-0 md:overflow-visible md:px-0">
-            <div className="min-w-[560px] md:min-w-0">
+          {/* Phones: the map fits the width; pinch to zoom in for precise placement. */}
+          <PinchZoom>
+            <div>
               <TheaterMap s={s} region={region} ghost={moving && depSpec ? depSpec : spec} selectedId={dep?.id ?? null} onPoint={onPoint}
-                fitClass="md:max-h-[max(15rem,calc(100dvh-24rem-var(--coach-h,0px)))]"
+                fitClass="md:max-h-[max(15rem,calc(100dvh-19.5rem-var(--coach-h,0px)))]"
                 highlight={guideTarget ? { x: guideTarget.x, y: guideTarget.y, label: 'Start here' } : fix && fixSpec && !fixDone ? { x: fix.x, y: fix.y, label: `Suggested: ${fixSpec.name}` } : null}
                 onPick={(d) => { setSelectedDep(d.id === selectedDep ? null : d.id); setEquipment(null); setMoving(false); }} />
             </div>
-          </div>
-          <p className="text-[10px] text-ops-dim md:hidden">Swipe the map sideways to see the whole theater.</p>
+          </PinchZoom>
           <MapLegend region={region} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
             <span className="text-ops-dim">{hint}</span>

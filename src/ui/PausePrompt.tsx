@@ -6,6 +6,7 @@ import {
 } from '../engine';
 import { dispatch, store } from '../store/simStore';
 import { useUI, type ViewId } from './uiState';
+import { followWaves, setFollowWaves, subscribeFollow } from './follow';
 
 const version = () => store.getVersion();
 
@@ -61,7 +62,7 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
       if (first.kind === 'launch' && first.region) { ui.setTheaterFocus(first.region); ui.setView('theater'); } else ui.setView('global');
     };
     return (
-      <div className="fixed bottom-2 right-2 z-[56] w-[min(22rem,calc(100vw-1rem))] rounded border border-ops-amber/60 bg-ops-panel p-2 shadow-2xl" role="status" aria-live="polite" aria-label="Paused: your decision">
+      <div className="fixed bottom-[calc(var(--tabbar-h)+0.5rem)] right-2 z-[56] w-[min(22rem,calc(100vw-1rem))] rounded border border-ops-amber/60 bg-ops-panel p-2 shadow-2xl" role="status" aria-live="polite" aria-label="Paused: your decision">
         <div className="label text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>
         <p className="mt-0.5 text-[11px] text-white">{first.text}{reasons.length > 1 ? ` (+${reasons.length - 1} more)` : ''}</p>
         <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
@@ -71,9 +72,11 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
       </div>
     );
   }
-  const stopFor = (kind: PauseReason['kind'], on: boolean) => { if (pacing) store.setPacing({ ...pacing, [kind]: on }); };
+  // A severe report that paused on its own is governed by the "most severe reports" choice, not "every report".
+  const key: 'launch' | 'deadline' | 'report' | 'severe' = first.kind === 'report' && first.severe && pacing && !pacing.report ? 'severe' : first.kind;
+  const stopFor = (on: boolean) => { if (pacing) store.setPacing({ ...pacing, [key]: on }); };
   return (
-    <div className="fixed inset-x-2 top-32 z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:top-28" role="alertdialog" aria-label="Paused: your decision">
+    <div className="fixed inset-x-2 bottom-[calc(var(--tabbar-h)+0.5rem)] z-[56] mx-auto max-w-xl rounded border border-ops-amber/60 bg-ops-panel p-3 shadow-2xl sm:bottom-auto sm:top-[calc(var(--header-h,4rem)+0.5rem)] lg:right-[19.5rem]" role="alertdialog" aria-label="Paused: your decision">
       {/* Continue sits in the same place on every prompt; Enter or Space presses it. */}
       <div className="flex items-start justify-between gap-2">
         <div className="label pt-1 text-ops-amber">Paused · {first.kind === 'launch' ? 'incoming wave' : first.kind === 'deadline' ? 'decision needed' : 'new report'}</div>
@@ -100,12 +103,12 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-ops-dim">
         {pacing && (
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={pacing[first.kind]} onChange={(e) => stopFor(first.kind, e.target.checked)} />
-            Pause for {KIND_LABEL[first.kind]}
+            <input type="checkbox" checked={!!pacing[key]} onChange={(e) => stopFor(e.target.checked)} />
+            Pause for {key === 'severe' ? 'the most severe new reports' : KIND_LABEL[first.kind]}
           </label>
         )}
         {pacing && (pacing.deadline || pacing.report) && s.tactical?.enabled && (
-          <button className="underline hover:text-white" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Pause only for waves</button>
+          <button className="underline hover:text-white" onClick={() => store.setPacing({ launch: true, deadline: false, report: false, severe: false })}>Pause only for waves</button>
         )}
       </div>
     </div>
@@ -115,27 +118,34 @@ export function PausePrompt({ s, docked }: { s: SimState; docked?: boolean }) {
 /** Auto-pause choices, for the settings panel. */
 export function PacingSettings() {
   useSyncExternalStore(store.subscribe, version, version);
-  const cur = store.autoPause() ?? store.pacing ?? { launch: true, deadline: true, report: false };
-  const row = (kind: PauseReason['kind'], label: string) => (
+  const cur = store.autoPause() ?? store.pacing ?? { launch: true, deadline: true, report: false, severe: true };
+  const row = (kind: PauseReason['kind'] | 'severe', label: string) => (
     <label key={kind} className="flex items-center justify-between gap-2">
       <span className="text-white">{label}</span>
-      <input type="checkbox" checked={cur[kind]} onChange={(e) => store.setPacing({ ...cur, [kind]: e.target.checked })} />
+      <input type="checkbox" checked={!!cur[kind]} onChange={(e) => store.setPacing({ ...cur, [kind]: e.target.checked })} />
     </label>
   );
+  const follow = useSyncExternalStore(subscribeFollow, followWaves, followWaves);
   return (
     <div className="space-y-1.5 text-[11px]">
+      <label className="flex items-center justify-between gap-2" title="When a wave launches, the theater map goes to it and the clock drops to 1x until it lands, then returns to your speed.">
+        <span className="text-white">Follow each wave (map and 1× speed)</span>
+        <input type="checkbox" checked={follow} onChange={(e) => setFollowWaves(e.target.checked)} />
+      </label>
       {row('launch', 'Pause for launch warnings')}
       {row('deadline', 'Pause before a report escalates')}
+      {row('severe', 'Pause for the most severe new reports')}
       {row('report', 'Pause for every new report')}
       <div className="flex flex-wrap gap-1">
-        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: false, report: false })}>Waves only</button>
-        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: true })}>Everything</button>
-        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: false, deadline: false, report: false })}>Never</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: false, report: false, severe: false })}>Waves only</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: false, severe: true })}>Waves and urgent</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: true, deadline: true, report: true, severe: true })}>Everything</button>
+        <button className="btn px-1.5 py-0 text-[10px]" onClick={() => store.setPacing({ launch: false, deadline: false, report: false, severe: false })}>Never</button>
       </div>
       <p className="text-[10px] text-ops-dim">Report and escalation pauses come at most once every 6 sim hours, batched together. “Waves only” also stops before escalations in scenarios that have no waves.</p>
       <p className="text-[10px] text-ops-dim">
         {store.pacing ? <>Your choice, for every difficulty. <button className="underline" onClick={() => store.setPacing(null)}>Use the defaults</button></>
-          : 'Defaults for the difficulty: launch warnings always pause; Recruit also stops for every report, Officer for reports about to escalate. Scenarios without waves (Crisis, Sandbox) always stop before a report escalates.'}
+          : 'Defaults for the difficulty: launch warnings always pause, and routine reports wait in the inbox. Recruit and Officer also stop for the most severe reports and for reports about to escalate; Commander only for launches. Scenarios without waves (Crisis, Sandbox) always stop before a report escalates.'}
       </p>
     </div>
   );

@@ -10,6 +10,9 @@ import { dispatch, useSimTime } from '../../store/simStore';
 import { ReservePanel } from '../RaidDesigner';
 import { Bar, Chip, Panel, Stat, TONE_TEXT } from '../components/ui';
 import { LAYER_COLOR, MapLegend, TheaterMap, UnitOrders } from './TacticalDeploy';
+import { WorldInset } from './theater/WorldInset';
+import { LiveTally } from './theater/LiveTally';
+import { PinchZoom } from '../components/PinchZoom';
 
 export const PROTECTION_TONE: Record<ProtectionLevel, 'green' | 'amber' | 'red'> = { protected: 'green', thin: 'amber', exposed: 'red' };
 /** A replay runs long enough to read each caption. */
@@ -296,12 +299,14 @@ export function TheaterView({ s }: { s: SimState }) {
   const storyWave = story ? t.waves.find((w) => w.id === story.wave && w.region === region) : undefined;
   const storyTrack = storyWave?.tracks.find((x) => x.id === story!.track);
   const pickTrack = (wave: string, track: string) => setStory(story?.track === track ? null : { wave, track });
+  const pickRegion = (r: RegionId) => { setRegion(r); setSelected(null); setStory(null); setPlaying(null); setProgress(1); };
 
   return (
     <div className="space-y-2">
       <ReservePanel s={s} />
       {/* Always the same height, so the controls below don't jump when a warning appears or clears. */}
       <div className="flex min-h-[30px] flex-wrap items-center gap-1.5" role="status" aria-live="polite">
+        <LiveTally s={s} region={region} />
         {inbound.length === 0 && <span className="text-[11px] text-ops-dim">No waves inbound.</span>}
         {inbound.length > 0 && (<>
           {inbound.map(({ wave, eta, launched, launchIn }) => (
@@ -314,28 +319,27 @@ export function TheaterView({ s }: { s: SimState }) {
         </>)}
       </div>
 
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
-        {REGION_IDS.map((r) => {
-          const lvl = regionProtection(s, r).level;
-          return (
-            <button key={r} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => { setRegion(r); setSelected(null); setStory(null); setPlaying(null); setProgress(1); }}>
-              <span className={TONE_TEXT[PROTECTION_TONE[lvl]]} aria-label={lvl}>◆</span>{s.regions[r].short}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Region">
+          {REGION_IDS.map((r) => {
+            const lvl = regionProtection(s, r).level;
+            return (
+              <button key={r} role="tab" aria-selected={r === region} className={`btn ${r === region ? 'btn-active' : ''}`} onClick={() => pickRegion(r)}>
+                <span className={TONE_TEXT[PROTECTION_TONE[lvl]]} aria-label={lvl}>◆</span>{s.regions[r].short}
+              </button>
+            );
+          })}
+        </div>
+        <span className="hidden sm:block"><WorldInset s={s} region={region} onPick={pickRegion} onWorld={() => ui.setView('global')} /></span>
       </div>
 
       {/* The map gets the full width; side panels sit beside it only on very wide screens. */}
       <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Panel className="min-w-0" title={<span className="flex flex-wrap items-center gap-2">Theater · {s.regions[region].name} <ConditionChips s={s} region={region} /></span>} right={<span title="Site coverage: the share of the region's site value inside at least one system's reach. It is geometry, not a prediction; the briefing's forecast check simulates the outcome."><Chip t={PROTECTION_TONE[prot.level]}>site coverage {Math.round(prot.coverage * 100)}% · {prot.level}</Chip></span>}>
-          {inbound.some((x) => x.wave.region === region) && (
-            <div className="mb-2 rounded border border-ops-red/40 bg-ops-red/5 p-2 text-[11px]">
-              <div className="label text-ops-red">Wave inbound · what you can do now</div>
-              <WaveActions s={s} region={region} compact />
-            </div>
-          )}
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            {inbound.some((x) => x.wave.region === region) ? null : alertActive(s, region) ? (
+          <div className={`mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] ${inbound.some((x) => x.wave.region === region) ? 'rounded border border-ops-red/40 bg-ops-red/5 p-1.5' : ''}`}>
+            {inbound.some((x) => x.wave.region === region) ? (
+              <span className="flex flex-wrap items-center gap-1.5"><span className="label text-ops-red">Wave inbound · act now</span><WaveActions s={s} region={region} compact /></span>
+            ) : alertActive(s, region) ? (
               <Chip t="amber">⚠ Alert in force · {alertHoursLeft(s, region)}h left</Chip>
             ) : (
               <button data-coach="alert" className="btn" disabled={s.status !== 'running' || !deps.length || s.credits < alertCost(s, region)}
@@ -364,19 +368,21 @@ export function TheaterView({ s }: { s: SimState }) {
               <span className={captions[captionAt].tone === 'good' ? 'text-ops-green' : captions[captionAt].tone === 'bad' ? 'text-ops-red' : 'text-white'}>{captions[captionAt].text}</span>
             </div>
           )}
-          <RadioFeed s={s} region={region} />
-          {/* Phones: full-size map that scrolls sideways, so systems and threats stay readable and taps land. */}
-          <div className={`-mx-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0 ${scope ? 'scope-view' : ''}`}>
-            <div className="relative min-w-[560px] sm:min-w-0">
+          {/* Phones: the map fits the width; pinch to zoom in. */}
+          <div className={scope ? 'scope-view' : ''}>
+            <PinchZoom>
+            <div className="relative">
               {scope && <div className="scope-sweep" aria-hidden />}
-              <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec}
+              <TheaterMap s={s} region={region} selectedId={selected ?? moving} ghost={movingSpec} fitClass="lg:max-h-[calc(100dvh-21rem)]"
                 onPoint={movingDep ? (x, y) => { if (dispatch({ type: 'emergencyRedeploy', deploymentId: movingDep.id, region, x, y }).ok) setMoving(null); } : undefined}
                 onTrack={movingDep ? undefined : pickTrack}
                 onPick={(d) => setSelected(d.id === selected ? null : d.id)}>
                 {playing && replay && replay.id === playing && <WaveReplay key={`${replay.id}-${playing}`} s={s} wave={replay} ms={replayMs(captions.length, replaySpeed)} onProgress={setProgress} onTrack={pickTrack} />}
               </TheaterMap>
             </div>
+            </PinchZoom>
           </div>
+          <div className="mt-2"><RadioFeed s={s} region={region} /></div>
           {storyTrack && storyWave && (
             <div className="mt-1.5 flex items-start justify-between gap-2 rounded border border-ops-cyan/50 bg-ops-cyan/5 p-2 text-[11px]" role="status">
               <div><span className="label mr-2 text-ops-cyan">This threat</span>{trackStory(s, storyWave, storyTrack)}</div>
