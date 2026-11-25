@@ -47,10 +47,10 @@ describe('auto-pause', () => {
   });
 
   it('defaults by difficulty, and is silent when nothing changes', () => {
-    expect(defaultAutoPause('recruit')).toEqual({ launch: true, deadline: true, report: true });
-    expect(defaultAutoPause('officer')).toEqual({ launch: true, deadline: true, report: false });
+    expect(defaultAutoPause('recruit')).toEqual({ launch: true, deadline: true, report: false, severe: true });
+    expect(defaultAutoPause('officer')).toEqual({ launch: true, deadline: true, report: false, severe: true });
     expect(defaultAutoPause(undefined)).toEqual(defaultAutoPause('officer'));
-    expect(defaultAutoPause('commander')).toEqual({ launch: true, deadline: false, report: false }); // launches pause everywhere
+    expect(defaultAutoPause('commander')).toEqual({ launch: true, deadline: false, report: false, severe: false }); // launches pause everywhere
     const s = createInitialState(defaultSettings('campaign', { seed: 3 }));
     expect(pauseReasons(pauseMemo(s), s).reasons).toEqual([]);
   });

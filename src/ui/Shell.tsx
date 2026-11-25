@@ -1,5 +1,5 @@
 // Top bar, left navigation, right sidebar and bottom panel.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { SoundControl } from './audio/SoundControl';
 import { DisplayControl } from './a11y/DisplayControl';
 import { AdjutantSection } from './Adjutant';
@@ -17,7 +17,7 @@ const ALERT_TONE = { NORMAL: 'green', ELEVATED: 'cyan', HIGH: 'amber', SEVERE: '
 function SimClock({ s }: { s: SimState }) {
   const t = useSimTime();
   const clock = simClock(s.startDate, t);
-  return <div className="tabular-nums text-white">{clock.date} <span className="text-ops-cyan">{clock.time}</span> <span className="cursor-help text-ops-dim underline decoration-dotted" title={`T+${s.hour}h: ${s.hour} hours since the scenario began. Every time in the game is counted this way.`}>T+{s.hour}h</span></div>;
+  return <div className="whitespace-nowrap tabular-nums text-white"><span className="hidden sm:inline">{clock.date} </span><span className="text-ops-cyan">{clock.time}</span> <span className="cursor-help text-ops-dim underline decoration-dotted" title={`T+${s.hour}h: ${s.hour} hours since the scenario began. Every time in the game is counted this way.`}>T+{s.hour}h</span></div>;
 }
 
 /** Thin bar showing how far through the phase we are, moving continuously. */
@@ -100,7 +100,7 @@ export function WaveCard({ s }: { s: SimState }) {
   const cost = low.reduce((a, d) => a + resupplyCost(d, resupplyRounds(s, d), s), 0);
   const tone = leaked === 0 ? 'border-ops-green/60' : leaked * 2 > real.length ? 'border-ops-red/60' : 'border-ops-amber/60';
   return (
-    <div className={`fixed inset-x-2 top-32 z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:top-28 ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
+    <div className={`fixed inset-x-2 bottom-[calc(var(--tabbar-h)+0.5rem)] z-[54] mx-auto max-w-lg rounded border bg-ops-panel p-3 shadow-2xl sm:bottom-auto sm:top-[calc(var(--header-h,4rem)+0.5rem)] lg:right-[19.5rem] ${tone}`} role="status" aria-live="polite" aria-label="Wave result">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="label">Wave over · {s.regions[w.region].name}</div>
@@ -146,31 +146,86 @@ export function MainMenuButton({ s, className = '' }: { s: SimState; className?:
   );
 }
 
+/** Publishes the header's height as --header-h, so prompts and overlays can sit just below it and never cover it. */
+function useHeaderHeight(ref: React.RefObject<HTMLElement>) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty('--header-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+}
+
+const SPEEDS = [0.5, 1, 2, 4, 8] as const;
+
+/** Phones: the controls that don't fit the one-row header, in a menu. */
+function MoreMenu({ s }: { s: SimState }) {
+  const ui = useUI();
+  const [open, setOpen] = useState(false);
+  const m = s.metrics;
+  const phase = s.phases[s.phaseIndex];
+  return (
+    <div className="sm:hidden">
+      <button className="btn px-2.5" aria-expanded={open} aria-haspopup="dialog" aria-label="More controls" onClick={() => setOpen(!open)}>⋯</button>
+      {open && (
+        <div className="fixed inset-0 z-[47] bg-black/50" onClick={() => setOpen(false)}>
+          <div className="absolute inset-x-2 top-[calc(var(--header-h,3.5rem)+0.25rem)] space-y-3 rounded border border-ops-line bg-ops-panel p-3 text-[11px] shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="More controls">
+            <div className="flex items-center justify-between gap-2">
+              <div className="leading-tight"><div className="label">Phase {phase.id}/{s.phases.length}</div><div className="text-white">{phase.name}</div></div>
+              <div className="leading-tight"><div className="label">{tr('Alert')}</div><Chip t={ALERT_TONE[m.alert]}>{m.alert}</Chip></div>
+            </div>
+            <div>
+              <div className="label mb-1">Speed</div>
+              <div className="flex flex-wrap gap-1">
+                {SPEEDS.map((sp) => <button key={sp} className={`btn flex-1 ${s.speed === sp ? 'btn-active' : ''}`} disabled={s.turnBased} onClick={() => chooseSpeed(s, sp)}>{sp === 0.5 ? '½×' : `${sp}×`}</button>)}
+              </div>
+              <button role="switch" aria-checked={s.turnBased} className={`btn mt-1 w-full ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })}>{tr('Turn mode')}{s.turnBased ? ': on' : ''}</button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <DisplayControl />
+              <SoundControl />
+              <button className="btn flex-1" onClick={() => { ui.setHelp(true); setOpen(false); }}>? {tr('Guide')}</button>
+            </div>
+            <MainMenuButton s={s} className="w-full" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TopBar({ s }: { s: SimState }) {
   const ui = useUI();
+  const ref = useRef<HTMLElement>(null);
+  useHeaderHeight(ref);
   const m = s.metrics;
   const phase = s.phases[s.phaseIndex];
   const phaseHour = s.hour - s.phaseStartHour;
   const running = s.status === 'running';
+  const reports = s.events.filter((e) => isActive(e) && isKnown(s, e)).length;
+  const nextSpeed = SPEEDS[(SPEEDS.indexOf(s.speed as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
   return (
-    <header className="relative z-40 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-ops-line bg-ops-panel/90 px-2 py-1.5 backdrop-blur sm:gap-x-4 sm:gap-y-2 sm:px-3 sm:py-2">
-      <div className="flex items-center gap-2">
+    <header ref={ref} className="sticky top-0 z-40 flex flex-nowrap items-center gap-x-2 border-b border-ops-line bg-ops-panel/95 px-2 py-1.5 backdrop-blur sm:relative sm:flex-wrap sm:gap-x-4 sm:gap-y-2 sm:px-3 sm:py-2">
+      <div className="flex shrink-0 items-center gap-2">
         <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
           <circle cx="13" cy="13" r="11" fill="none" stroke="#38d6f5" strokeOpacity=".5" />
           <circle cx="13" cy="13" r="6" fill="none" stroke="#38d6f5" strokeOpacity=".35" />
           <g className="radar-sweep" style={{ transformOrigin: '13px 13px' }}><path d="M13,13 L24,13 A11,11 0 0,0 21,5 Z" fill="#38d6f5" fillOpacity=".5" /></g>
         </svg>
-        <div className="leading-none">
+        <div className="hidden leading-none sm:block">
           <div className="font-sans text-[15px] font-bold tracking-[0.18em] text-white">MISSILE DEFENSE SIMULATOR</div>
-          <div className="hidden text-[10px] tracking-widest text-ops-dim sm:block">GLOBAL INTEGRATED DEFENSE · v0.1</div>
+          <div className="text-[10px] tracking-widest text-ops-dim">GLOBAL INTEGRATED DEFENSE · v0.1</div>
         </div>
       </div>
       <div className="hidden min-w-0 leading-tight xl:block">
         <div className="label">Campaign</div>
         <div className="max-w-[220px] truncate text-white">{s.settings.name}</div>
       </div>
-      <div className="leading-tight">
-        <div className="label">{tr('Sim time')}</div>
+      <div className="min-w-0 leading-tight">
+        <div className="label hidden sm:block">{tr('Sim time')}</div>
         <SimClock s={s} />
       </div>
       <div className="hidden leading-tight md:block">
@@ -179,55 +234,60 @@ export function TopBar({ s }: { s: SimState }) {
         <PhaseProgress s={s} />
       </div>
 
-      <div className="flex items-center gap-1" role="group" aria-label="Simulation controls">
-        <button data-coach="pause" className={`btn w-20 ${running && !s.paused && !s.turnBased ? '' : 'btn-primary'}`} disabled={!running || s.turnBased}
-          onClick={() => dispatch({ type: 'setPaused', paused: !s.paused })} title="Pause / resume (Space)">
-          {s.paused || s.turnBased ? tr('▶ Resume') : tr('❚❚ Pause')}
+      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Simulation controls">
+        <button data-coach="pause" className={`btn px-2.5 sm:w-20 ${running && !s.paused && !s.turnBased ? '' : 'btn-primary'}`} disabled={!running || s.turnBased}
+          onClick={() => dispatch({ type: 'setPaused', paused: !s.paused })} title="Pause / resume (Space)" aria-label={s.paused || s.turnBased ? 'Resume' : 'Pause'}>
+          <span className="sm:hidden">{s.paused || s.turnBased ? '▶' : '❚❚'}</span>
+          <span className="hidden sm:inline">{s.paused || s.turnBased ? tr('▶ Resume') : tr('❚❚ Pause')}</span>
         </button>
-        <button className={`btn px-2 ${s.speed === 0.5 ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, 0.5)} title="Study speed: half speed, for watching a wave closely" disabled={s.turnBased}>½x</button>
-        {([1, 2, 4, 8] as const).map((sp, i) => (
-          <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
-        ))}
-        <button data-coach="turn" role="switch" aria-checked={s.turnBased} className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })}
-          title={s.turnBased ? 'Turn mode is on: the clock only moves when you advance a turn. Click to switch back to real time.' : 'Turn mode: stop the clock and advance it 6 hours at a time when you are ready.'}>
-          {tr('Turn mode')}{s.turnBased ? ': on' : ''}
-        </button>
-        {store.viewHold && s.paused && <span className="max-w-[9rem] text-[10px] leading-tight text-ops-amber" title="The clock stops while you plan and restarts when you go back to an operations view. Press Resume to keep it running here.">Clock held while you plan</span>}
+        {/* Phones: one button steps through the speeds. */}
+        <button className="btn px-2 sm:hidden" onClick={() => chooseSpeed(s, nextSpeed)} disabled={s.turnBased} aria-label={`Speed ${s.speed}x: tap for ${nextSpeed}x`}>{s.speed === 0.5 ? '½×' : `${s.speed}×`}</button>
+        <span className="hidden items-center gap-1 sm:flex">
+          <button className={`btn px-2 ${s.speed === 0.5 ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, 0.5)} title="Study speed: half speed, for watching a wave closely" disabled={s.turnBased}>½x</button>
+          {([1, 2, 4, 8] as const).map((sp, i) => (
+            <button key={sp} data-coach="speed" className={`btn px-2 ${s.speed === sp ? 'btn-active' : ''}`} onClick={() => chooseSpeed(s, sp)} title={`Speed ${sp}x (${i + 1})`} disabled={s.turnBased}>{sp}x</button>
+          ))}
+          <button data-coach="turn" role="switch" aria-checked={s.turnBased} className={`btn ${s.turnBased ? 'btn-active' : ''}`} onClick={() => dispatch({ type: 'setTurnBased', on: !s.turnBased })}
+            title={s.turnBased ? 'Turn mode is on: the clock only moves when you advance a turn. Click to switch back to real time.' : 'Turn mode: stop the clock and advance it 6 hours at a time when you are ready.'}>
+            {tr('Turn mode')}{s.turnBased ? ': on' : ''}
+          </button>
+        </span>
+        {store.viewHold && s.paused && <span className="hidden max-w-[9rem] text-[10px] leading-tight text-ops-amber sm:inline" title="The clock stops while you plan and restarts when you go back to an operations view. Press Resume to keep it running here.">Clock held while you plan</span>}
         {s.turnBased && (
-          <button data-coach="advance" className="btn btn-primary" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn: 6 hours (T)">Next turn +{SIM_CONFIG.turnHours}h ⏭</button>
+          <button data-coach="advance" className="btn btn-primary" disabled={!running} onClick={() => dispatch({ type: 'advance', hours: SIM_CONFIG.turnHours })} title="Advance one turn: 6 hours (T)">+{SIM_CONFIG.turnHours}h<span className="hidden sm:inline"> ⏭</span></button>
         )}
       </div>
 
-      <div className="ml-auto flex flex-wrap items-center gap-4">
-        {/* Phones: the essentials only (time controls, credits, alert); the rest is on the Global Operations screen. */}
+      <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:flex-wrap sm:gap-4">
         <span className="hidden sm:contents">
           <TopMetric label="Readiness" v={m.globalReadiness} />
           <TopMetric label="Network" v={m.network} />
         </span>
-        <div className={`rounded border px-2.5 py-1 leading-tight ${s.credits < 150 ? 'border-ops-red/60 bg-ops-red/10' : 'border-ops-green/50 bg-ops-green/10'}`} title="Credits: what you spend on defenses, maintenance, responses and investments">
-          <div className="label">{tr('Credits')}</div>
-          <div className={`whitespace-nowrap font-sans text-[17px] font-bold tabular-nums ${s.credits < 150 ? 'text-ops-red' : 'text-ops-green'}`} aria-label={`${Math.round(s.credits)} credits`}>
+        <div className={`rounded border px-1.5 py-0.5 leading-tight sm:px-2.5 sm:py-1 ${s.credits < 150 ? 'border-ops-red/60 bg-ops-red/10' : 'border-ops-green/50 bg-ops-green/10'}`} title="Credits: what you spend on defenses, maintenance, responses and investments">
+          <div className="label hidden sm:block">{tr('Credits')}</div>
+          <div className={`whitespace-nowrap font-sans text-[15px] font-bold tabular-nums sm:text-[17px] ${s.credits < 150 ? 'text-ops-red' : 'text-ops-green'}`} aria-label={`${Math.round(s.credits)} credits`}>
             {Math.round(s.credits).toLocaleString('en-US')}<span className="ml-1 text-[11px] font-semibold opacity-80">cr</span>
             {reserveDrain(s) >= 1 && (
-              <span className="ml-1.5 font-mono text-[10px] font-normal text-ops-amber" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
+              <span className="ml-1.5 hidden font-mono text-[10px] font-normal text-ops-amber sm:inline" title={`Unspent: credits above ${SIM_CONFIG.reserve.threshold} are reclaimed at ${SIM_CONFIG.reserve.ratePerHour * 100}% an hour. Spend them on defenses, maintenance or investments.`}>
                 unspent −{Math.round(reserveDrain(s))}/h
               </span>
             )}
           </div>
         </div>
-        <div className="leading-tight">
+        <div className="hidden leading-tight sm:block">
           <div className="label">{tr('Alert')}</div>
           <Chip t={ALERT_TONE[m.alert]}><span className={m.alert === 'SEVERE' ? 'blink' : ''}>{m.alert}</span></Chip>
         </div>
         <span className="hidden sm:contents"><ServerStatusChip /></span>
-        <DisplayControl />
-        <SoundControl />
-        {(() => { const n = s.events.filter((e) => isActive(e) && isKnown(s, e)).length; return n > 0 ? (
-          <button className="btn sm:hidden" onClick={() => ui.setView('intel')} title="Open reports are listed under Intelligence" aria-label={`${n} open reports: show them`}>✉ {n}</button>
-        ) : null; })()}
+        <span className="hidden sm:contents"><DisplayControl /><SoundControl /></span>
+        {/* Routine reports wait here instead of stopping the clock. */}
+        <button className={`btn hidden sm:inline-flex ${reports ? 'border-ops-amber/60 text-ops-amber' : ''}`} onClick={() => ui.setView('intel')} title="Open reports: routine ones wait here instead of pausing the game" aria-label={`Inbox: ${reports} open report${reports === 1 ? '' : 's'}`}>
+          ✉ <span className="ml-1">{tr('Inbox')}</span>{reports > 0 && <span className="ml-1 rounded-sm bg-ops-amber/20 px-1 tabular-nums">{reports}</span>}
+        </button>
         <NextButton s={s} />
-        <MainMenuButton s={s} />
-        <button className="btn" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? <span className="hidden sm:inline">{tr('Guide')}</span></button>
+        <span className="hidden sm:contents"><MainMenuButton s={s} /></span>
+        <button className="btn hidden sm:inline-flex" onClick={() => ui.setHelp(true)} title="Field guide: how to play, threats, defenses, radar bands, glossary and shortcuts (?)">? {tr('Guide')}</button>
+        <MoreMenu s={s} />
       </div>
     </header>
   );
@@ -243,20 +303,36 @@ function TopMetric({ label, v }: { label: string; v: number }) {
 }
 
 export const NAV: { id: ViewId; label: string; icon: string; key: string; group?: string }[] = [
-  { id: 'global', label: 'Global Operations', icon: '◎', key: 'G', group: 'Command' },
-  { id: 'theater', label: 'Tactical Theater', icon: '◇', key: 'X' },
-  { id: 'space', label: 'Space Command', icon: '⊟', key: 'S', group: 'Domains' },
+  { id: 'theater', label: 'Tactical Theater', icon: '◇', key: 'X', group: 'Battle' },
+  { id: 'global', label: 'Global Operations', icon: '◎', key: 'G' },
+  { id: 'space', label: 'Space Command', icon: '⊟', key: 'S', group: 'Network' },
   { id: 'air', label: 'Air Command', icon: '▲', key: 'A' },
   { id: 'sea', label: 'Sea Command', icon: '⏢', key: 'M' },
   { id: 'ground', label: 'Ground Command', icon: '■', key: 'D' },
-  { id: 'intel', label: 'Intelligence', icon: '◈', key: 'I', group: 'Staff' },
   { id: 'comms', label: 'Communications', icon: '⌁', key: 'C' },
-  { id: 'logistics', label: 'Logistics', icon: '⛭', key: 'L' },
   { id: 'infra', label: 'Infrastructure', icon: '▦', key: 'F' },
-  { id: 'campaign', label: 'Campaign Management', icon: '⚑', key: 'P', group: 'Scenario' },
+  { id: 'intel', label: 'Intelligence', icon: '◈', key: 'I', group: 'Staff' },
+  { id: 'logistics', label: 'Logistics', icon: '⛭', key: 'L' },
+  { id: 'campaign', label: 'Campaign Management', icon: '⚑', key: 'P', group: 'Review' },
   { id: 'editor', label: 'Scenario Editor', icon: '✎', key: 'E' },
   { id: 'aar', label: 'After-Action Review', icon: '▤', key: 'R' },
 ];
+
+/** The four groups of screens, in order, with the screens in each. */
+export function navGroups(s: SimState): { name: string; items: typeof NAV }[] {
+  const out: { name: string; items: typeof NAV }[] = [];
+  for (const n of NAV) {
+    if (n.id === 'theater' && !s.tactical?.enabled) continue;
+    if (n.group || !out.length) out.push({ name: n.group ?? 'Battle', items: [] });
+    out[out.length - 1].items.push(n);
+  }
+  return out;
+}
+export const groupOf = (s: SimState, v: ViewId) => navGroups(s).find((g) => g.items.some((n) => n.id === v))?.name ?? 'Battle';
+
+/** Network and staff screens open over the battle (which stays live underneath) and close back to it. */
+export const OVER_BATTLE: ViewId[] = ['space', 'air', 'sea', 'ground', 'comms', 'infra', 'intel', 'logistics'];
+export const opensOverBattle = (s: SimState, v: ViewId) => !!s.tactical?.enabled && s.status !== 'complete' && OVER_BATTLE.includes(v);
 
 /** Assets in a domain due for service within 12h (or overdue) and not already in maintenance. */
 export const dueCount = (s: SimState, d: Domain) =>
@@ -291,41 +367,135 @@ function ObjectivesSection({ s }: { s: SimState }) {
   );
 }
 
-export function LeftNav({ s }: { s: SimState }) {
-  const ui = useUI();
-  const domainStat = (id: ViewId) => (DOMAINS as string[]).includes(id) ? s.metrics.domainEffective[id as keyof typeof s.metrics.domainEffective] : null;
+/** Badges for a nav item: domain readiness, items due for service, open reports, waves inbound. */
+function NavBadges({ s, id }: { s: SimState; id: ViewId }) {
+  const v = (DOMAINS as string[]).includes(id) ? s.metrics.domainEffective[id as keyof typeof s.metrics.domainEffective] : null;
   const activeCount = s.events.filter((e) => isActive(e) && isKnown(s, e)).length;
   const inbound = incomingWaves(s).length;
   return (
-    <nav className="flex gap-1 overflow-x-auto border-b border-ops-line bg-ops-panel/70 p-1.5 lg:w-56 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:border-b-0 lg:border-r lg:p-2" aria-label="Main navigation">
-      {NAV.filter((n) => n.id !== 'theater' || s.tactical?.enabled).map((n) => {
-        const v = domainStat(n.id);
-        const act = ui.view === n.id;
-        return (
-          <div key={n.id} className="contents">
-            {n.group && <div className="label mt-2 hidden px-2 pb-1 lg:block">{tr(n.group)}</div>}
-            <button data-coach={`nav-${n.id}`} onClick={() => ui.setView(n.id)} aria-current={act ? 'page' : undefined}
-              className={`group flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] uppercase tracking-wider transition-colors ${act ? 'border-ops-cyan/50 bg-ops-cyan/10 text-white' : 'border-transparent text-ops-text/80 hover:border-ops-line hover:bg-ops-panel2 hover:text-white'}`}>
-              <span className="w-4 text-center text-ops-cyan" style={v !== null ? { color: DOMAIN_COLOR[n.id as keyof typeof DOMAIN_COLOR] } : undefined}>{n.icon}</span>
-              <span className="flex-1 whitespace-nowrap">{tr(n.label)}</span>
-              {v !== null && <span className={`hidden tabular-nums lg:inline ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</span>}
-              {v !== null && dueCount(s, n.id as Domain) > 0 && (
-                <span className="rounded bg-ops-amber/20 px-1 text-ops-amber" title={`${dueCount(s, n.id as Domain)} asset(s) due or overdue for maintenance`}>⛭{dueCount(s, n.id as Domain)}</span>
-              )}
-              {n.id === 'intel' && activeCount > 0 && <span className="hidden rounded bg-ops-red/20 px-1 text-ops-red lg:inline">{activeCount}</span>}
-              {n.id === 'theater' && inbound > 0 && <span className="blink rounded bg-ops-red/20 px-1 text-ops-red">{inbound}</span>}
-              <kbd className="hidden text-[9px] text-ops-dim opacity-0 group-hover:opacity-100 lg:inline">{n.key}</kbd>
-            </button>
-          </div>
-        );
-      })}
-      <div className="mt-auto hidden space-y-1 border-t border-ops-line px-1 pt-2 text-[10px] text-ops-dim lg:block">
+    <>
+      {v !== null && <span className={`tabular-nums ${TONE_TEXT[tone(v)]}`}>{Math.round(v)}</span>}
+      {v !== null && dueCount(s, id as Domain) > 0 && (
+        <span className="rounded bg-ops-amber/20 px-1 text-ops-amber" title={`${dueCount(s, id as Domain)} asset(s) due or overdue for maintenance`}>⛭{dueCount(s, id as Domain)}</span>
+      )}
+      {id === 'intel' && activeCount > 0 && <span className="rounded bg-ops-red/20 px-1 text-ops-red">{activeCount}</span>}
+      {id === 'theater' && inbound > 0 && <span className="blink rounded bg-ops-red/20 px-1 text-ops-red">{inbound}</span>}
+    </>
+  );
+}
+
+/** What a closed group would flag: worst domain readiness, reports, waves. */
+function groupFlag(s: SimState, items: typeof NAV): string | null {
+  if (items.some((n) => n.id === 'theater') && incomingWaves(s).length) return `${incomingWaves(s).length} inbound`;
+  if (items.some((n) => n.id === 'intel')) { const n = s.events.filter((e) => isActive(e) && isKnown(s, e)).length; if (n) return `${n} report${n === 1 ? '' : 's'}`; }
+  const low = items.filter((n) => (DOMAINS as string[]).includes(n.id)).map((n) => s.metrics.domainEffective[n.id as Domain]).filter((v) => v < 60);
+  if (low.length) return `${low.length} low`;
+  return null;
+}
+
+/** Desktop navigation: four groups (Battle, Network, Staff, Review); the group you are in stays open. */
+export function LeftNav({ s }: { s: SimState }) {
+  const ui = useUI();
+  const groups = navGroups(s);
+  const here = groupOf(s, ui.view);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const isOpen = (g: string) => open[g] ?? (g === here || g === 'Battle');
+  return (
+    <nav className="hidden flex-col gap-0.5 overflow-y-auto border-r border-ops-line bg-ops-panel/70 p-2 lg:flex lg:w-56" aria-label="Main navigation">
+      {groups.map((g) => (
+        <div key={g.name} className="contents">
+          <button className="label mt-2 flex w-full items-center justify-between px-2 pb-1 text-left first:mt-0 hover:text-white" aria-expanded={isOpen(g.name)}
+            onClick={() => setOpen({ ...open, [g.name]: !isOpen(g.name) })}>
+            <span>{tr(g.name)}</span>
+            <span className="flex items-center gap-1 normal-case tracking-normal">
+              {!isOpen(g.name) && groupFlag(s, g.items) && <span className="text-ops-amber">{groupFlag(s, g.items)}</span>}
+              <span aria-hidden>{isOpen(g.name) ? '▾' : '▸'}</span>
+            </span>
+          </button>
+          {isOpen(g.name) && g.items.map((n) => {
+            const act = ui.view === n.id;
+            return (
+              <button key={n.id} data-coach={`nav-${n.id}`} onClick={() => ui.setView(n.id)} aria-current={act ? 'page' : undefined}
+                className={`group flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] uppercase tracking-wider transition-colors ${act ? 'border-ops-cyan/50 bg-ops-cyan/10 text-white' : 'border-transparent text-ops-text/80 hover:border-ops-line hover:bg-ops-panel2 hover:text-white'}`}>
+                <span className="w-4 text-center text-ops-cyan" style={(DOMAINS as string[]).includes(n.id) ? { color: DOMAIN_COLOR[n.id as keyof typeof DOMAIN_COLOR] } : undefined}>{n.icon}</span>
+                <span className="flex-1 whitespace-nowrap">{tr(n.label)}</span>
+                <NavBadges s={s} id={n.id} />
+                <kbd className="text-[9px] text-ops-dim opacity-0 group-hover:opacity-100">{n.key}</kbd>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+      <div className="mt-auto space-y-1 border-t border-ops-line px-1 pt-2 text-[10px] text-ops-dim">
         <div className="flex justify-between"><span>Personnel</span><span className="text-white">{Math.round(s.personnel)}/{s.personnelMax}</span></div>
         <div className="flex justify-between"><span>Crews free</span><span className="text-white">{s.crews - s.crewsBusy}/{s.crews}</span></div>
         <div className="flex justify-between"><span>Resilience</span><span className="text-white">{Math.round(s.resilience)}</span></div>
         <div className="flex justify-between"><span>Mode</span><span className="uppercase text-white">{s.settings.mode}</span></div>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Phones and tablets: a tab bar along the bottom. Battle and World go straight to their screen; Network and Staff
+ * open a sheet listing their screens; Status opens the adjutant, objectives, reports and logs.
+ */
+export function MobileTabs({ s }: { s: SimState }) {
+  const ui = useUI();
+  const [sheet, setSheet] = useState<null | 'Network' | 'Staff' | 'Status'>(null);
+  const groups = navGroups(s);
+  const here = groupOf(s, ui.view);
+  const tactical = !!s.tactical?.enabled;
+  const reports = s.events.filter((e) => isActive(e) && isKnown(s, e)).length;
+  const inbound = incomingWaves(s).length;
+  const go = (v: ViewId) => { ui.setView(v); setSheet(null); };
+  const staffItems = [...(groups.find((g) => g.name === 'Staff')?.items ?? []), ...(groups.find((g) => g.name === 'Review')?.items ?? [])];
+  const tab = (label: string, icon: string, active: boolean, onClick: () => void, badge?: ReactNode) => (
+    <button className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] uppercase tracking-wider ${active ? 'text-ops-cyan' : 'text-ops-text/80'}`} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      <span aria-hidden className="text-[15px] leading-none">{icon}</span>
+      <span>{label}</span>
+      {badge}
+    </button>
+  );
+  const dot = (n: number, cls: string) => n > 0 ? <span className={`absolute right-[calc(50%-1.4rem)] top-1 rounded px-1 text-[9px] ${cls}`}>{n}</span> : null;
+  return (
+    <>
+      {sheet && (
+        <div className="fixed inset-0 z-[45] bg-black/50 lg:hidden" onClick={() => setSheet(null)}>
+          <div className="absolute inset-x-0 bottom-[var(--tabbar-h)] max-h-[72dvh] overflow-y-auto rounded-t border-t border-ops-line bg-ops-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={sheet}>
+            <div className="flex items-center justify-between border-b border-ops-line px-3 py-2">
+              <span className="font-sans text-[13px] font-semibold uppercase tracking-[0.14em] text-ops-cyan">{tr(sheet)}</span>
+              <button className="btn px-2" onClick={() => setSheet(null)} aria-label="Close">✕</button>
+            </div>
+            {sheet === 'Status' ? (
+              <div className="flex flex-col">
+                <RightSidebar s={s} embedded />
+                <BottomPanel s={s} embedded />
+              </div>
+            ) : (
+              <ul className="grid grid-cols-2 gap-1.5 p-2">
+                {(sheet === 'Network' ? groups.find((g) => g.name === 'Network')?.items ?? [] : staffItems).map((n) => (
+                  <li key={n.id}>
+                    <button className={`flex min-h-[48px] w-full items-center gap-2 rounded border px-2 text-left text-[11px] uppercase tracking-wider ${ui.view === n.id ? 'border-ops-cyan/50 bg-ops-cyan/10 text-white' : 'border-ops-line text-ops-text'}`} onClick={() => go(n.id)}>
+                      <span className="w-4 text-center text-ops-cyan">{n.icon}</span>
+                      <span className="flex-1">{tr(n.label)}</span>
+                      <span className="flex gap-1 text-[10px]"><NavBadges s={s} id={n.id} /></span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+      <nav className="fixed inset-x-0 bottom-0 z-[46] flex h-[var(--tabbar-h)] border-t border-ops-line bg-ops-panel/95 backdrop-blur lg:hidden" aria-label="Main navigation">
+        {tactical && tab('Battle', '◇', ui.view === 'theater' && !sheet, () => go('theater'), dot(inbound, 'blink bg-ops-red/30 text-ops-red'))}
+        {tab(tactical ? 'World' : 'Ops', '◎', ui.view === 'global' && !sheet, () => go('global'))}
+        {tab('Network', '⌁', (here === 'Network' && !sheet) || sheet === 'Network', () => setSheet(sheet === 'Network' ? null : 'Network'))}
+        {tab('Staff', '◈', ((here === 'Staff' || here === 'Review') && !sheet) || sheet === 'Staff', () => setSheet(sheet === 'Staff' ? null : 'Staff'), dot(reports, 'bg-ops-red/30 text-ops-red'))}
+        {tab('Status', '⚑', sheet === 'Status', () => setSheet(sheet === 'Status' ? null : 'Status'), dot(urgentList(s).length, 'bg-ops-amber/30 text-ops-amber'))}
+      </nav>
+    </>
   );
 }
 
@@ -341,7 +511,7 @@ function Section({ title, count, children, defaultOpen = true, coach }: { title:
   );
 }
 
-export function RightSidebar({ s }: { s: SimState }) {
+export function RightSidebar({ s, embedded }: { s: SimState; embedded?: boolean }) {
   const ui = useUI();
   const active = s.events
     .filter((e) => isActive(e) && isKnown(s, e))
@@ -350,7 +520,7 @@ export function RightSidebar({ s }: { s: SimState }) {
   const warnings = s.assets.filter((a) => a.status === 'offline' || a.hoursToService < 0);
   const regionAlerts = Object.values(s.regions).filter((r) => r.stability < 55 || r.comms < 50 || r.awareness < 45);
   return (
-    <aside className="flex flex-col overflow-y-auto border-t border-ops-line bg-ops-panel/70 lg:w-80 lg:border-l lg:border-t-0" aria-label="Situation sidebar">
+    <aside className={embedded ? 'flex flex-col' : 'hidden flex-col overflow-y-auto border-l border-ops-line bg-ops-panel/70 lg:flex lg:w-80'} aria-label="Situation sidebar">
       <AdjutantSection s={s} />
       <ObjectivesSection s={s} />
       <Section title="Active reports" count={active.length} coach="events">
@@ -435,20 +605,20 @@ export function RightSidebar({ s }: { s: SimState }) {
 const LEVEL_COLOR: Record<LogLevel, string> = { info: 'text-ops-text', warn: 'text-ops-amber', crit: 'text-ops-red', success: 'text-ops-green', intel: 'text-ops-violet' };
 type BottomTab = 'timeline' | 'commands' | 'log' | 'progress';
 
-export function BottomPanel({ s }: { s: SimState }) {
+export function BottomPanel({ s, embedded }: { s: SimState; embedded?: boolean }) {
   const ui = useUI();
   const [tab, setTab] = useState<BottomTab>('timeline');
   const [filter, setFilter] = useState<LogLevel | 'all'>('all');
   if (!ui.bottomOpen) {
     return (
-      <div className="flex items-center justify-between border-t border-ops-line bg-ops-panel/80 px-3 py-1">
+      <div className={`items-center justify-between border-t border-ops-line bg-ops-panel/80 px-3 py-1 ${embedded ? 'flex' : 'hidden lg:flex'}`}>
         <span className="truncate text-[11px] text-ops-dim">{s.log.at(-1) ? `T+${s.log.at(-1)!.t}h ${s.log.at(-1)!.text}` : 'Awaiting traffic.'}</span>
         <button className="btn" onClick={() => ui.setBottomOpen(true)}>▴ Timeline & Logs</button>
       </div>
     );
   }
   return (
-    <div className="flex h-[min(13rem,28vh)] min-h-[8rem] flex-col border-t border-ops-line bg-ops-panel/80">
+    <div className={`h-[min(13rem,28vh)] min-h-[8rem] flex-col border-t border-ops-line bg-ops-panel/80 ${embedded ? 'flex' : 'hidden lg:flex'}`}>
       <div className="flex items-center gap-2 border-b border-ops-line px-2 py-1">
         <Tabs<BottomTab> value={tab} onChange={setTab} tabs={[
           { id: 'timeline', label: 'Event Timeline' }, { id: 'commands', label: 'Command History' },

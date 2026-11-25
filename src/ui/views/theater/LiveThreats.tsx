@@ -2,7 +2,7 @@
 // Re-renders every animation frame on its own, so the rest of the map doesn't.
 import { TACTICAL_CONFIG, pointAlong, trackPath, trackTarget, type RegionId, type SimState, type ThreatClass, type ThreatWave } from '../../../engine';
 import { useSimTime } from '../../../store/simStore';
-import { LINGER, trackPhase, waveVisible } from '../../threatTimeline';
+import { LINGER, trackEnd, trackPhase, waveVisible } from '../../threatTimeline';
 
 const { width: W, height: H } = TACTICAL_CONFIG.theaterKm;
 
@@ -33,6 +33,15 @@ function pointFraction(path: [number, number][]): number {
 
 const EDGE_LAUNCH: Record<ThreatWave['axis'], [number, number]> = { north: [W / 2, 6], south: [W / 2, H - 6], west: [6, H / 2], east: [W - 6, H / 2] };
 
+/** Share of a threat's flight during which the interceptor that stops it is visibly on its way. */
+const SHOT = 0.16;
+/** Sim hours an impact flashes the map for. */
+const FLASH = 0.25;
+
+const calm = () => {
+  try { return document.documentElement.classList.contains('reduce-motion') || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+};
+
 export function LiveThreats({ s, region, only, at, onTrack }: {
   s: SimState; region: RegionId; only?: string | null; at?: number;
   /** Makes each threat clickable: called with its wave and track ids. */
@@ -47,8 +56,18 @@ export function LiveThreats({ s, region, only, at, onTrack }: {
     ? <circle r={11} fill="transparent" pointerEvents="all" className="cursor-help" onClick={(e) => { e.stopPropagation(); onTrack(w.id, id); }}><title>What happened to this threat?</title></circle>
     : null);
   const waves = tac.waves.filter((w) => w.region === region && (only ? w.id === only : waveVisible(w, t)));
+  // A threat getting through flashes the whole map red for a moment (not with reduced motion).
+  let flash = 0;
+  if (at === undefined && !calm()) {
+    for (const w of waves) for (const tr of w.tracks) {
+      if (tr.decoy || tr.outcome !== 'leaked') continue;
+      const ph = trackPhase(w, tr, t);
+      if (ph.kind === 'impact' && ph.age < FLASH) flash = Math.max(flash, 1 - ph.age / FLASH);
+    }
+  }
   return (
     <g pointerEvents="none">
+      {flash > 0 && <rect data-impact-flash width={W} height={H} fill="#f2545b" opacity={0.16 * flash} />}
       {waves.map((w) => {
         const launched = t >= (w.launchAt ?? w.atHour);
         const inFlight = t < w.atHour;
@@ -75,8 +94,20 @@ export function LiveThreats({ s, region, only, at, onTrack }: {
                 // Trail: a few points back along the path, so it bends round the turn.
                 const trail = [0.18, 0.12, 0.06, 0].map((b) => at(Math.max(0, ph.f - b)).join(',')).join(' ');
                 const ahead = [here.p, ...(tr.via && ph.f < pointFraction(path) ? [tr.via] : []), [site.x, site.y] as [number, number]].map((p) => p.join(',')).join(' ');
+                // The interceptor that will stop it: launched from its system, closing on the meeting point.
+                const { end, stopped } = trackEnd(w, tr);
+                const shooter = stopped && tr.stoppedBy ? tac.deployments.find((d) => d.id === tr.stoppedBy) : undefined;
+                const k = shooter ? (ph.f - (end - SHOT)) / SHOT : -1;
+                const meet = shooter && k >= 0 ? at(end) : null;
+                const ip: [number, number] | null = meet && shooter ? [shooter.x + (meet[0] - shooter.x) * k, shooter.y + (meet[1] - shooter.y) * k] : null;
                 return (
                   <g key={tr.id}>
+                    {ip && shooter && (
+                      <g data-interceptor>
+                        <line x1={shooter.x} y1={shooter.y} x2={ip[0]} y2={ip[1]} stroke="#38d6f5" strokeOpacity={0.55} strokeWidth={1.2} strokeDasharray="1 2" />
+                        <circle cx={ip[0]} cy={ip[1]} r={2.2} fill="#e0fbff" stroke="#38d6f5" strokeWidth={0.8} />
+                      </g>
+                    )}
                     <polyline points={trail} fill="none" stroke={col} strokeOpacity={0.45} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
                     <polyline points={ahead} fill="none" stroke={col} strokeOpacity={0.12} strokeDasharray="2 4" />
                     <g transform={`translate(${x},${y}) rotate(${here.heading})`}><ThreatGlyph cls={tr.cls} color={col} decoy={tr.decoy} /></g>

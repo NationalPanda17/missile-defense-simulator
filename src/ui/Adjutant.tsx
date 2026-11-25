@@ -88,6 +88,30 @@ export function AdviceList({ s, items, onDeploy, compact }: { s: SimState; items
   );
 }
 
+/**
+ * The adjutant's single next best action, with everything else folded under it: one thing to do, not a stack of
+ * banners. The rest open on demand.
+ */
+export function NextAction({ s, items, onDeploy }: { s: SimState; items: Advice[]; onDeploy?: () => void }) {
+  const [open, setOpen] = useState(false);
+  if (!items.length) return null;
+  const rest = items.slice(1);
+  return (
+    <div data-next-action>
+      <div className="label mb-1">Next best action</div>
+      <AdviceList s={s} items={items.slice(0, 1)} onDeploy={onDeploy} />
+      {rest.length > 0 && (
+        <>
+          <button className="mt-1 text-[10px] text-ops-dim underline hover:text-white" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? 'Hide the other notes' : `${rest.length} more note${rest.length === 1 ? '' : 's'} ▸`}
+          </button>
+          {open && <div className="mt-1"><AdviceList s={s} items={rest} onDeploy={onDeploy} /></div>}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Sidebar section. Announces new urgent advice with a toast so it isn't missed while looking elsewhere. */
 export function AdjutantSection({ s }: { s: SimState }) {
   const on = useSyncExternalStore(subscribe, () => adjutantOn(s), () => adjutantOn(s));
@@ -111,7 +135,7 @@ export function AdjutantSection({ s }: { s: SimState }) {
           title="The adjutant points out things you might miss">{on ? 'On' : 'Off'}</button>
       </div>
       {!on ? <div className="text-[10px] text-ops-dim">Off. Turn on for reminders about low magazines, overdue service and reports about to escalate.</div>
-        : items.length ? <AdviceList s={s} items={items} />
+        : items.length ? <NextAction s={s} items={items} />
           : <div className="text-[11px] text-ops-dim">Nothing needs your attention.</div>}
     </div>
   );

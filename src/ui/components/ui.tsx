@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { REGION_DEFS, type Asset, type Domain, type RegionId, type Severity } from '../../engine';
+import { store, useStoreVersion } from '../../store/simStore';
 
 /** Meters move over one simulated hour at the current speed (--tick, set by the store), so values flow rather than jump. */
 export const GLIDE = { transitionDuration: 'var(--tick, 400ms)', transitionTimingFunction: 'linear' } as const;
@@ -158,7 +159,7 @@ export function Sparkline({ data, color = '#38d6f5', w = 80, h = 22 }: { data: n
   );
 }
 
-export function Modal({ title, onClose, children, wide = false, tall = false, footer }: { title: ReactNode; onClose?: () => void; children: ReactNode; wide?: boolean; tall?: boolean; footer?: ReactNode }) {
+export function Modal({ title, onClose, children, wide = false, tall = false, full = false, footer }: { title: ReactNode; onClose?: () => void; children: ReactNode; wide?: boolean; tall?: boolean; full?: boolean; footer?: ReactNode }) {
   useEffect(() => {
     if (!onClose) return;
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -168,17 +169,32 @@ export function Modal({ title, onClose, children, wide = false, tall = false, fo
   // Portalled to <body>: a `fixed` element inside a panel with backdrop-filter would be positioned relative to
   // that panel instead of the viewport.
   return createPortal(
-    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className={`panel fadein flex max-h-full w-full flex-col ${wide ? 'max-w-5xl' : 'max-w-2xl'} ${tall ? 'h-full' : ''} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
+    <div className={`modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] ${full ? 'p-0' : 'p-2 sm:p-6'}`} onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
+      {/* full: the whole screen, for work that needs the map (deploying defenses). */}
+      <div className={`panel fadein flex max-h-full w-full flex-col ${full ? 'h-full max-w-none rounded-none border-0' : `${wide ? 'max-w-5xl' : 'max-w-2xl'} ${tall ? 'h-full' : ''}`} border-ops-cyan/30 bg-ops-panel`} role="dialog" aria-modal="true">
         <header className="panel-title">
           <span className="truncate">{title}</span>
           {onClose && <button className="btn px-2" onClick={onClose} aria-label="Close">✕</button>}
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-ops-line px-4 py-3">{footer}</footer>}
+        <div className={`min-h-0 flex-1 overflow-y-auto ${full ? 'p-2 sm:p-3' : 'p-4'}`}>{children}</div>
+        {footer && <footer className={`flex flex-wrap justify-end gap-2 border-t border-ops-line px-4 ${full ? 'py-2' : 'py-3'}`}><ToastLine />{footer}</footer>}
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Inside a window with a footer, the latest message shows in the footer itself, in its own line, instead of floating
+ * over the window's content.
+ */
+export function ToastLine() {
+  useStoreVersion();
+  const t = store.toasts.at(-1);
+  return (
+    <span data-toast-slot className={`basis-full text-[11px] ${!t ? 'hidden' : t.tone === 'err' ? 'text-ops-red' : t.tone === 'ok' ? 'text-ops-green' : 'text-ops-cyan'}`} role="status" aria-live="polite">
+      {t?.text}
+    </span>
   );
 }
 
